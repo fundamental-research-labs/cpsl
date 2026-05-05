@@ -1,0 +1,40 @@
+42
+3.14
+True
+False
+None
+[1, 2, 3]
+{'a': 1}
+(1, 2)
+123
+3
+-3
+3.14
+42.0
+0.0
+<class 'int'>
+<class 'float'>
+<class 'str'>
+<class 'bool'>
+<class 'NoneType'>
+<class 'list'>
+<class 'dict'>
+<class 'tuple'>
+True
+True
+True
+True
+True
+True
+False
+False
+False
+True
+True
+False
+True
+False
+True
+False
+False
+True

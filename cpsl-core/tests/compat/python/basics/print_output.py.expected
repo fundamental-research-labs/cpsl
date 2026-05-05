@@ -1,0 +1,24 @@
+hello
+42
+3.14
+1 2 3
+a b c
+1 hello True
+True
+False
+None
+[1, 2, 3]
+{'a': 1, 'b': 2}
+(1, 2, 3)
+[]
+{}
+()
+[1, [2, 3], [4, [5]]]
+[True, False, None]
+(1,)
+42
+3.14
+True
+False
+None
+[1, 2]

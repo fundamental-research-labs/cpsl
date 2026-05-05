@@ -1,0 +1,13 @@
+big
+not huge
+medium
+both positive
+even
+odd
+non-empty list is truthy
+empty list is falsy
+non-empty string is truthy
+empty string is falsy
+non-zero is truthy
+zero is falsy
+None is falsy

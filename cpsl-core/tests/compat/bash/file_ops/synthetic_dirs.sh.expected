@@ -1,0 +1,13 @@
+proc_is_dir
+cpuinfo
+meminfo
+version
+Sandbox 1.0 ({{OS}} {{OS_VERSION}} {{ARCH}})
+etc_is_dir
+hostname
+os-release
+sandbox
+hello
+hello
+world
+cleaned

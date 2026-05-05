@@ -1,0 +1,11 @@
+null
+stderr
+stdin
+survived
+zero_len=0
+null_exists
+zero_exists
+urandom_exists
+dev_is_dir
+null_is_file
+dev_not_file

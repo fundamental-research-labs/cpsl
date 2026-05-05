@@ -1,0 +1,9 @@
+caught division by zero
+caught ValueError
+conversion succeeded: 42
+finally always runs
+caught error in try/finally
+finally after error
+caught raised ValueError
+inner caught
+outer caught ValueError

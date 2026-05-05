@@ -1,0 +1,5 @@
+processor	: 0
+model name	: {{CPU_BRAND}}
+MemTotal
+NAME="Sandbox"
+{{ARCH}}

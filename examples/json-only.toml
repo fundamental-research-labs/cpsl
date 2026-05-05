@@ -1,0 +1,10 @@
+# Minimal sandbox: just JSON + filesystem
+# Build: cpsl build -t json-tool -f examples/json-only.toml
+# Run:   cpsl run json-tool -- 'print(json.encode({hello = "world"}))'
+
+[sandbox]
+name = "json-only"
+
+[modules]
+fs = true
+json = true

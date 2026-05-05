@@ -1,0 +1,7 @@
+[sandbox]
+name = "minimal"
+
+[modules]
+fs = true
+json = true
+csv = true

@@ -1,0 +1,14 @@
+sandbox
+sandbox
+uid=1000(sandbox) gid=1000(sandbox)
+Sandbox
+Sandbox 1.0 {{ARCH}} {{OS}} {{OS_VERSION}}
+Sandbox
+1.0
+USER=sandbox
+FOO=bar
+echo: sandbox builtin
+nonexistent_cmd not found
+echo is a sandbox builtin
+PID TTY TIME CMD
+  1 ?   00:00 sandbox (no process management)

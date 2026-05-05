@@ -1,0 +1,6 @@
+[sandbox]
+name = "test-json"
+
+[modules]
+json = true
+fs = true

@@ -1,0 +1,4 @@
+sleep: not supported in sandbox (Luau is single-threaded)
+sudo: no privilege escalation in sandbox
+curl: not available in sandbox (no network module loaded)
+pip: no package management in sandbox

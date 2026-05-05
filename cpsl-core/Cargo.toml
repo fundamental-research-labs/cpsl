@@ -1,0 +1,152 @@
+[package]
+name = "cpsl-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["all"]
+all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
+       "mod-http", "mod-compress", "mod-doc", "mod-plot", "mod-numpy",
+       "mod-random", "mod-fuzzy", "mod-phone", "mod-email", "mod-country",
+       "mod-datetime", "mod-image", "mod-base64", "mod-fin", "mod-yfinance", "mod-edgar",
+       "mod-crypto", "mod-regex", "mod-html", "mod-url", "mod-qr", "mod-grep",
+       "pdfium-render"]
+
+mod-base64 = []                                     # no extra deps — pure computation
+mod-fs = ["dep:rand"]                               # rand for /dev/urandom
+mod-random = []                                     # no extra deps — uses math.random
+mod-json = ["dep:serde_json"]
+mod-csv = ["dep:csv"]
+mod-yaml = ["dep:yaml-rust2"]
+mod-xml = ["dep:quick-xml"]
+mod-http = ["dep:native-http"]
+mod-compress = ["dep:zip", "dep:tar", "dep:flate2", "dep:bzip2", "dep:xz2", "dep:sevenz-rust"]
+mod-doc = ["dep:calamine", "dep:rtf-parser", "dep:pulldown-cmark", "dep:native-webview-pdf", "dep:sha2", "dep:hex"]
+mod-plot = ["dep:plotly"]
+mod-numpy = ["dep:ndarray", "dep:faer", "dep:rand", "dep:rand_distr"]
+mod-fuzzy = ["dep:rapidfuzz"]
+mod-phone = ["dep:phonenumber"]
+mod-email = ["dep:email_address"]
+mod-country = ["dep:isocountry", "dep:iso_currency", "dep:strum"]
+mod-datetime = ["dep:chrono"]
+mod-image = ["dep:image", "dep:imageproc", "dep:ab_glyph"]
+mod-fin = []                                       # no extra deps — pure computation
+mod-yfinance = ["mod-http", "mod-json"]            # composes http + json for Yahoo Finance API
+mod-edgar = ["mod-http", "mod-json"]               # composes http + json for SEC EDGAR API
+mod-crypto = ["dep:sha2", "dep:md-5", "dep:hmac", "dep:aes-gcm", "dep:jsonwebtoken", "dep:uuid", "dep:hex"]
+mod-regex = ["dep:regex"]
+mod-html = ["dep:scraper"]
+mod-url = ["dep:url", "dep:percent-encoding"]
+mod-qr = ["dep:qrcode", "dep:png"]
+mod-grep = ["dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
+pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
+
+[dependencies]
+# Always required — core sandbox runtime
+mlua = { version = "0.10", features = ["luau", "serialize", "send"] }
+thiserror = "2"
+
+# Transpilers (always compiled for now — could become features later)
+rustpython-parser = "0.4.0"
+conch-parser = "0.1"
+
+# mod-json
+serde_json = { version = "1", optional = true }
+
+# mod-csv
+csv = { version = "1", optional = true }
+
+# mod-yaml
+yaml-rust2 = { version = "0.11", optional = true }
+
+# mod-xml
+quick-xml = { version = "0.39", optional = true }
+
+# mod-http
+native-http = { path = "../native-http", optional = true }
+
+# mod-compress
+zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
+bzip2 = { version = "0.5", optional = true }
+xz2 = { version = "0.1", optional = true }
+sevenz-rust = { version = "0.6", optional = true }
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
+
+# mod-doc
+calamine = { version = "0.33", optional = true }
+rtf-parser = { version = "0.4", optional = true }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
+native-webview-pdf = { path = "../native-webview-pdf", optional = true }
+
+# pdfium-render (PDF engine — replaces pdf-extract)
+pdfium-render = { version = "0.8", features = ["sync"], optional = true }
+
+# mod-plot
+plotly = { version = "0.14", optional = true }
+
+# mod-fuzzy
+rapidfuzz = { version = "0.5", optional = true }
+
+# mod-phone
+phonenumber = { version = "0.3", optional = true }
+
+# mod-email
+email_address = { version = "0.2", optional = true }
+
+# mod-country
+isocountry = { version = "0.3", optional = true }
+iso_currency = { version = "0.5", features = ["iterator"], optional = true }
+strum = { version = "0.27", optional = true }
+
+# mod-datetime
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+
+# mod-image
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"], optional = true }
+imageproc = { version = "0.25", default-features = false, optional = true }
+ab_glyph = { version = "0.2", optional = true }
+
+# mod-numpy
+ndarray = { version = "0.16", optional = true }
+faer = { version = "0.21", optional = true }
+rand = { version = "0.9", optional = true }
+rand_distr = { version = "0.5", optional = true }
+
+# mod-crypto
+sha2 = { version = "0.10", optional = true }
+md-5 = { version = "0.10", optional = true }
+hmac = { version = "0.12", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+jsonwebtoken = { version = "9", optional = true }
+uuid = { version = "1", features = ["v4", "v7"], optional = true }
+hex = { version = "0.4", optional = true }
+
+# mod-regex
+regex = { version = "1", optional = true }
+
+# mod-html
+scraper = { version = "0.22", optional = true }
+
+# mod-url
+url = { version = "2", optional = true }
+percent-encoding = { version = "2", optional = true }
+
+# mod-qr
+qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
+png = { version = "0.18", optional = true }
+
+# mod-grep
+grep-regex = { version = "0.1", optional = true }
+grep-searcher = { version = "0.1", optional = true }
+grep-matcher = { version = "0.1", optional = true }
+ignore = { version = "0.4", optional = true }
+globset = { version = "0.4", optional = true }
+
+[[test]]
+name = "pdf_pipeline"
+harness = false
+
+[dev-dependencies]
+tempfile = "3"
+pdfium-render = { version = "0.8", features = ["sync"] }  # for trait imports in tests
