@@ -48,7 +48,7 @@ pub(crate) mod random;
 #[cfg(feature = "mod-regex")]
 pub(crate) mod regex_mod;
 mod sandbox;
-#[cfg(feature = "mod-sfae")]
+#[cfg(cpsl_experimental_sfae)]
 pub(crate) mod sfae;
 pub mod sh_transpile;
 pub mod transpile;
@@ -70,5 +70,5 @@ pub use sandbox::{
     clean_lua_error, humanize_error, DocReadCallback, ExecError, Sandbox, SandboxBuilder,
     SandboxError, VisionCallback,
 };
-#[cfg(feature = "mod-sfae")]
+#[cfg(cpsl_experimental_sfae)]
 pub use sfae::{BrowserOpener, CredentialPrompt};

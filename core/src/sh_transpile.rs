@@ -1725,7 +1725,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tree_d_and_L_flags() {
+    fn test_tree_d_and_l_flags() {
         let result = transpile("tree /workspace -d -L 3");
         assert!(
             result.contains("d=true"),

@@ -222,6 +222,11 @@ fn cmd_build(args: BuildArgs) {
         .iter()
         .map(|f| f.strip_prefix("mod-").unwrap_or(f.as_str()))
         .collect();
+    let python_suffix = if config.python_enabled() {
+        " + python"
+    } else {
+        ""
+    };
 
     // Locate the cpsl workspace root (where core and cli live)
     let workspace_root = find_workspace_root().unwrap_or_else(|| {
@@ -363,9 +368,10 @@ fn cmd_build(args: BuildArgs) {
 
     if args.lib_mode {
         eprintln!(
-            "\x1b[32m✓\x1b[0m Library '{}' ready ({} modules: {})",
+            "\x1b[32m✓\x1b[0m Library '{}' ready ({} modules{}: {})",
             image_name,
             module_names.len(),
+            python_suffix,
             module_names.join(", ")
         );
     } else {
@@ -424,9 +430,10 @@ fn cmd_build(args: BuildArgs) {
         });
 
         eprintln!(
-            "\x1b[32m✓\x1b[0m Sandbox '{}' ready ({} modules: {})",
+            "\x1b[32m✓\x1b[0m Sandbox '{}' ready ({} modules{}: {})",
             image_name,
             module_names.len(),
+            python_suffix,
             module_names.join(", ")
         );
     }
@@ -495,6 +502,13 @@ fn cmd_run(args: RunArgs) {
         std::process::exit(1);
     }
 
+    let image_config = dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join(".cpsl")
+        .join("images")
+        .join(format!("{}.toml", args.name));
+    let image_config = SandboxConfig::from_file(&image_config).ok();
+
     let mut cmd = std::process::Command::new(&bin_path);
 
     if args.interactive {
@@ -507,17 +521,18 @@ fn cmd_run(args: RunArgs) {
     } else {
         cmd.arg("--bash");
     }
+    if let Some(config) = &image_config {
+        for vol in config.mount_volumes() {
+            cmd.arg("-v").arg(vol);
+        }
+    }
     for vol in &args.volumes {
         cmd.arg("-v").arg(vol);
     }
     #[cfg(feature = "mod-http")]
     {
-        let image_config = dirs::home_dir()
-            .expect("cannot determine home directory")
-            .join(".cpsl")
-            .join("images")
-            .join(format!("{}.toml", args.name));
-        let (cfg_allow, cfg_deny) = SandboxConfig::from_file(&image_config)
+        let (cfg_allow, cfg_deny) = image_config
+            .as_ref()
             .map(|cfg| cfg.http_gateway_config())
             .unwrap_or_default();
         for d in cfg_allow.iter().chain(args.allow_domain.iter()) {

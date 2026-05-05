@@ -1,0 +1,31 @@
+[package]
+name = "conch-parser"
+version = "0.1.1"
+authors = ["Ivan Petkov <ivanppetkov@gmail.com>"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/ipetkov/conch-parser"
+homepage = "https://github.com/ipetkov/conch-parser"
+documentation = "https://docs.rs/conch-parser/"
+keywords = ["shell", "parser", "parsing"]
+categories = ["parser-implementations"]
+description = """
+A library for parsing programs written in the shell programming language.
+"""
+
+[features]
+nightly = []
+clippy = [] # FIXME(breaking): technically breaking if we remove this feature
+
+[dependencies]
+void = "1"
+
+[dev-dependencies]
+owned_chars = "0.2.1"
+
+[badges]
+travis-ci = { repository = "ipetkov/conch-parser" }
+appveyor = { repository = "ipetkov/conch-parser" }
+is-it-maintained-issue-resolution = { repository = "ipetkov/conch-parser" }
+is-it-maintained-open-issues = { repository = "ipetkov/conch-parser" }
+codecov = { repository = "ipetkov/conch-parser" }

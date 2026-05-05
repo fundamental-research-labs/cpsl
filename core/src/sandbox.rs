@@ -2,7 +2,7 @@ use crate::mount::MountTable;
 use mlua::{Lua, MultiValue, Value};
 #[cfg(feature = "mod-http")]
 use native_http::HttpGateway;
-#[cfg(feature = "mod-sfae")]
+#[cfg(cpsl_experimental_sfae)]
 use sfae_core::store::SecretStore;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -1017,11 +1017,11 @@ pub struct SandboxBuilder {
     mounts: Option<MountTable>,
     #[cfg(feature = "mod-http")]
     http_gateway: Option<Arc<HttpGateway>>,
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     sfae_store: Option<Arc<Mutex<dyn SecretStore + Send>>>,
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     sfae_prompt: Option<Arc<dyn crate::sfae::CredentialPrompt>>,
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     sfae_browser_opener: Option<Arc<dyn crate::sfae::BrowserOpener>>,
     file_activity_callback: Option<FileActivityCallback>,
     vision_callback: Option<VisionCallback>,
@@ -1036,11 +1036,11 @@ impl Default for SandboxBuilder {
             mounts: None,
             #[cfg(feature = "mod-http")]
             http_gateway: None,
-            #[cfg(feature = "mod-sfae")]
+            #[cfg(cpsl_experimental_sfae)]
             sfae_store: None,
-            #[cfg(feature = "mod-sfae")]
+            #[cfg(cpsl_experimental_sfae)]
             sfae_prompt: None,
-            #[cfg(feature = "mod-sfae")]
+            #[cfg(cpsl_experimental_sfae)]
             sfae_browser_opener: None,
             file_activity_callback: None,
             vision_callback: None,
@@ -1063,19 +1063,19 @@ impl SandboxBuilder {
         self
     }
 
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     pub fn sfae_store(mut self, store: Arc<Mutex<dyn SecretStore + Send>>) -> Self {
         self.sfae_store = Some(store);
         self
     }
 
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     pub fn sfae_prompt(mut self, prompt: Arc<dyn crate::sfae::CredentialPrompt>) -> Self {
         self.sfae_prompt = Some(prompt);
         self
     }
 
-    #[cfg(feature = "mod-sfae")]
+    #[cfg(cpsl_experimental_sfae)]
     pub fn sfae_browser_opener(mut self, opener: Arc<dyn crate::sfae::BrowserOpener>) -> Self {
         self.sfae_browser_opener = Some(opener);
         self
@@ -1246,7 +1246,7 @@ impl SandboxBuilder {
             #[cfg(feature = "mod-edgar")]
             crate::edgar::register_edgar_globals(&lua, gw.clone())?;
         }
-        #[cfg(feature = "mod-sfae")]
+        #[cfg(cpsl_experimental_sfae)]
         if let (Some(ref store), Some(ref prompt)) = (&self.sfae_store, &self.sfae_prompt) {
             crate::sfae::register_sfae_globals(
                 &lua,

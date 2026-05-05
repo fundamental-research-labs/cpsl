@@ -204,6 +204,14 @@ impl SandboxConfig {
             .collect()
     }
 
+    pub fn python_enabled(&self) -> bool {
+        self.python.enabled
+    }
+
+    pub fn mount_volumes(&self) -> &[String] {
+        &self.mounts.volumes
+    }
+
     /// Return (allowed_domains, denied_domains) for constructing an HttpGateway.
     ///
     /// Credentials are never stored in config — the host injects them at runtime.

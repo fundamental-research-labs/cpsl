@@ -599,8 +599,6 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 [[package]]
 name = "conch-parser"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baf61cea7edff80a7d8a9a4c219d391664715559e9d4e7129494b45278705a41"
 dependencies = [
  "void",
 ]

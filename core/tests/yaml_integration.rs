@@ -278,7 +278,6 @@ print(result)
     assert!(r.contains("items:"), "got: {}", r);
 }
 
-#[test]
 // ── Dual-signature tests (table form for shell dispatch) ────────
 #[test]
 fn decode_table_form() {

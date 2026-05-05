@@ -3,6 +3,9 @@ name = "cpsl-core"
 version = "0.1.0"
 edition = "2021"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(cpsl_experimental_sfae)'] }
+
 [features]
 default = ["all"]
 all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",

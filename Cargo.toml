@@ -6,3 +6,6 @@ members = [
     "modules/native-webview-pdf",
 ]
 resolver = "2"
+
+[patch.crates-io]
+conch-parser = { path = "vendor/conch-parser" }
