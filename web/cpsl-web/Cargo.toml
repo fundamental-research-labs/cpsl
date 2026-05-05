@@ -1,0 +1,24 @@
+[package]
+name = "cpsl-web"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = ["web-demo"]
+web-demo = [
+    "cpsl-core/mod-fs",
+    "cpsl-core/mod-json",
+    "cpsl-core/mod-base64",
+    "cpsl-core/mod-random",
+    "cpsl-core/mod-fin",
+    "cpsl-core/mod-regex",
+    "cpsl-core/mod-url",
+]
+
+[dependencies]
+cpsl-core = { path = "../../core", default-features = false }
+
+[[bin]]
+name = "cpsl-web"
+path = "src/main.rs"

@@ -5,6 +5,7 @@ members = [
     "modules/native-http",
     "modules/native-webview-pdf",
     "tools/ci-check",
+    "web/cpsl-web",
 ]
 resolver = "2"
 

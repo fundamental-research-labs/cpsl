@@ -2,3 +2,6 @@
 /cpsl.exe
 /target
 /test/output/
+/web/dist/
+/.tmp-home/
+/emsdk/
