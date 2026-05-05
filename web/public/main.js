@@ -10,6 +10,170 @@ const PROMPTS = new Map([
   [2, ">"],
 ]);
 
+const SHELL_COMMANDS = [
+  "apt",
+  "base64",
+  "bg",
+  "brew",
+  "cat",
+  "cd",
+  "cp",
+  "curl",
+  "cut",
+  "date",
+  "echo",
+  "env",
+  "exit",
+  "export",
+  "false",
+  "fg",
+  "find",
+  "grep",
+  "head",
+  "help",
+  "hostname",
+  "id",
+  "jobs",
+  "kill",
+  "ls",
+  "mkdir",
+  "mv",
+  "npm",
+  "pip",
+  "pip3",
+  "printf",
+  "ps",
+  "pwd",
+  "rm",
+  "sleep",
+  "sort",
+  "ssh",
+  "sudo",
+  "tail",
+  "tee",
+  "test",
+  "top",
+  "touch",
+  "tr",
+  "true",
+  "type",
+  "uname",
+  "uniq",
+  "wc",
+  "wget",
+  "which",
+  "yarn",
+];
+
+const MODULE_METHODS = {
+  base64: ["encode", "decode", "b64encode", "b64decode", "help"],
+  fin: ["npv", "irr", "mirr", "pmt", "pv", "fv", "nper", "rate", "help"],
+  fs: [
+    "read",
+    "write",
+    "list",
+    "exists",
+    "writable",
+    "mkdir",
+    "rename",
+    "remove",
+    "isdir",
+    "isfile",
+    "size",
+    "copy",
+    "tree",
+    "help",
+  ],
+  json: ["decode", "encode", "help"],
+  random: ["seed", "random", "randint", "uniform", "randrange", "choice", "shuffle", "sample", "help"],
+  regex: ["match", "find_all", "replace", "replace_all", "split", "is_match", "escape", "help"],
+  url: ["parse", "build", "encode", "decode", "query_parse", "query_build", "join", "help"],
+};
+
+const MODULE_NAMES = Object.keys(MODULE_METHODS).sort();
+const MODULE_MEMBER_COMPLETIONS = MODULE_NAMES.flatMap((moduleName) =>
+  MODULE_METHODS[moduleName].map((method) => `${moduleName}.${method}`)
+);
+
+const PATH_COMPLETIONS = [
+  "/dev/",
+  "/dev/null",
+  "/dev/stderr",
+  "/dev/stdin",
+  "/dev/stdout",
+  "/dev/urandom",
+  "/dev/zero",
+  "/etc/",
+  "/etc/hostname",
+  "/etc/os-release",
+  "/proc/",
+  "/proc/cpuinfo",
+  "/proc/meminfo",
+  "/proc/version",
+  "/tmp/",
+];
+
+const LUA_COMPLETIONS = [
+  "and",
+  "break",
+  "do",
+  "else",
+  "elseif",
+  "end",
+  "false",
+  "for",
+  "function",
+  "help",
+  "if",
+  "in",
+  "local",
+  "math",
+  "nil",
+  "not",
+  "or",
+  "print",
+  "repeat",
+  "require",
+  "return",
+  "string",
+  "table",
+  "then",
+  "true",
+  "until",
+  "while",
+  "utf8",
+];
+
+const PYTHON_COMPLETIONS = [
+  "False",
+  "None",
+  "True",
+  "and",
+  "break",
+  "continue",
+  "def",
+  "dict",
+  "elif",
+  "else",
+  "except",
+  "float",
+  "for",
+  "help",
+  "if",
+  "in",
+  "int",
+  "len",
+  "list",
+  "not",
+  "or",
+  "print",
+  "range",
+  "return",
+  "str",
+  "try",
+  "while",
+];
+
 const root = document.documentElement;
 const terminalShell = document.querySelector(".terminal-shell");
 const terminal = document.querySelector(".terminal");
@@ -18,7 +182,7 @@ const output = document.querySelector("#terminal-output");
 const form = document.querySelector("#terminal-form");
 const input = document.querySelector("#terminal-input");
 const promptEl = document.querySelector("#terminal-prompt");
-const resetButton = document.querySelector("#reset-terminal");
+const clearButton = document.querySelector("#clear-terminal");
 const fullscreenButton = document.querySelector("#fullscreen-terminal");
 const themeToggle = document.querySelector(".theme-toggle");
 const modeButtons = [...document.querySelectorAll(".mode-tabs [data-mode]")];
@@ -64,15 +228,22 @@ function focusPrompt() {
   scrollTerminalToBottom();
 }
 
+function clearConsole() {
+  output.replaceChildren();
+  scrollTerminalToBottom();
+  focusPrompt();
+}
+
 function setFullPage(expanded) {
   terminalShell.classList.toggle("is-full-page", expanded);
   document.body.classList.toggle("terminal-full-page", expanded);
+  fullscreenButton.classList.toggle("is-expanded", expanded);
   fullscreenButton.setAttribute("aria-pressed", expanded ? "true" : "false");
   fullscreenButton.setAttribute(
     "aria-label",
     expanded ? "Exit full page terminal" : "Expand terminal to full page"
   );
-  fullscreenButton.textContent = expanded ? "exit full" : "full page";
+  fullscreenButton.title = expanded ? "Exit full page" : "Full page";
   focusPrompt();
 }
 
@@ -124,7 +295,6 @@ function setBusy(nextBusy) {
   const commandReady = ready && !nextBusy;
   form.hidden = !commandReady;
   input.disabled = !commandReady;
-  resetButton.disabled = nextBusy || !ready;
 }
 
 function sendEval(command) {
@@ -140,6 +310,102 @@ function sendEval(command) {
   worker.postMessage({ type: "eval", mode, input: command });
 }
 
+function uniqueSorted(items) {
+  return [...new Set(items)].sort((a, b) => a.localeCompare(b));
+}
+
+function isClearShortcut(event) {
+  return event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey;
+}
+
+function completionRange(value, cursor) {
+  const before = value.slice(0, cursor);
+  const match = before.match(/[A-Za-z0-9_./-]*$/);
+  const start = match ? cursor - match[0].length : cursor;
+  return {
+    start,
+    end: input.selectionEnd ?? cursor,
+    prefix: value.slice(start, cursor),
+  };
+}
+
+function shellTokensBeforeCurrent(value, start) {
+  const segment = value.slice(0, start).split(/[|;&]/).pop().trim();
+  return segment ? segment.split(/\s+/) : [];
+}
+
+function candidatesForInput(value, range) {
+  if (range.prefix.startsWith("/")) {
+    return PATH_COMPLETIONS;
+  }
+
+  if (mode === 0) {
+    const tokens = shellTokensBeforeCurrent(value, range.start);
+    if (tokens.length === 1 && MODULE_METHODS[tokens[0]]) {
+      return MODULE_METHODS[tokens[0]];
+    }
+    if (tokens.length === 0) {
+      return uniqueSorted([...SHELL_COMMANDS, ...MODULE_NAMES]);
+    }
+    return [];
+  }
+
+  if (range.prefix.includes(".")) {
+    return MODULE_MEMBER_COMPLETIONS;
+  }
+
+  const languageItems = mode === 1 ? PYTHON_COMPLETIONS : LUA_COMPLETIONS;
+  return uniqueSorted([...languageItems, ...MODULE_NAMES, ...MODULE_MEMBER_COMPLETIONS]);
+}
+
+function commonPrefix(values) {
+  if (!values.length) return "";
+
+  let prefix = values[0];
+  for (const value of values.slice(1)) {
+    while (!value.startsWith(prefix) && prefix) {
+      prefix = prefix.slice(0, -1);
+    }
+  }
+  return prefix;
+}
+
+function replaceInputRange(start, end, value) {
+  input.value = `${input.value.slice(0, start)}${value}${input.value.slice(end)}`;
+  const nextCursor = start + value.length;
+  input.setSelectionRange(nextCursor, nextCursor);
+}
+
+function showCompletionList(matches) {
+  const visible = matches.slice(0, 24);
+  const suffix = matches.length > visible.length ? "  ..." : "";
+  appendLine(`${visible.join("  ")}${suffix}`, "system");
+}
+
+function completeInput() {
+  const cursor = input.selectionStart ?? input.value.length;
+  const range = completionRange(input.value, cursor);
+  const candidates = candidatesForInput(input.value, range);
+  const matches = candidates.filter((candidate) =>
+    candidate.toLowerCase().startsWith(range.prefix.toLowerCase())
+  );
+
+  if (!matches.length) return;
+
+  if (matches.length === 1) {
+    replaceInputRange(range.start, range.end, matches[0]);
+    return;
+  }
+
+  const shared = commonPrefix(matches);
+  if (shared.length > range.prefix.length) {
+    replaceInputRange(range.start, range.end, shared);
+    return;
+  }
+
+  showCompletionList(matches);
+}
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   const command = input.value;
@@ -148,11 +414,18 @@ form.addEventListener("submit", (event) => {
 });
 
 input.addEventListener("keydown", (event) => {
+  if (event.key === "Tab") {
+    event.preventDefault();
+    completeInput();
+    return;
+  }
+
   if (event.key === "ArrowUp") {
     event.preventDefault();
     historyIndex = Math.max(0, historyIndex - 1);
     input.value = history[historyIndex] || "";
     queueMicrotask(() => input.setSelectionRange(input.value.length, input.value.length));
+    return;
   }
 
   if (event.key === "ArrowDown") {
@@ -160,12 +433,12 @@ input.addEventListener("keydown", (event) => {
     historyIndex = Math.min(history.length, historyIndex + 1);
     input.value = history[historyIndex] || "";
     queueMicrotask(() => input.setSelectionRange(input.value.length, input.value.length));
+    return;
   }
 
   if (event.key.toLowerCase() === "l" && event.ctrlKey) {
     event.preventDefault();
-    output.replaceChildren();
-    scrollTerminalToBottom();
+    clearConsole();
   }
 });
 
@@ -188,10 +461,8 @@ quickButtons.forEach((button) => {
   });
 });
 
-resetButton.addEventListener("click", () => {
-  if (busy) return;
-  setBusy(true);
-  worker.postMessage({ type: "reset" });
+clearButton.addEventListener("click", () => {
+  clearConsole();
 });
 
 fullscreenButton.addEventListener("click", () => {
@@ -199,10 +470,17 @@ fullscreenButton.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (isClearShortcut(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearConsole();
+    return;
+  }
+
   if (event.key === "Escape" && terminalShell.classList.contains("is-full-page")) {
     setFullPage(false);
   }
-});
+}, { capture: true });
 
 worker.addEventListener("message", (event) => {
   const message = event.data;
