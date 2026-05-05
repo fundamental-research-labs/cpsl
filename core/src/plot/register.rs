@@ -10,6 +10,27 @@ use std::sync::Arc;
 pub(crate) fn register_plot_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), mlua::Error> {
     let plot = lua.create_table()?;
 
+    register_basic_charts(lua, &plot, mounts.clone())?;
+
+    register_composite_charts(lua, &plot, mounts.clone())?;
+
+    register_specialized_charts(lua, &plot, mounts.clone())?;
+
+    register_table_and_3d_charts(lua, &plot, mounts.clone())?;
+
+    crate::lua_util::register_help_functions(lua, &plot, &PLOT_DOC)?;
+
+    lua.globals().set("plot", plot)?;
+    wrap_module_with_help_hints(lua, "plot")?;
+
+    Ok(())
+}
+
+fn register_basic_charts(
+    lua: &Lua,
+    plot: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // ── plot.line(x, y, opts?) ──
     {
         let m = mounts.clone();
@@ -339,254 +360,270 @@ pub(crate) fn register_plot_globals(lua: &Lua, mounts: Arc<MountTable>) -> Resul
         )?;
     }
 
+    Ok(())
+}
+
+fn register_composite_charts(
+    lua: &Lua,
+    plot: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // ── plot.multi(series, opts?) ──
     {
         let m = mounts.clone();
         plot.set(
-            "multi",
-            lua.create_function(
-                move |_, args: MultiValue| {
-                    if args.is_empty() {
-                        return Err(arg_error("plot.multi", PLOT_DOC.params("multi")));
+        "multi",
+        lua.create_function(
+            move |_, args: MultiValue| {
+                if args.is_empty() {
+                    return Err(arg_error("plot.multi", PLOT_DOC.params("multi")));
+                }
+                let first = args[0].clone();
+                let opts: Option<mlua::Table> = args.get(1).and_then(|v| match v {
+                    Value::Table(t) => Some(t.clone()),
+                    _ => None,
+                });
+                let (series_tbl_val, co) = match &first {
+                    Value::Table(t) if has_output_key(t) => {
+                        let sv: Value = t.get("series")?;
+                        let opts_tbl = Some(t.clone());
+                        (sv, extract_chart_opts(&opts_tbl, "plot.multi")?)
                     }
-                    let first = args[0].clone();
-                    let opts: Option<mlua::Table> = args.get(1).and_then(|v| match v {
-                        Value::Table(t) => Some(t.clone()),
-                        _ => None,
+                    _ => {
+                        (first.clone(), extract_chart_opts(&opts, "plot.multi")?)
+                    }
+                };
+                let series_tbl = match &series_tbl_val {
+                    Value::Table(t) => unwrap_py_seq(t)?,
+                    _ => {
+                        return Err(mlua::Error::external(
+                            "plot.multi: expected table of series",
+                        ))
+                    }
+                };
+                let mut series_list = Vec::new();
+                for i in 1..=series_tbl.raw_len() {
+                    let entry: mlua::Table = series_tbl.get(i)?;
+                    let x_val: Value = entry.get("x")?;
+                    let y_val: Value = entry.get("y")?;
+                    let x = lua_table_to_f64_vec(&x_val).map_err(|_| {
+                        mlua::Error::external(format!(
+                            "plot.multi: series[{}].x must be numeric values (use plot.bar for categorical/string axes)",
+                            i
+                        ))
+                    })?;
+                    let y = lua_table_to_f64_vec(&y_val).map_err(|_| {
+                        mlua::Error::external(format!(
+                            "plot.multi: series[{}].y must be numeric values",
+                            i
+                        ))
+                    })?;
+                    let series_type = entry
+                        .get::<String>("type")
+                        .unwrap_or_else(|_| "line".to_string());
+                    let label = entry.get::<String>("label").ok();
+                    series_list.push(SeriesData {
+                        x,
+                        y,
+                        series_type,
+                        label,
                     });
-                    let (series_tbl_val, co) = match &first {
-                        Value::Table(t) if has_output_key(t) => {
-                            let sv: Value = t.get("series")?;
-                            let opts_tbl = Some(t.clone());
-                            (sv, extract_chart_opts(&opts_tbl, "plot.multi")?)
-                        }
-                        _ => {
-                            (first.clone(), extract_chart_opts(&opts, "plot.multi")?)
-                        }
-                    };
-                    let series_tbl = match &series_tbl_val {
-                        Value::Table(t) => unwrap_py_seq(t)?,
-                        _ => {
-                            return Err(mlua::Error::external(
-                                "plot.multi: expected table of series",
-                            ))
-                        }
-                    };
-                    let mut series_list = Vec::new();
-                    for i in 1..=series_tbl.raw_len() {
-                        let entry: mlua::Table = series_tbl.get(i)?;
-                        let x_val: Value = entry.get("x")?;
-                        let y_val: Value = entry.get("y")?;
-                        let x = lua_table_to_f64_vec(&x_val).map_err(|_| {
-                            mlua::Error::external(format!(
-                                "plot.multi: series[{}].x must be numeric values (use plot.bar for categorical/string axes)",
-                                i
-                            ))
-                        })?;
-                        let y = lua_table_to_f64_vec(&y_val).map_err(|_| {
-                            mlua::Error::external(format!(
-                                "plot.multi: series[{}].y must be numeric values",
-                                i
-                            ))
-                        })?;
-                        let series_type = entry
-                            .get::<String>("type")
-                            .unwrap_or_else(|_| "line".to_string());
-                        let label = entry.get::<String>("label").ok();
-                        series_list.push(SeriesData {
-                            x,
-                            y,
-                            series_type,
-                            label,
-                        });
-                    }
-                    let html = render_multi(&series_list, &co);
-                    let host_path = ensure_output_dir(&m, &co.output)?;
-                    std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
-                    Ok(co.output)
-                },
-            )?,
-        )?;
+                }
+                let html = render_multi(&series_list, &co);
+                let host_path = ensure_output_dir(&m, &co.output)?;
+                std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
+                Ok(co.output)
+            },
+        )?,
+    )?;
     }
 
     // ── plot.figure(opts?) ──
     {
         let m = mounts.clone();
         plot.set(
-            "figure",
-            lua.create_function(move |lua, args: MultiValue| {
-                if args.is_empty() {
-                    return Err(arg_error("plot.figure", PLOT_DOC.params("figure")));
-                }
-                let opts: Option<mlua::Table> = args.get(0).and_then(|v| match v {
-                    Value::Table(t) => Some(t.clone()),
-                    _ => None,
-                });
-                let rows = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<i32>("rows").ok())
-                    .unwrap_or(1) as usize;
-                let cols = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<i32>("cols").ok())
-                    .unwrap_or(1) as usize;
-                let width = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<i32>("width").ok())
-                    .unwrap_or(800) as usize;
-                let height = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<i32>("height").ok())
-                    .unwrap_or(600) as usize;
-                let output = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<String>("output").ok())
-                    .ok_or_else(|| {
-                        mlua::Error::external(
-                            "plot.figure: output path is required (e.g., {output = '/artifacts/figure.html'})",
-                        )
-                    })?;
-                let title = opts.as_ref().and_then(|t| t.get::<String>("title").ok());
-                let theme = opts.as_ref()
-                    .and_then(|t| t.get::<String>("theme").ok())
-                    .unwrap_or_else(|| "plotly_white".to_string());
+        "figure",
+        lua.create_function(move |lua, args: MultiValue| {
+            if args.is_empty() {
+                return Err(arg_error("plot.figure", PLOT_DOC.params("figure")));
+            }
+            let opts: Option<mlua::Table> = args.get(0).and_then(|v| match v {
+                Value::Table(t) => Some(t.clone()),
+                _ => None,
+            });
+            let rows = opts
+                .as_ref()
+                .and_then(|t| t.get::<i32>("rows").ok())
+                .unwrap_or(1) as usize;
+            let cols = opts
+                .as_ref()
+                .and_then(|t| t.get::<i32>("cols").ok())
+                .unwrap_or(1) as usize;
+            let width = opts
+                .as_ref()
+                .and_then(|t| t.get::<i32>("width").ok())
+                .unwrap_or(800) as usize;
+            let height = opts
+                .as_ref()
+                .and_then(|t| t.get::<i32>("height").ok())
+                .unwrap_or(600) as usize;
+            let output = opts
+                .as_ref()
+                .and_then(|t| t.get::<String>("output").ok())
+                .ok_or_else(|| {
+                    mlua::Error::external(
+                        "plot.figure: output path is required (e.g., {output = '/artifacts/figure.html'})",
+                    )
+                })?;
+            let title = opts.as_ref().and_then(|t| t.get::<String>("title").ok());
+            let theme = opts.as_ref()
+                .and_then(|t| t.get::<String>("theme").ok())
+                .unwrap_or_else(|| "plotly_white".to_string());
 
-                let fig = lua.create_table()?;
-                fig.set("_rows", rows as i32)?;
-                fig.set("_cols", cols as i32)?;
-                fig.set("_width", width as i32)?;
-                fig.set("_height", height as i32)?;
-                fig.set("_output", output)?;
-                fig.set("_theme", theme)?;
-                if let Some(ref t) = title {
-                    fig.set("_title", t.clone())?;
-                }
-                fig.set("_subplots", lua.create_table()?)?;
+            let fig = lua.create_table()?;
+            fig.set("_rows", rows as i32)?;
+            fig.set("_cols", cols as i32)?;
+            fig.set("_width", width as i32)?;
+            fig.set("_height", height as i32)?;
+            fig.set("_output", output)?;
+            fig.set("_theme", theme)?;
+            if let Some(ref t) = title {
+                fig.set("_title", t.clone())?;
+            }
+            fig.set("_subplots", lua.create_table()?)?;
 
-                // figure:subplot(row, col, chartType, data, opts?)
-                fig.set(
-                    "subplot",
-                    lua.create_function(
-                        |_,
-                         (fig_tbl, row, col, chart_type, data, sp_opts): (
-                            mlua::Table,
-                            i32,
-                            i32,
-                            String,
-                            mlua::Table,
-                            Option<mlua::Table>,
-                        )| {
-                            let subplots: mlua::Table = fig_tbl.get("_subplots")?;
-                            let idx = subplots.raw_len() + 1;
-                            data.set("_row", row - 1)?;
-                            data.set("_col", col - 1)?;
-                            data.set("_chartType", chart_type)?;
-                            if let Some(ref o) = sp_opts {
-                                if let Ok(t) = o.get::<String>("title") {
-                                    data.set("_spTitle", t)?;
-                                }
-                                if let Ok(x) = o.get::<String>("xlabel") {
-                                    data.set("_spXlabel", x)?;
-                                }
-                                if let Ok(y) = o.get::<String>("ylabel") {
-                                    data.set("_spYlabel", y)?;
-                                }
-                                if let Ok(b) = o.get::<i32>("bins") {
-                                    data.set("_spBins", b)?;
-                                }
+            // figure:subplot(row, col, chartType, data, opts?)
+            fig.set(
+                "subplot",
+                lua.create_function(
+                    |_,
+                     (fig_tbl, row, col, chart_type, data, sp_opts): (
+                        mlua::Table,
+                        i32,
+                        i32,
+                        String,
+                        mlua::Table,
+                        Option<mlua::Table>,
+                    )| {
+                        let subplots: mlua::Table = fig_tbl.get("_subplots")?;
+                        let idx = subplots.raw_len() + 1;
+                        data.set("_row", row - 1)?;
+                        data.set("_col", col - 1)?;
+                        data.set("_chartType", chart_type)?;
+                        if let Some(ref o) = sp_opts {
+                            if let Ok(t) = o.get::<String>("title") {
+                                data.set("_spTitle", t)?;
                             }
-                            subplots.set(idx, data)?;
-                            Ok(fig_tbl)
-                        },
-                    )?,
-                )?;
-
-                // figure:save() -> string
-                let m2 = m.clone();
-                fig.set(
-                    "save",
-                    lua.create_function(move |_, fig_tbl: mlua::Table| {
-                        let rows = fig_tbl.get::<i32>("_rows")? as usize;
-                        let cols = fig_tbl.get::<i32>("_cols")? as usize;
-                        let width = fig_tbl.get::<i32>("_width")? as usize;
-                        let height = fig_tbl.get::<i32>("_height")? as usize;
-                        let output: String = fig_tbl.get("_output")?;
-                        let title: Option<String> = fig_tbl.get("_title").ok();
-                        let theme: String = fig_tbl.get::<String>("_theme")
-                            .unwrap_or_else(|_| "plotly_white".to_string());
-                        let subplots_tbl: mlua::Table = fig_tbl.get("_subplots")?;
-
-                        let mut subplots = Vec::new();
-                        for i in 1..=subplots_tbl.raw_len() {
-                            let sp: mlua::Table = subplots_tbl.get(i)?;
-                            let row = sp.get::<i32>("_row")? as usize;
-                            let col = sp.get::<i32>("_col")? as usize;
-                            let chart_type: String = sp.get("_chartType")?;
-                            let sp_title: Option<String> = sp.get("_spTitle").ok();
-                            let sp_xlabel: Option<String> = sp.get("_spXlabel").ok();
-                            let sp_ylabel: Option<String> = sp.get("_spYlabel").ok();
-                            let sp_bins = sp.get::<i32>("_spBins").unwrap_or(10) as usize;
-
-                            let data = match chart_type.as_str() {
-                                "line" | "scatter" => {
-                                    let xv: Value = sp.get("x")?;
-                                    let yv: Value = sp.get("y")?;
-                                    SubplotData::XY(
-                                        lua_table_to_f64_vec(&xv)?,
-                                        lua_table_to_f64_vec(&yv)?,
-                                    )
-                                }
-                                "bar" => {
-                                    let lv: Value = sp.get("labels")?;
-                                    let vv: Value = sp.get("values")?;
-                                    SubplotData::LabelValue(
-                                        lua_table_to_string_vec(&lv)?,
-                                        lua_table_to_f64_vec(&vv)?,
-                                    )
-                                }
-                                "histogram" => {
-                                    let dv: Value = sp.get("data")?;
-                                    SubplotData::Values(lua_table_to_f64_vec(&dv)?)
-                                }
-                                "heatmap" => {
-                                    let mv: Value = sp.get("matrix")?;
-                                    SubplotData::Matrix(lua_table_to_f64_matrix(&mv)?)
-                                }
-                                _ => {
-                                    return Err(mlua::Error::external(format!(
-                                        "unsupported subplot type: {}",
-                                        chart_type
-                                    )))
-                                }
-                            };
-
-                            subplots.push(SubplotEntry {
-                                row,
-                                col,
-                                chart_type,
-                                data,
-                                opts: SubplotOpts {
-                                    title: sp_title,
-                                    xlabel: sp_xlabel,
-                                    ylabel: sp_ylabel,
-                                    bins: sp_bins,
-                                },
-                            });
+                            if let Ok(x) = o.get::<String>("xlabel") {
+                                data.set("_spXlabel", x)?;
+                            }
+                            if let Ok(y) = o.get::<String>("ylabel") {
+                                data.set("_spYlabel", y)?;
+                            }
+                            if let Ok(b) = o.get::<i32>("bins") {
+                                data.set("_spBins", b)?;
+                            }
                         }
+                        subplots.set(idx, data)?;
+                        Ok(fig_tbl)
+                    },
+                )?,
+            )?;
 
-                        let html =
-                            render_figure(&subplots, rows, cols, width, height, &title, &theme);
-                        let host_path = ensure_output_dir(&m2, &output)?;
-                        std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
-                        Ok(output)
-                    })?,
-                )?;
+            // figure:save() -> string
+            let m2 = m.clone();
+            fig.set(
+                "save",
+                lua.create_function(move |_, fig_tbl: mlua::Table| {
+                    let rows = fig_tbl.get::<i32>("_rows")? as usize;
+                    let cols = fig_tbl.get::<i32>("_cols")? as usize;
+                    let width = fig_tbl.get::<i32>("_width")? as usize;
+                    let height = fig_tbl.get::<i32>("_height")? as usize;
+                    let output: String = fig_tbl.get("_output")?;
+                    let title: Option<String> = fig_tbl.get("_title").ok();
+                    let theme: String = fig_tbl.get::<String>("_theme")
+                        .unwrap_or_else(|_| "plotly_white".to_string());
+                    let subplots_tbl: mlua::Table = fig_tbl.get("_subplots")?;
 
-                Ok(fig)
-            })?,
-        )?;
+                    let mut subplots = Vec::new();
+                    for i in 1..=subplots_tbl.raw_len() {
+                        let sp: mlua::Table = subplots_tbl.get(i)?;
+                        let row = sp.get::<i32>("_row")? as usize;
+                        let col = sp.get::<i32>("_col")? as usize;
+                        let chart_type: String = sp.get("_chartType")?;
+                        let sp_title: Option<String> = sp.get("_spTitle").ok();
+                        let sp_xlabel: Option<String> = sp.get("_spXlabel").ok();
+                        let sp_ylabel: Option<String> = sp.get("_spYlabel").ok();
+                        let sp_bins = sp.get::<i32>("_spBins").unwrap_or(10) as usize;
+
+                        let data = match chart_type.as_str() {
+                            "line" | "scatter" => {
+                                let xv: Value = sp.get("x")?;
+                                let yv: Value = sp.get("y")?;
+                                SubplotData::XY(
+                                    lua_table_to_f64_vec(&xv)?,
+                                    lua_table_to_f64_vec(&yv)?,
+                                )
+                            }
+                            "bar" => {
+                                let lv: Value = sp.get("labels")?;
+                                let vv: Value = sp.get("values")?;
+                                SubplotData::LabelValue(
+                                    lua_table_to_string_vec(&lv)?,
+                                    lua_table_to_f64_vec(&vv)?,
+                                )
+                            }
+                            "histogram" => {
+                                let dv: Value = sp.get("data")?;
+                                SubplotData::Values(lua_table_to_f64_vec(&dv)?)
+                            }
+                            "heatmap" => {
+                                let mv: Value = sp.get("matrix")?;
+                                SubplotData::Matrix(lua_table_to_f64_matrix(&mv)?)
+                            }
+                            _ => {
+                                return Err(mlua::Error::external(format!(
+                                    "unsupported subplot type: {}",
+                                    chart_type
+                                )))
+                            }
+                        };
+
+                        subplots.push(SubplotEntry {
+                            row,
+                            col,
+                            chart_type,
+                            data,
+                            opts: SubplotOpts {
+                                title: sp_title,
+                                xlabel: sp_xlabel,
+                                ylabel: sp_ylabel,
+                                bins: sp_bins,
+                            },
+                        });
+                    }
+
+                    let html =
+                        render_figure(&subplots, rows, cols, width, height, &title, &theme);
+                    let host_path = ensure_output_dir(&m2, &output)?;
+                    std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
+                    Ok(output)
+                })?,
+            )?;
+
+            Ok(fig)
+        })?,
+    )?;
     }
 
+    Ok(())
+}
+
+fn register_specialized_charts(
+    lua: &Lua,
+    plot: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // ── plot.radar(indicators, data, opts?) ──
     {
         let m = mounts.clone();
@@ -672,68 +709,68 @@ pub(crate) fn register_plot_globals(lua: &Lua, mounts: Arc<MountTable>) -> Resul
     {
         let m = mounts.clone();
         plot.set(
-            "candlestick",
-            lua.create_function(
-                move |_, args: MultiValue| {
-                    if args.is_empty() {
-                        return Err(arg_error("plot.candlestick", PLOT_DOC.params("candlestick")));
+        "candlestick",
+        lua.create_function(
+            move |_, args: MultiValue| {
+                if args.is_empty() {
+                    return Err(arg_error("plot.candlestick", PLOT_DOC.params("candlestick")));
+                }
+                let first = args[0].clone();
+                let open_opt = args.get(1).cloned();
+                let (dates, open, close, low, high, co) = match open_opt {
+                    Some(open_val) => {
+                        let dates = lua_table_to_string_vec(&first)?;
+                        let open = lua_table_to_f64_vec(&open_val)?;
+                        let close_val = args.get(2).ok_or_else(|| {
+                            mlua::Error::external("plot.candlestick: missing 'close' argument")
+                        })?;
+                        let close = lua_table_to_f64_vec(close_val)?;
+                        let low_val = args.get(3).ok_or_else(|| {
+                            mlua::Error::external("plot.candlestick: missing 'low' argument")
+                        })?;
+                        let low = lua_table_to_f64_vec(low_val)?;
+                        let high_val = args.get(4).ok_or_else(|| {
+                            mlua::Error::external("plot.candlestick: missing 'high' argument")
+                        })?;
+                        let high = lua_table_to_f64_vec(high_val)?;
+                        let opts: Option<mlua::Table> = args.get(5).and_then(|v| match v {
+                            Value::Table(t) => Some(t.clone()),
+                            _ => None,
+                        });
+                        (dates, open, close, low, high, extract_chart_opts(&opts, "plot.candlestick")?)
                     }
-                    let first = args[0].clone();
-                    let open_opt = args.get(1).cloned();
-                    let (dates, open, close, low, high, co) = match open_opt {
-                        Some(open_val) => {
-                            let dates = lua_table_to_string_vec(&first)?;
-                            let open = lua_table_to_f64_vec(&open_val)?;
-                            let close_val = args.get(2).ok_or_else(|| {
-                                mlua::Error::external("plot.candlestick: missing 'close' argument")
-                            })?;
-                            let close = lua_table_to_f64_vec(close_val)?;
-                            let low_val = args.get(3).ok_or_else(|| {
-                                mlua::Error::external("plot.candlestick: missing 'low' argument")
-                            })?;
-                            let low = lua_table_to_f64_vec(low_val)?;
-                            let high_val = args.get(4).ok_or_else(|| {
-                                mlua::Error::external("plot.candlestick: missing 'high' argument")
-                            })?;
-                            let high = lua_table_to_f64_vec(high_val)?;
-                            let opts: Option<mlua::Table> = args.get(5).and_then(|v| match v {
-                                Value::Table(t) => Some(t.clone()),
-                                _ => None,
-                            });
-                            (dates, open, close, low, high, extract_chart_opts(&opts, "plot.candlestick")?)
-                        }
-                        None => {
-                            let t = match &first {
-                                Value::Table(t) => t,
-                                _ => return Err(mlua::Error::external("plot.candlestick: expected table")),
-                            };
-                            let dv: Value = t.get("dates")?;
-                            let dates = lua_table_to_string_vec(&dv)?;
-                            let ov: Value = t.get("open")?;
-                            let open = lua_table_to_f64_vec(&ov)?;
-                            let cv: Value = t.get("close")?;
-                            let close = lua_table_to_f64_vec(&cv)?;
-                            let lv: Value = t.get("low")?;
-                            let low = lua_table_to_f64_vec(&lv)?;
-                            let hv: Value = t.get("high")?;
-                            let high = lua_table_to_f64_vec(&hv)?;
-                            let opts_tbl = Some(t.clone());
-                            (dates, open, close, low, high, extract_chart_opts(&opts_tbl, "plot.candlestick")?)
-                        }
-                    };
-                    let n = dates.len();
-                    if open.len() != n || close.len() != n || low.len() != n || high.len() != n {
-                        return Err(mlua::Error::external(
-                            "plot.candlestick: dates, open, close, low, high must all have the same length",
-                        ));
+                    None => {
+                        let t = match &first {
+                            Value::Table(t) => t,
+                            _ => return Err(mlua::Error::external("plot.candlestick: expected table")),
+                        };
+                        let dv: Value = t.get("dates")?;
+                        let dates = lua_table_to_string_vec(&dv)?;
+                        let ov: Value = t.get("open")?;
+                        let open = lua_table_to_f64_vec(&ov)?;
+                        let cv: Value = t.get("close")?;
+                        let close = lua_table_to_f64_vec(&cv)?;
+                        let lv: Value = t.get("low")?;
+                        let low = lua_table_to_f64_vec(&lv)?;
+                        let hv: Value = t.get("high")?;
+                        let high = lua_table_to_f64_vec(&hv)?;
+                        let opts_tbl = Some(t.clone());
+                        (dates, open, close, low, high, extract_chart_opts(&opts_tbl, "plot.candlestick")?)
                     }
-                    let html = render_candlestick(&dates, &open, &close, &low, &high, &co);
-                    let host_path = ensure_output_dir(&m, &co.output)?;
-                    std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
-                    Ok(co.output)
-                },
-            )?,
-        )?;
+                };
+                let n = dates.len();
+                if open.len() != n || close.len() != n || low.len() != n || high.len() != n {
+                    return Err(mlua::Error::external(
+                        "plot.candlestick: dates, open, close, low, high must all have the same length",
+                    ));
+                }
+                let html = render_candlestick(&dates, &open, &close, &low, &high, &co);
+                let host_path = ensure_output_dir(&m, &co.output)?;
+                std::fs::write(&host_path, &html).map_err(mlua::Error::external)?;
+                Ok(co.output)
+            },
+        )?,
+    )?;
     }
 
     // ── plot.box(data, opts?) ──
@@ -981,6 +1018,14 @@ pub(crate) fn register_plot_globals(lua: &Lua, mounts: Arc<MountTable>) -> Resul
         )?;
     }
 
+    Ok(())
+}
+
+fn register_table_and_3d_charts(
+    lua: &Lua,
+    plot: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // ── plot.table(headers, rows, opts?) ──
     {
         let m = mounts.clone();
@@ -1254,11 +1299,6 @@ pub(crate) fn register_plot_globals(lua: &Lua, mounts: Arc<MountTable>) -> Resul
             })?,
         )?;
     }
-
-    crate::lua_util::register_help_functions(lua, &plot, &PLOT_DOC)?;
-
-    lua.globals().set("plot", plot)?;
-    wrap_module_with_help_hints(lua, "plot")?;
 
     Ok(())
 }

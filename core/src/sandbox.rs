@@ -789,6 +789,242 @@ fn register_fs_globals(
 ) -> Result<(), mlua::Error> {
     let fs = lua.create_table()?;
 
+    register_fs_read_and_metadata(
+        lua,
+        &fs,
+        mounts.clone(),
+        synthetic_files.clone(),
+        file_activity_cb.clone(),
+    )?;
+
+    register_fs_mutations(lua, &fs, mounts.clone(), file_activity_cb.clone())?;
+
+    register_fs_search(lua, &fs, mounts.clone())?;
+
+    register_fs_tree(lua, &fs, mounts.clone())?;
+
+    crate::lua_util::register_help_functions(lua, &fs, &FS_DOC)?;
+
+    lua.globals().set("fs", fs)?;
+
+    // Wrap all functions (except help) to append hint on argument errors
+    wrap_module_with_help_hints(lua, "fs")?;
+
+    Ok(())
+}
+
+/// Wrap every function in a module table (except `help`) so that errors
+/// include the caller's line number and inline usage help for argument errors.
+///
+/// ## Module error convention
+///
+/// Errors are read by both humans and AI agents. They must be:
+/// - **Located**: always include the caller's source line (via `error(msg, 2)`)
+/// - **Short**: one line of context, no stack traces or internal paths
+/// - **Descriptive**: say what went wrong, not Luau/Rust internals
+/// - **Self-correcting**: usage errors include the function's signature and
+///   example inline so the caller (human or AI) can fix the call immediately
+///   without a round-trip to `module.help()`
+///
+/// Error format after processing by `clean_lua_error()`:
+/// ```text
+/// 1: /attachments/test: Read-only file system     ← runtime error (no help)
+/// 1: plot.bar: expected table of numbers           ← usage error with inline help
+///   Usage: plot.bar(labels: table, values: table, opts: table) -> string
+///   Example: plot.bar({x={"Q1","Q2","Q3"}, y={100,200,150}, output="/artifacts/sales.svg"})
+/// ```
+pub(crate) fn wrap_module_with_help_hints(lua: &Lua, module_name: &str) -> Result<(), mlua::Error> {
+    lua.load(format!(
+        r#"
+        local mod = {module_name}
+        local fn_help = rawget(mod, "__fn_help") or {{}}
+        for k, v in pairs(mod) do
+            if type(v) == "function" and k ~= "help" then
+                local raw = v
+                local usage = fn_help[k]
+                mod[k] = function(...)
+                    local results = table.pack(pcall(raw, ...))
+                    if results[1] then
+                        return table.unpack(results, 2, results.n)
+                    end
+                    local msg = tostring(results[2])
+                    local trace = string.find(msg, "\nstack traceback:")
+                    local clean = trace and string.sub(msg, 1, trace - 1) or msg
+                    if string.find(clean, "bad argument")
+                        or string.find(clean, "missing required argument")
+                        or string.find(clean, "expected ")
+                    then
+                        if usage then
+                            error(clean .. "\n" .. usage, 2)
+                        else
+                            error(clean .. "\n  hint: call {module_name}.help() for usage", 2)
+                        end
+                    else
+                        error(clean, 2)
+                    end
+                end
+            end
+        end
+        setmetatable(mod, {{
+            __index = function(_, key)
+                local k = tostring(key)
+                if k:sub(1, 2) == "__" then return nil end
+                error("{module_name}." .. k .. " does not exist\n  hint: call {module_name}.help() for usage", 2)
+            end
+        }})
+        "#
+    ))
+    .exec()?;
+    Ok(())
+}
+
+fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
+    // help() only prints — exec() picks up the print buffer.
+    // No return, so there's no duplication when exec() combines print+return.
+    //
+    // The module listing is built dynamically at runtime: each module table has
+    // a __summary field (set by register_help_functions). help() probes known
+    // global names and includes only those that are actually registered.
+    let code = r#"
+        function help()
+            local known = {"base64","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
+            local lines = {}
+            for _, name in ipairs(known) do
+                local m = rawget(_G, name)
+                if type(m) == "table" then
+                    local summary = rawget(m, "__summary") or ""
+                    local pad = string.rep(" ", math.max(1, 13 - #name))
+                    table.insert(lines, "  " .. name .. pad .. summary)
+                end
+            end
+            local modules = #lines > 0 and table.concat(lines, "\n") or "  (none)"
+
+            local text = "Sandbox — available modules and globals\n"
+                .. "\n"
+                .. "All modules are available as globals (no require needed).\n"
+                .. "Run <module>.help() for detailed usage — recommended to discover useful options.\n"
+                .. "\n"
+                .. "Modules:\n"
+                .. modules .. "\n"
+                .. "\n"
+                .. "Globals:\n"
+                .. "  print(...)   Output values (captured and returned as result)\n"
+                .. "  require(m)   Load a registered module\n"
+                .. "  help()       Show this help message\n"
+                .. "\n"
+                .. "Standard libraries: string, table, math, bit32, buffer, coroutine, utf8\n"
+                .. "\n"
+                .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
+            print(text)
+        end
+    "#;
+    lua.load(code).exec()?;
+    Ok(())
+}
+
+fn register_print(
+    lua: &Lua,
+    buf: Arc<Mutex<String>>,
+    needs_newline: Arc<Mutex<bool>>,
+) -> Result<(), mlua::Error> {
+    let needs_nl_print = needs_newline.clone();
+    let needs_nl_write = needs_newline;
+    let buf2 = buf.clone();
+
+    let print_fn = lua.create_function(move |_, values: MultiValue| {
+        let line: Vec<String> = values.iter().map(format_value).collect();
+        let Ok(mut b) = buf.lock() else { return Ok(()) };
+        let Ok(mut nl) = needs_nl_print.lock() else {
+            return Ok(());
+        };
+        if *nl {
+            b.push('\n');
+        }
+        b.push_str(&line.join("\t"));
+        *nl = true; // After print, next output needs a newline separator
+        Ok(())
+    })?;
+    lua.globals().set("print", print_fn)?;
+
+    // __write: append text to the output buffer without a trailing newline.
+    // Used by shrt.luau's echo -n support.
+    let write_fn = lua.create_function(move |_, text: String| {
+        let Ok(mut b) = buf2.lock() else {
+            return Ok(());
+        };
+        let Ok(mut nl) = needs_nl_write.lock() else {
+            return Ok(());
+        };
+        if *nl {
+            b.push('\n');
+        }
+        b.push_str(&text);
+        *nl = false; // After __write, next output continues on same line
+        Ok(())
+    })?;
+    lua.globals().set("__write", write_fn)?;
+
+    Ok(())
+}
+
+fn remove_dangerous_globals(lua: &Lua) -> Result<(), mlua::Error> {
+    let globals = lua.globals();
+
+    // Remove io library entirely
+    globals.set("io", mlua::Value::Nil)?;
+
+    // Remove os library entirely — scripts should use fs module for file ops
+    // and the sandbox doesn't need os.clock/os.time/os.difftime
+    globals.set("os", mlua::Value::Nil)?;
+
+    // Remove file loading functions
+    globals.set("loadfile", mlua::Value::Nil)?;
+    globals.set("dofile", mlua::Value::Nil)?;
+
+    Ok(())
+}
+
+fn format_multi_value(values: &MultiValue) -> String {
+    if values.is_empty() {
+        return String::new();
+    }
+    values
+        .iter()
+        .map(format_value)
+        .collect::<Vec<_>>()
+        .join("\t")
+}
+
+fn format_value(value: &Value) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::Integer(i) => i.to_string(),
+        Value::Number(n) => {
+            if *n == (*n as i64) as f64 {
+                format!("{}", *n as i64)
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.to_string_lossy().to_string(),
+        Value::Table(_) => "table".to_string(),
+        Value::Function(_) => "function".to_string(),
+        _ => format!("{:?}", value),
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_read_and_metadata(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+    synthetic_files: Arc<std::collections::HashMap<String, String>>,
+    file_activity_cb: Option<FileActivityCallback>,
+) -> Result<(), mlua::Error> {
     // fs.read(path [, offset, limit]) -> string
     {
         let m = mounts.clone();
@@ -845,6 +1081,16 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_mutations(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+    file_activity_cb: Option<FileActivityCallback>,
+) -> Result<(), mlua::Error> {
     // fs.write(path, content)
     {
         let m = mounts.clone();
@@ -1155,11 +1401,19 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_search(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // fs.grep(opts) -> table of matches
     #[cfg(feature = "mod-grep")]
     {
         let m = mounts.clone();
-        let _cb = file_activity_cb.clone();
         fs.set(
             "grep",
             lua.create_function(move |lua, args: MultiValue| {
@@ -1365,6 +1619,15 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_tree(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // fs.tree(opts) -> string (ASCII directory tree)
     // Walks through the virtual mount layer (not the host filesystem directly),
     // so it sees all mounts, virtual dirs, and synthetic entries.
@@ -1656,216 +1919,5 @@ fn register_fs_globals(
         )?;
     }
 
-    crate::lua_util::register_help_functions(lua, &fs, &FS_DOC)?;
-
-    lua.globals().set("fs", fs)?;
-
-    // Wrap all functions (except help) to append hint on argument errors
-    wrap_module_with_help_hints(lua, "fs")?;
-
     Ok(())
 }
-
-/// Wrap every function in a module table (except `help`) so that errors
-/// include the caller's line number and inline usage help for argument errors.
-///
-/// ## Module error convention
-///
-/// Errors are read by both humans and AI agents. They must be:
-/// - **Located**: always include the caller's source line (via `error(msg, 2)`)
-/// - **Short**: one line of context, no stack traces or internal paths
-/// - **Descriptive**: say what went wrong, not Luau/Rust internals
-/// - **Self-correcting**: usage errors include the function's signature and
-///   example inline so the caller (human or AI) can fix the call immediately
-///   without a round-trip to `module.help()`
-///
-/// Error format after processing by `clean_lua_error()`:
-/// ```text
-/// 1: /attachments/test: Read-only file system     ← runtime error (no help)
-/// 1: plot.bar: expected table of numbers           ← usage error with inline help
-///   Usage: plot.bar(labels: table, values: table, opts: table) -> string
-///   Example: plot.bar({x={"Q1","Q2","Q3"}, y={100,200,150}, output="/artifacts/sales.svg"})
-/// ```
-pub(crate) fn wrap_module_with_help_hints(lua: &Lua, module_name: &str) -> Result<(), mlua::Error> {
-    lua.load(format!(
-        r#"
-        local mod = {module_name}
-        local fn_help = rawget(mod, "__fn_help") or {{}}
-        for k, v in pairs(mod) do
-            if type(v) == "function" and k ~= "help" then
-                local raw = v
-                local usage = fn_help[k]
-                mod[k] = function(...)
-                    local results = table.pack(pcall(raw, ...))
-                    if results[1] then
-                        return table.unpack(results, 2, results.n)
-                    end
-                    local msg = tostring(results[2])
-                    local trace = string.find(msg, "\nstack traceback:")
-                    local clean = trace and string.sub(msg, 1, trace - 1) or msg
-                    if string.find(clean, "bad argument")
-                        or string.find(clean, "missing required argument")
-                        or string.find(clean, "expected ")
-                    then
-                        if usage then
-                            error(clean .. "\n" .. usage, 2)
-                        else
-                            error(clean .. "\n  hint: call {module_name}.help() for usage", 2)
-                        end
-                    else
-                        error(clean, 2)
-                    end
-                end
-            end
-        end
-        setmetatable(mod, {{
-            __index = function(_, key)
-                local k = tostring(key)
-                if k:sub(1, 2) == "__" then return nil end
-                error("{module_name}." .. k .. " does not exist\n  hint: call {module_name}.help() for usage", 2)
-            end
-        }})
-        "#
-    ))
-    .exec()?;
-    Ok(())
-}
-
-fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
-    // help() only prints — exec() picks up the print buffer.
-    // No return, so there's no duplication when exec() combines print+return.
-    //
-    // The module listing is built dynamically at runtime: each module table has
-    // a __summary field (set by register_help_functions). help() probes known
-    // global names and includes only those that are actually registered.
-    let code = r#"
-        function help()
-            local known = {"base64","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
-            local lines = {}
-            for _, name in ipairs(known) do
-                local m = rawget(_G, name)
-                if type(m) == "table" then
-                    local summary = rawget(m, "__summary") or ""
-                    local pad = string.rep(" ", math.max(1, 13 - #name))
-                    table.insert(lines, "  " .. name .. pad .. summary)
-                end
-            end
-            local modules = #lines > 0 and table.concat(lines, "\n") or "  (none)"
-
-            local text = "Sandbox — available modules and globals\n"
-                .. "\n"
-                .. "All modules are available as globals (no require needed).\n"
-                .. "Run <module>.help() for detailed usage — recommended to discover useful options.\n"
-                .. "\n"
-                .. "Modules:\n"
-                .. modules .. "\n"
-                .. "\n"
-                .. "Globals:\n"
-                .. "  print(...)   Output values (captured and returned as result)\n"
-                .. "  require(m)   Load a registered module\n"
-                .. "  help()       Show this help message\n"
-                .. "\n"
-                .. "Standard libraries: string, table, math, bit32, buffer, coroutine, utf8\n"
-                .. "\n"
-                .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
-            print(text)
-        end
-    "#;
-    lua.load(code).exec()?;
-    Ok(())
-}
-
-fn register_print(
-    lua: &Lua,
-    buf: Arc<Mutex<String>>,
-    needs_newline: Arc<Mutex<bool>>,
-) -> Result<(), mlua::Error> {
-    let needs_nl_print = needs_newline.clone();
-    let needs_nl_write = needs_newline;
-    let buf2 = buf.clone();
-
-    let print_fn = lua.create_function(move |_, values: MultiValue| {
-        let line: Vec<String> = values.iter().map(format_value).collect();
-        let Ok(mut b) = buf.lock() else { return Ok(()) };
-        let Ok(mut nl) = needs_nl_print.lock() else {
-            return Ok(());
-        };
-        if *nl {
-            b.push('\n');
-        }
-        b.push_str(&line.join("\t"));
-        *nl = true; // After print, next output needs a newline separator
-        Ok(())
-    })?;
-    lua.globals().set("print", print_fn)?;
-
-    // __write: append text to the output buffer without a trailing newline.
-    // Used by shrt.luau's echo -n support.
-    let write_fn = lua.create_function(move |_, text: String| {
-        let Ok(mut b) = buf2.lock() else {
-            return Ok(());
-        };
-        let Ok(mut nl) = needs_nl_write.lock() else {
-            return Ok(());
-        };
-        if *nl {
-            b.push('\n');
-        }
-        b.push_str(&text);
-        *nl = false; // After __write, next output continues on same line
-        Ok(())
-    })?;
-    lua.globals().set("__write", write_fn)?;
-
-    Ok(())
-}
-
-fn remove_dangerous_globals(lua: &Lua) -> Result<(), mlua::Error> {
-    let globals = lua.globals();
-
-    // Remove io library entirely
-    globals.set("io", mlua::Value::Nil)?;
-
-    // Remove os library entirely — scripts should use fs module for file ops
-    // and the sandbox doesn't need os.clock/os.time/os.difftime
-    globals.set("os", mlua::Value::Nil)?;
-
-    // Remove file loading functions
-    globals.set("loadfile", mlua::Value::Nil)?;
-    globals.set("dofile", mlua::Value::Nil)?;
-
-    Ok(())
-}
-
-fn format_multi_value(values: &MultiValue) -> String {
-    if values.is_empty() {
-        return String::new();
-    }
-    values
-        .iter()
-        .map(format_value)
-        .collect::<Vec<_>>()
-        .join("\t")
-}
-
-fn format_value(value: &Value) -> String {
-    match value {
-        Value::Nil => "nil".to_string(),
-        Value::Boolean(b) => b.to_string(),
-        Value::Integer(i) => i.to_string(),
-        Value::Number(n) => {
-            if *n == (*n as i64) as f64 {
-                format!("{}", *n as i64)
-            } else {
-                n.to_string()
-            }
-        }
-        Value::String(s) => s.to_string_lossy().to_string(),
-        Value::Table(_) => "table".to_string(),
-        Value::Function(_) => "function".to_string(),
-        _ => format!("{:?}", value),
-    }
-}
-
-#[cfg(test)]
-mod tests;

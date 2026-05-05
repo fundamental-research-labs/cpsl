@@ -931,6 +931,59 @@ pub(crate) fn register_doc_globals(
     let doc = lua.create_table()?;
     let pending_reads: PendingReads = Arc::new(Mutex::new(Vec::new()));
 
+    register_doc_readers(
+        lua,
+        &doc,
+        mounts.clone(),
+        vision_callback.clone(),
+        cache_dir.clone(),
+        pending_reads.clone(),
+        #[cfg(feature = "pdfium-render")]
+        pdfium_engine.clone(),
+    )?;
+
+    #[cfg(feature = "pdfium-render")]
+    register_doc_pdf_metadata(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
+
+    #[cfg(feature = "pdfium-render")]
+    register_doc_pdf_page_ops(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
+
+    #[cfg(feature = "pdfium-render")]
+    register_doc_pdf_annotations(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
+
+    register_doc_rendering(lua, &doc, mounts.clone())?;
+
+    // Select documentation based on vision callback and PDFium presence
+    #[cfg(feature = "pdfium-render")]
+    let has_pdfium = pdfium_engine.is_some();
+    #[cfg(not(feature = "pdfium-render"))]
+    let has_pdfium = false;
+
+    let mod_doc = match (vision_callback.is_some(), has_pdfium) {
+        #[cfg(feature = "pdfium-render")]
+        (true, true) => &DOC_MOD_DOC_VISION_PDFIUM,
+        #[cfg(feature = "pdfium-render")]
+        (false, true) => &DOC_MOD_DOC_PDFIUM,
+        (true, _) => &DOC_MOD_DOC_VISION,
+        (false, _) => &DOC_MOD_DOC,
+    };
+    crate::lua_util::register_help_functions(lua, &doc, mod_doc)?;
+
+    lua.globals().set("doc", doc)?;
+    wrap_module_with_help_hints(lua, "doc")?;
+
+    Ok(())
+}
+
+fn register_doc_readers(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+    vision_callback: Option<VisionCallback>,
+    cache_dir: Option<PathBuf>,
+    pending_reads: PendingReads,
+    #[cfg(feature = "pdfium-render")] pdfium_engine: Option<Arc<PdfiumEngine>>,
+) -> Result<(), mlua::Error> {
     // doc.read(path, opts?) -> string
     // Also accepts: doc.read({path=..., sheet=N, query=..., mode=...})
     {
@@ -940,77 +993,77 @@ pub(crate) fn register_doc_globals(
         #[cfg(feature = "pdfium-render")]
         let pe = pdfium_engine.clone();
         doc.set(
-            "read",
-            lua.create_function(move |_, args: MultiValue| {
-                let (path, read_opts, query) = parse_doc_read_args("doc.read", &args)?;
+        "read",
+        lua.create_function(move |_, args: MultiValue| {
+            let (path, read_opts, query) = parse_doc_read_args("doc.read", &args)?;
 
-                // Detect format
-                let format = DocFormat::from_extension(&path).ok_or_else(|| {
-                    mlua::Error::external(format!(
-                        "unsupported file format: {}",
-                        std::path::Path::new(&path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("(no extension)")
-                    ))
-                })?;
+            // Detect format
+            let format = DocFormat::from_extension(&path).ok_or_else(|| {
+                mlua::Error::external(format!(
+                    "unsupported file format: {}",
+                    std::path::Path::new(&path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("(no extension)")
+                ))
+            })?;
 
-                // Resolve mode: explicit > format default
-                let mode = format.resolve_mode(read_opts.mode, cb.is_some());
+            // Resolve mode: explicit > format default
+            let mode = format.resolve_mode(read_opts.mode, cb.is_some());
 
-                // Resolve path through mount table and read raw bytes
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            // Resolve path through mount table and read raw bytes
+            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
+            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
 
-                match mode {
-                    ReadMode::Structural => {
-                        // For PDFs, prefer PDFium when available
-                        #[cfg(feature = "pdfium-render")]
-                        if format == DocFormat::Pdf {
-                            if let Some(ref engine) = pe {
-                                return crate::doc_reader::read_pdf_pdfium(engine, &data)
-                                    .map_err(mlua::Error::external);
-                            }
+            match mode {
+                ReadMode::Structural => {
+                    // For PDFs, prefer PDFium when available
+                    #[cfg(feature = "pdfium-render")]
+                    if format == DocFormat::Pdf {
+                        if let Some(ref engine) = pe {
+                            return crate::doc_reader::read_pdf_pdfium(engine, &data)
+                                .map_err(mlua::Error::external);
                         }
-                        // Local extraction fallback — never calls callback
-                        read_document(&data, format, &read_opts)
-                            .map_err(mlua::Error::external)
                     }
-                    ReadMode::Vision => {
-                        let callback = cb.as_ref().ok_or_else(|| {
-                            mlua::Error::external(
-                                "vision mode requires a vision callback (not available in this environment)"
-                            )
-                        })?;
+                    // Local extraction fallback — never calls callback
+                    read_document(&data, format, &read_opts)
+                        .map_err(mlua::Error::external)
+                }
+                ReadMode::Vision => {
+                    let callback = cb.as_ref().ok_or_else(|| {
+                        mlua::Error::external(
+                            "vision mode requires a vision callback (not available in this environment)"
+                        )
+                    })?;
 
-                        let filename = std::path::Path::new(&path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("file")
-                            .to_string();
+                    let filename = std::path::Path::new(&path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("file")
+                        .to_string();
 
-                        let key = cache_key(&data, &query);
+                    let key = cache_key(&data, &query);
 
-                        // Check disk cache (vision results only)
-                        if let Some(ref dir) = cd {
-                            if let Some(cached) = cache_read(dir, &key) {
-                                return Ok(cached);
-                            }
+                    // Check disk cache (vision results only)
+                    if let Some(ref dir) = cd {
+                        if let Some(cached) = cache_read(dir, &key) {
+                            return Ok(cached);
                         }
+                    }
 
-                        match callback(&data, &filename, &query) {
-                            Ok(text) => {
-                                if let Some(ref dir) = cd {
-                                    cache_write(dir, &key, &text);
-                                }
-                                Ok(text)
+                    match callback(&data, &filename, &query) {
+                        Ok(text) => {
+                            if let Some(ref dir) = cd {
+                                cache_write(dir, &key, &text);
                             }
-                            Err(e) => Err(mlua::Error::external(e)),
+                            Ok(text)
                         }
+                        Err(e) => Err(mlua::Error::external(e)),
                     }
                 }
-            })?,
-        )?;
+            }
+        })?,
+    )?;
     }
 
     // doc.readAsync(path, opts?) -> DocFuture
@@ -1023,99 +1076,109 @@ pub(crate) fn register_doc_globals(
         #[cfg(feature = "pdfium-render")]
         let pe = pdfium_engine.clone();
         doc.set(
-            "readAsync",
-            lua.create_function(move |_, args: MultiValue| {
-                let (path, read_opts, query) = parse_doc_read_args("doc.readAsync", &args)?;
+        "readAsync",
+        lua.create_function(move |_, args: MultiValue| {
+            let (path, read_opts, query) = parse_doc_read_args("doc.readAsync", &args)?;
 
-                // Detect format (fail fast)
-                let format = DocFormat::from_extension(&path).ok_or_else(|| {
-                    mlua::Error::external(format!(
-                        "unsupported file format: {}",
-                        std::path::Path::new(&path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("(no extension)")
-                    ))
-                })?;
+            // Detect format (fail fast)
+            let format = DocFormat::from_extension(&path).ok_or_else(|| {
+                mlua::Error::external(format!(
+                    "unsupported file format: {}",
+                    std::path::Path::new(&path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("(no extension)")
+                ))
+            })?;
 
-                // Resolve mode
-                let mode = format.resolve_mode(read_opts.mode, cb.is_some());
+            // Resolve mode
+            let mode = format.resolve_mode(read_opts.mode, cb.is_some());
 
-                // Resolve path and read bytes (fail fast)
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            // Resolve path and read bytes (fail fast)
+            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
+            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
 
-                let result_slot = Arc::new(Mutex::new(None));
+            let result_slot = Arc::new(Mutex::new(None));
 
-                match mode {
-                    ReadMode::Structural => {
-                        // For PDFs, prefer PDFium when available
-                        #[cfg(feature = "pdfium-render")]
-                        let result = if format == DocFormat::Pdf {
-                            if let Some(ref engine) = pe {
-                                crate::doc_reader::read_pdf_pdfium(engine, &data)
-                            } else {
-                                read_document(&data, format, &read_opts)
-                            }
+            match mode {
+                ReadMode::Structural => {
+                    // For PDFs, prefer PDFium when available
+                    #[cfg(feature = "pdfium-render")]
+                    let result = if format == DocFormat::Pdf {
+                        if let Some(ref engine) = pe {
+                            crate::doc_reader::read_pdf_pdfium(engine, &data)
                         } else {
                             read_document(&data, format, &read_opts)
-                        };
-                        #[cfg(not(feature = "pdfium-render"))]
-                        let result = read_document(&data, format, &read_opts);
-                        // Structural reads resolve immediately in-place (no queuing)
-                        *result_slot.lock().unwrap() = Some(result);
-                    }
-                    ReadMode::Vision => {
-                        if cb.is_none() {
-                            *result_slot.lock().unwrap() = Some(Err(
-                                "vision mode requires a vision callback (not available in this environment)".to_string()
-                            ));
-                        } else {
-                            let filename = std::path::Path::new(&path)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("file")
-                                .to_string();
-                            let key = cache_key(&data, &query);
-
-                            // Check disk cache — if hit, pre-resolve
-                            if let Some(ref dir) = cd {
-                                if let Some(cached) = cache_read(dir, &key) {
-                                    *result_slot.lock().unwrap() = Some(Ok(cached));
-                                    return Ok(DocFuture {
-                                        result_slot,
-                                        pending_reads: pq.clone(),
-                                        callback: cb.clone(),
-                                        cache_dir: cd.clone(),
-                                    });
-                                }
-                            }
-
-                            // Defer to pending queue for parallel resolution
-                            let mut queue = pq.lock().unwrap();
-                            queue.push(PendingRead {
-                                data,
-                                filename,
-                                format,
-                                query,
-                                read_opts,
-                                cache_key: key,
-                                result_slot: result_slot.clone(),
-                            });
                         }
+                    } else {
+                        read_document(&data, format, &read_opts)
+                    };
+                    #[cfg(not(feature = "pdfium-render"))]
+                    let result = read_document(&data, format, &read_opts);
+                    // Structural reads resolve immediately in-place (no queuing)
+                    *result_slot.lock().unwrap() = Some(result);
+                }
+                ReadMode::Vision => {
+                    if cb.is_none() {
+                        *result_slot.lock().unwrap() = Some(Err(
+                            "vision mode requires a vision callback (not available in this environment)".to_string()
+                        ));
+                    } else {
+                        let filename = std::path::Path::new(&path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("file")
+                            .to_string();
+                        let key = cache_key(&data, &query);
+
+                        // Check disk cache — if hit, pre-resolve
+                        if let Some(ref dir) = cd {
+                            if let Some(cached) = cache_read(dir, &key) {
+                                *result_slot.lock().unwrap() = Some(Ok(cached));
+                                return Ok(DocFuture {
+                                    result_slot,
+                                    pending_reads: pq.clone(),
+                                    callback: cb.clone(),
+                                    cache_dir: cd.clone(),
+                                });
+                            }
+                        }
+
+                        // Defer to pending queue for parallel resolution
+                        let mut queue = pq.lock().unwrap();
+                        queue.push(PendingRead {
+                            data,
+                            filename,
+                            format,
+                            query,
+                            read_opts,
+                            cache_key: key,
+                            result_slot: result_slot.clone(),
+                        });
                     }
                 }
+            }
 
-                Ok(DocFuture {
-                    result_slot,
-                    pending_reads: pq.clone(),
-                    callback: cb.clone(),
-                    cache_dir: cd.clone(),
-                })
-            })?,
-        )?;
+            Ok(DocFuture {
+                result_slot,
+                pending_reads: pq.clone(),
+                callback: cb.clone(),
+                cache_dir: cd.clone(),
+            })
+        })?,
+    )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "pdfium-render")]
+fn register_doc_pdf_metadata(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+    pdfium_engine: Option<Arc<PdfiumEngine>>,
+) -> Result<(), mlua::Error> {
     // doc.pdfInfo(path) -> table — PDF metadata (always structural/PDFium)
     #[cfg(feature = "pdfium-render")]
     {
@@ -1219,6 +1282,16 @@ pub(crate) fn register_doc_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "pdfium-render")]
+fn register_doc_pdf_page_ops(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+    pdfium_engine: Option<Arc<PdfiumEngine>>,
+) -> Result<(), mlua::Error> {
     // doc.fillForm({path, fields, output, flatten?}) -> void
     #[cfg(feature = "pdfium-render")]
     {
@@ -1425,208 +1498,218 @@ pub(crate) fn register_doc_globals(
         let m = mounts.clone();
         let pe = pdfium_engine.clone();
         doc.set(
-            "editPages",
-            lua.create_function(move |_, args: MultiValue| {
-                use crate::doc_reader::PageOperation;
+        "editPages",
+        lua.create_function(move |_, args: MultiValue| {
+            use crate::doc_reader::PageOperation;
 
-                if args.is_empty() {
-                    return Err(arg_error("doc.editPages", DOC_EDIT_PAGES_PARAMS));
-                }
-                let opts = match &args[0] {
-                    mlua::Value::Table(t) => t.clone(),
-                    _ => return Err(mlua::Error::external(
-                        "doc.editPages: argument must be a table {path, operations, output}"
-                    )),
-                };
+            if args.is_empty() {
+                return Err(arg_error("doc.editPages", DOC_EDIT_PAGES_PARAMS));
+            }
+            let opts = match &args[0] {
+                mlua::Value::Table(t) => t.clone(),
+                _ => return Err(mlua::Error::external(
+                    "doc.editPages: argument must be a table {path, operations, output}"
+                )),
+            };
 
-                let path: String = opts.get::<String>("path")
-                    .map_err(|_| mlua::Error::external("doc.editPages: missing 'path' field"))?;
-                let ops_table: mlua::Table = opts.get::<mlua::Table>("operations")
-                    .map_err(|_| mlua::Error::external("doc.editPages: missing 'operations' table"))?;
-                let output: String = opts.get::<String>("output")
-                    .map_err(|_| mlua::Error::external("doc.editPages: missing 'output' field"))?;
+            let path: String = opts.get::<String>("path")
+                .map_err(|_| mlua::Error::external("doc.editPages: missing 'path' field"))?;
+            let ops_table: mlua::Table = opts.get::<mlua::Table>("operations")
+                .map_err(|_| mlua::Error::external("doc.editPages: missing 'operations' table"))?;
+            let output: String = opts.get::<String>("output")
+                .map_err(|_| mlua::Error::external("doc.editPages: missing 'output' field"))?;
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.editPages requires PDFium (not available)")
-                })?;
+            let engine = pe.as_ref().ok_or_else(|| {
+                mlua::Error::external("doc.editPages requires PDFium (not available)")
+            })?;
 
-                // Parse operations from Lua table
-                let mut operations: Vec<PageOperation> = Vec::new();
-                for i in 1..=ops_table.len()? {
-                    let op: mlua::Table = ops_table.get::<mlua::Table>(i)?;
-                    let op_type: String = op.get::<String>("type")
-                        .map_err(|_| mlua::Error::external(
-                            "doc.editPages: each operation must have a 'type' field"
-                        ))?;
+            // Parse operations from Lua table
+            let mut operations: Vec<PageOperation> = Vec::new();
+            for i in 1..=ops_table.len()? {
+                let op: mlua::Table = ops_table.get::<mlua::Table>(i)?;
+                let op_type: String = op.get::<String>("type")
+                    .map_err(|_| mlua::Error::external(
+                        "doc.editPages: each operation must have a 'type' field"
+                    ))?;
 
-                    match op_type.as_str() {
-                        "delete" => {
-                            let pages_table: mlua::Table = op.get::<mlua::Table>("pages")
-                                .map_err(|_| mlua::Error::external(
-                                    "doc.editPages: delete operation requires 'pages' table"
-                                ))?;
-                            let mut pages: Vec<u16> = Vec::new();
-                            for j in 1..=pages_table.len()? {
-                                let p: i64 = pages_table.get::<i64>(j)?;
-                                if p < 1 {
-                                    return Err(mlua::Error::external(
-                                        "doc.editPages: page numbers are 1-indexed"
-                                    ));
-                                }
-                                pages.push((p - 1) as u16); // Convert to 0-indexed
+                match op_type.as_str() {
+                    "delete" => {
+                        let pages_table: mlua::Table = op.get::<mlua::Table>("pages")
+                            .map_err(|_| mlua::Error::external(
+                                "doc.editPages: delete operation requires 'pages' table"
+                            ))?;
+                        let mut pages: Vec<u16> = Vec::new();
+                        for j in 1..=pages_table.len()? {
+                            let p: i64 = pages_table.get::<i64>(j)?;
+                            if p < 1 {
+                                return Err(mlua::Error::external(
+                                    "doc.editPages: page numbers are 1-indexed"
+                                ));
                             }
-                            operations.push(PageOperation::Delete(pages));
+                            pages.push((p - 1) as u16); // Convert to 0-indexed
                         }
-                        "rotate" => {
-                            let pages_table: mlua::Table = op.get::<mlua::Table>("pages")
-                                .map_err(|_| mlua::Error::external(
-                                    "doc.editPages: rotate operation requires 'pages' table"
-                                ))?;
-                            let degrees: i64 = op.get::<i64>("degrees")
-                                .map_err(|_| mlua::Error::external(
-                                    "doc.editPages: rotate operation requires 'degrees' field"
-                                ))?;
-                            let mut rotations: Vec<(u16, u16)> = Vec::new();
-                            for j in 1..=pages_table.len()? {
-                                let p: i64 = pages_table.get::<i64>(j)?;
-                                if p < 1 {
-                                    return Err(mlua::Error::external(
-                                        "doc.editPages: page numbers are 1-indexed"
-                                    ));
-                                }
-                                rotations.push(((p - 1) as u16, degrees as u16));
+                        operations.push(PageOperation::Delete(pages));
+                    }
+                    "rotate" => {
+                        let pages_table: mlua::Table = op.get::<mlua::Table>("pages")
+                            .map_err(|_| mlua::Error::external(
+                                "doc.editPages: rotate operation requires 'pages' table"
+                            ))?;
+                        let degrees: i64 = op.get::<i64>("degrees")
+                            .map_err(|_| mlua::Error::external(
+                                "doc.editPages: rotate operation requires 'degrees' field"
+                            ))?;
+                        let mut rotations: Vec<(u16, u16)> = Vec::new();
+                        for j in 1..=pages_table.len()? {
+                            let p: i64 = pages_table.get::<i64>(j)?;
+                            if p < 1 {
+                                return Err(mlua::Error::external(
+                                    "doc.editPages: page numbers are 1-indexed"
+                                ));
                             }
-                            operations.push(PageOperation::Rotate(rotations));
+                            rotations.push(((p - 1) as u16, degrees as u16));
                         }
-                        "reorder" => {
-                            let order_table: mlua::Table = op.get::<mlua::Table>("order")
-                                .map_err(|_| mlua::Error::external(
-                                    "doc.editPages: reorder operation requires 'order' table"
-                                ))?;
-                            let mut order: Vec<u16> = Vec::new();
-                            for j in 1..=order_table.len()? {
-                                let p: i64 = order_table.get::<i64>(j)?;
-                                if p < 1 {
-                                    return Err(mlua::Error::external(
-                                        "doc.editPages: page numbers are 1-indexed"
-                                    ));
-                                }
-                                order.push((p - 1) as u16); // Convert to 0-indexed
+                        operations.push(PageOperation::Rotate(rotations));
+                    }
+                    "reorder" => {
+                        let order_table: mlua::Table = op.get::<mlua::Table>("order")
+                            .map_err(|_| mlua::Error::external(
+                                "doc.editPages: reorder operation requires 'order' table"
+                            ))?;
+                        let mut order: Vec<u16> = Vec::new();
+                        for j in 1..=order_table.len()? {
+                            let p: i64 = order_table.get::<i64>(j)?;
+                            if p < 1 {
+                                return Err(mlua::Error::external(
+                                    "doc.editPages: page numbers are 1-indexed"
+                                ));
                             }
-                            operations.push(PageOperation::Reorder(order));
+                            order.push((p - 1) as u16); // Convert to 0-indexed
                         }
-                        other => {
-                            return Err(mlua::Error::external(format!(
-                                "doc.editPages: unknown operation type '{}' (expected 'delete', 'rotate', or 'reorder')",
-                                other
-                            )));
-                        }
+                        operations.push(PageOperation::Reorder(order));
+                    }
+                    other => {
+                        return Err(mlua::Error::external(format!(
+                            "doc.editPages: unknown operation type '{}' (expected 'delete', 'rotate', or 'reorder')",
+                            other
+                        )));
                     }
                 }
+            }
 
-                // Read source PDF
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            // Read source PDF
+            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
+            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
 
-                let result_bytes = crate::doc_reader::pdf_edit_pages(engine, &data, &operations)
-                    .map_err(mlua::Error::external)?;
+            let result_bytes = crate::doc_reader::pdf_edit_pages(engine, &data, &operations)
+                .map_err(mlua::Error::external)?;
 
-                let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
-                std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
+            let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
+            std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
 
-                Ok(())
-            })?,
-        )?;
+            Ok(())
+        })?,
+    )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "pdfium-render")]
+fn register_doc_pdf_annotations(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+    pdfium_engine: Option<Arc<PdfiumEngine>>,
+) -> Result<(), mlua::Error> {
     // doc.addAnnotation({path, page, type, x, y, width, height, color?, contents?, output}) -> void
     #[cfg(feature = "pdfium-render")]
     {
         let m = mounts.clone();
         let pe = pdfium_engine.clone();
         doc.set(
-            "addAnnotation",
-            lua.create_function(move |_, args: MultiValue| {
-                use crate::doc_reader::{AnnotationParams, AnnotationType};
+        "addAnnotation",
+        lua.create_function(move |_, args: MultiValue| {
+            use crate::doc_reader::{AnnotationParams, AnnotationType};
 
-                if args.is_empty() {
-                    return Err(arg_error("doc.addAnnotation", DOC_ADD_ANNOTATION_PARAMS));
-                }
-                let opts = match &args[0] {
-                    mlua::Value::Table(t) => t.clone(),
-                    _ => return Err(mlua::Error::external(
-                        "doc.addAnnotation: argument must be a table {path, page, type, x, y, width, height, output, ...}"
-                    )),
-                };
+            if args.is_empty() {
+                return Err(arg_error("doc.addAnnotation", DOC_ADD_ANNOTATION_PARAMS));
+            }
+            let opts = match &args[0] {
+                mlua::Value::Table(t) => t.clone(),
+                _ => return Err(mlua::Error::external(
+                    "doc.addAnnotation: argument must be a table {path, page, type, x, y, width, height, output, ...}"
+                )),
+            };
 
-                let path: String = opts.get::<String>("path")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'path' field"))?;
-                let page: i64 = opts.get::<i64>("page")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'page' field"))?;
-                if page < 1 {
-                    return Err(mlua::Error::external("doc.addAnnotation: page numbers are 1-indexed"));
-                }
-                let annot_type_str: String = opts.get::<String>("type")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'type' field"))?;
-                let x: f64 = opts.get::<f64>("x")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'x' field"))?;
-                let y: f64 = opts.get::<f64>("y")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'y' field"))?;
-                let width: f64 = opts.get::<f64>("width")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'width' field"))?;
-                let height: f64 = opts.get::<f64>("height")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'height' field"))?;
-                let output: String = opts.get::<String>("output")
-                    .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'output' field"))?;
+            let path: String = opts.get::<String>("path")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'path' field"))?;
+            let page: i64 = opts.get::<i64>("page")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'page' field"))?;
+            if page < 1 {
+                return Err(mlua::Error::external("doc.addAnnotation: page numbers are 1-indexed"));
+            }
+            let annot_type_str: String = opts.get::<String>("type")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'type' field"))?;
+            let x: f64 = opts.get::<f64>("x")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'x' field"))?;
+            let y: f64 = opts.get::<f64>("y")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'y' field"))?;
+            let width: f64 = opts.get::<f64>("width")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'width' field"))?;
+            let height: f64 = opts.get::<f64>("height")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'height' field"))?;
+            let output: String = opts.get::<String>("output")
+                .map_err(|_| mlua::Error::external("doc.addAnnotation: missing 'output' field"))?;
 
-                let annotation_type = match annot_type_str.as_str() {
-                    "text" => AnnotationType::Text,
-                    "freeText" => AnnotationType::FreeText,
-                    "highlight" => AnnotationType::Highlight,
-                    "underline" => AnnotationType::Underline,
-                    "strikeout" => AnnotationType::Strikeout,
-                    "square" => AnnotationType::Square,
-                    "stamp" => AnnotationType::Stamp,
-                    other => return Err(mlua::Error::external(format!(
-                        "doc.addAnnotation: unknown type '{}' (expected: text, freeText, highlight, underline, strikeout, square, stamp)",
-                        other
-                    ))),
-                };
+            let annotation_type = match annot_type_str.as_str() {
+                "text" => AnnotationType::Text,
+                "freeText" => AnnotationType::FreeText,
+                "highlight" => AnnotationType::Highlight,
+                "underline" => AnnotationType::Underline,
+                "strikeout" => AnnotationType::Strikeout,
+                "square" => AnnotationType::Square,
+                "stamp" => AnnotationType::Stamp,
+                other => return Err(mlua::Error::external(format!(
+                    "doc.addAnnotation: unknown type '{}' (expected: text, freeText, highlight, underline, strikeout, square, stamp)",
+                    other
+                ))),
+            };
 
-                // Parse optional color from hex string
-                let color = opts.get::<String>("color").ok().map(|s| parse_hex_color(&s))
-                    .transpose()
-                    .map_err(mlua::Error::external)?;
+            // Parse optional color from hex string
+            let color = opts.get::<String>("color").ok().map(|s| parse_hex_color(&s))
+                .transpose()
+                .map_err(mlua::Error::external)?;
 
-                let contents = opts.get::<String>("contents").ok();
+            let contents = opts.get::<String>("contents").ok();
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.addAnnotation requires PDFium (not available)")
-                })?;
+            let engine = pe.as_ref().ok_or_else(|| {
+                mlua::Error::external("doc.addAnnotation requires PDFium (not available)")
+            })?;
 
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
+            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
 
-                let params = AnnotationParams {
-                    page: (page - 1) as u16,
-                    annotation_type,
-                    x: x as f32,
-                    y: y as f32,
-                    width: width as f32,
-                    height: height as f32,
-                    color,
-                    contents,
-                };
+            let params = AnnotationParams {
+                page: (page - 1) as u16,
+                annotation_type,
+                x: x as f32,
+                y: y as f32,
+                width: width as f32,
+                height: height as f32,
+                color,
+                contents,
+            };
 
-                let result_bytes = crate::doc_reader::pdf_add_annotation(engine, &data, &params)
-                    .map_err(mlua::Error::external)?;
+            let result_bytes = crate::doc_reader::pdf_add_annotation(engine, &data, &params)
+                .map_err(mlua::Error::external)?;
 
-                let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
-                std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
+            let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
+            std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
 
-                Ok(())
-            })?,
-        )?;
+            Ok(())
+        })?,
+    )?;
     }
 
     // doc.watermark({path, text, fontSize?, color?, rotation?, pages?, output}) -> void
@@ -1719,6 +1802,14 @@ pub(crate) fn register_doc_globals(
         )?;
     }
 
+    Ok(())
+}
+
+fn register_doc_rendering(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // doc.render(text, from, to, opts?) -> string (or binary string for PDF)
     // Also accepts: doc.render({text=..., from=..., to=..., ...pageOpts})
     doc.set(
@@ -1903,25 +1994,6 @@ pub(crate) fn register_doc_globals(
             })?,
         )?;
     }
-
-    // Select documentation based on vision callback and PDFium presence
-    #[cfg(feature = "pdfium-render")]
-    let has_pdfium = pdfium_engine.is_some();
-    #[cfg(not(feature = "pdfium-render"))]
-    let has_pdfium = false;
-
-    let mod_doc = match (vision_callback.is_some(), has_pdfium) {
-        #[cfg(feature = "pdfium-render")]
-        (true, true) => &DOC_MOD_DOC_VISION_PDFIUM,
-        #[cfg(feature = "pdfium-render")]
-        (false, true) => &DOC_MOD_DOC_PDFIUM,
-        (true, _) => &DOC_MOD_DOC_VISION,
-        (false, _) => &DOC_MOD_DOC,
-    };
-    crate::lua_util::register_help_functions(lua, &doc, mod_doc)?;
-
-    lua.globals().set("doc", doc)?;
-    wrap_module_with_help_hints(lua, "doc")?;
 
     Ok(())
 }
