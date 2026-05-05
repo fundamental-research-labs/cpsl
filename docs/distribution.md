@@ -150,9 +150,9 @@ Each module compiles to a WASM blob. `cpsl build` bundles selected WASM blobs in
 
 3. **File I/O.** The `fs` module uses `std::fs` which maps to WASI filesystem capabilities in WASM. This works but requires a WASI runtime. The sandbox semantics change: instead of OS-level file access mediated by the mount table, you get WASI-level virtual filesystem. The security model is different.
 
-4. **HTTP.** The `native-http` crate uses OS-native HTTP (Foundation/URLSession on macOS). This doesn't exist in WASM. Would need a WASM-compatible HTTP client or WASI-HTTP proposal support.
+4. **HTTP.** The `modules/native-http` support crate uses OS-native HTTP (Foundation/URLSession on macOS). This doesn't exist in WASM. Would need a WASM-compatible HTTP client or WASI-HTTP proposal support.
 
-5. **native-webview-pdf.** Uses macOS WebKit for PDF rendering. Completely impossible in WASM.
+5. **native-webview-pdf.** The `modules/native-webview-pdf` support crate uses macOS WebKit for PDF rendering. Completely impossible in WASM.
 
 6. **Performance.** WASM execution is 1.5-3x slower than native for compute-heavy workloads. For Luau (which is already interpreted), the overhead is Luau interpretation inside WASM VM inside host — two layers of interpretation. The `numx` module with `ndarray`/`faer` linear algebra would be dramatically slower.
 

@@ -14,7 +14,7 @@ REPORT="$OUTPUT_DIR/report.md"
 # Ensure binary exists
 if [[ ! -x "$CPSL" ]]; then
     echo "error: cpsl binary not found at $CPSL"
-    echo "  run: cargo build --release && ditto target/release/cpsl-cli cpsl"
+    echo "  run: ./build-cli.sh"
     echo "  (use 'ditto', not 'cp': macOS SIGKILLs cp'd ad-hoc-signed binaries)"
     exit 1
 fi
@@ -213,7 +213,7 @@ cat >> "$REPORT" <<EOF
 
 | Phase | Description |
 |-------|-------------|
-| **Startup** | Process launch + arg parse + sandbox init + pyrt.luau load |
+| **Startup** | Process launch + arg parse + sandbox init + runtime/pyrt.luau load |
 | **Transpile** | Python source → Luau source (Rust, single-pass) |
 | **Luau exec** | Luau VM execution of transpiled code |
 | **Py startup** | Python interpreter startup (wall time minus internal exec; baseline via \`python3 -c "pass"\`: $(ns_to_ms $PY_STARTUP_NS)ms) |

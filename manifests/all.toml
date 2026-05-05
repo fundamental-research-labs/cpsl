@@ -1,0 +1,17 @@
+# All broadly registered modules
+# Build: cpsl build -t all-modules -f manifests/all.toml
+
+[sandbox]
+name = "all-modules"
+
+[modules]
+fs = true
+json = true
+csv = true
+yaml = true
+xml = true
+http = true
+compress = true
+doc = true
+plot = true
+numx = true

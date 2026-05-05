@@ -1,0 +1,29 @@
+[package]
+name = "cpsl-cli"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["all"]
+all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
+       "mod-http", "mod-compress", "mod-doc", "mod-plot", "mod-numpy"]
+
+mod-fs = ["cpsl-core/mod-fs"]
+mod-json = ["cpsl-core/mod-json"]
+mod-csv = ["cpsl-core/mod-csv"]
+mod-yaml = ["cpsl-core/mod-yaml"]
+mod-xml = ["cpsl-core/mod-xml"]
+mod-http = ["cpsl-core/mod-http"]
+mod-compress = ["cpsl-core/mod-compress"]
+mod-doc = ["cpsl-core/mod-doc"]
+mod-plot = ["cpsl-core/mod-plot"]
+mod-numpy = ["cpsl-core/mod-numpy"]
+
+[dependencies]
+cpsl-core = { path = "../core", default-features = false }
+clap = { version = "4", features = ["derive"] }
+rustyline = "15"
+dirs = "6"
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+atty = "0.2"

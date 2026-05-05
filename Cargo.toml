@@ -1,3 +1,8 @@
 [workspace]
-members = ["cpsl-core", "cpsl-cli", "native-http", "native-webview-pdf"]
+members = [
+    "core",
+    "cli",
+    "modules/native-http",
+    "modules/native-webview-pdf",
+]
 resolver = "2"

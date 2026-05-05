@@ -101,10 +101,12 @@ cpsl run my-tool -- 'print(1+1)'   # inline code
 
 ### Example Configs
 
-See `examples/` for ready-to-use configs:
-- `json-only.toml` — Minimal: just JSON + filesystem
+See `manifests/` for ready-to-use sandbox image manifests:
+- `minimal.toml` — Filesystem, JSON, and CSV
+- `json-only.toml` — Just JSON + filesystem
 - `data-science.toml` — Structured data + numerical computing + plotting
-- `full.toml` — All modules
+- `full.toml` — Broad module set with Python enabled
+- `all.toml` — All core manifest modules
 
 ## Downstream Consumers
 
@@ -113,7 +115,7 @@ Any Rust crate can depend on `cpsl-core` with selected features:
 ```toml
 # In your Cargo.toml
 [dependencies]
-cpsl-core = { path = "path/to/cpsl-core", features = ["mod-json", "mod-fs"] }
+cpsl-core = { path = "path/to/cpsl/core", features = ["mod-json", "mod-fs"] }
 ```
 
 The desktop app uses `features = ["all"]` to include everything.

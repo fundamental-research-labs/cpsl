@@ -1,0 +1,25 @@
+# Full sandbox: all modules enabled
+# Build: cpsl build -t full -f manifests/full.toml
+# Run:   cpsl run full -i --lua
+
+[sandbox]
+name = "full"
+
+[modules]
+fs = true
+json = true
+csv = true
+yaml = true
+xml = true
+http = true
+compress = true
+doc = true
+plot = true
+numx = true
+
+[python]
+enabled = true
+
+[http]
+allowed_domains = []
+denied_domains = []

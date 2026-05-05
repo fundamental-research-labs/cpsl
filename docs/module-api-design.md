@@ -290,13 +290,13 @@ Descriptions must be **runtime-agnostic**. They are displayed in Lua REPL, shell
 2. Verify all option names against the Python reserved words list.
 3. Implement dual-signature support for every function (see patterns above).
 4. Add short aliases for every option.
-5. Create `cpsl-core/src/{module}.rs` following the `csv_mod.rs` pattern.
+5. Create `core/src/{module}.rs` following the `csv_mod.rs` pattern.
 6. Register in `Sandbox::build()`.
 7. Add to `register_global_help()` in `sandbox.rs`.
-8. Write integration tests in `cpsl-core/tests/{module}_integration.rs` covering both calling conventions.
+8. Write integration tests in `core/tests/{module}_integration.rs` covering both calling conventions.
 9. Write shell round-trip tests proving `module method args --flags` works end-to-end.
 10. **Update the agent's `TOOL_DESCRIPTION`** in `backend/agent/tools/local_sandbox.py` to list the new module and its key functions. If the LLM doesn't know a module exists, it will fall back to Python/shell instead of using the native Lua API.
-11. **Update the help known-modules lists** in both `sandbox.rs` (`register_global_help`) and `shrt.luau` (`sh.shell_help`) so that `help()` displays the new module.
+11. **Update the help known-modules lists** in both `sandbox.rs` (`register_global_help`) and `runtime/shrt.luau` (`sh.shell_help`) so that `help()` displays the new module.
 
 **Note**: There is no `KNOWN_MODULES` list for shell dispatch. Shell dispatch is dynamic — `sh.run()` checks `_G[name]` at runtime. Any module registered as a global table is automatically available from shell. However, the help command and agent tool description use static lists that must be updated manually.
 
