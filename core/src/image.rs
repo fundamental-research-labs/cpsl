@@ -984,6 +984,230 @@ fn blend_pixel(base: Rgba<u8>, over: Rgba<u8>, mode: &str) -> Result<Rgba<u8>, m
 pub fn register_image_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), mlua::Error> {
     let image_table = lua.create_table()?;
 
+    register_image_info_and_transforms(lua, &image_table, mounts.clone())?;
+
+    register_image_composition_and_drawing(lua, &image_table, mounts.clone())?;
+
+    register_image_text_and_fonts(lua, &image_table, mounts.clone())?;
+
+    register_image_filter_effects(lua, &image_table, mounts.clone())?;
+
+    // PIL compatibility aliases
+    let composite_fn: mlua::Function = image_table.get("composite")?;
+    image_table.set("paste", composite_fn)?;
+
+    register_help_functions(lua, &image_table, &IMAGE_DOC)?;
+
+    lua.globals().set("image", image_table)?;
+    wrap_module_with_help_hints(lua, "image")?;
+
+    Ok(())
+}
+
+/// A discovered system font.
+struct FontInfo {
+    name: String,
+    path: String,
+    style: String,
+}
+
+/// Discover system fonts from standard OS directories.
+fn discover_system_fonts() -> Vec<FontInfo> {
+    let mut fonts = Vec::new();
+    let dirs = if cfg!(target_os = "macos") {
+        vec![
+            "/System/Library/Fonts".to_string(),
+            "/Library/Fonts".to_string(),
+            std::env::var("HOME")
+                .map(|h| format!("{h}/Library/Fonts"))
+                .unwrap_or_default(),
+        ]
+    } else {
+        vec![
+            "/usr/share/fonts".to_string(),
+            "/usr/local/share/fonts".to_string(),
+            std::env::var("HOME")
+                .map(|h| format!("{h}/.fonts"))
+                .unwrap_or_default(),
+            std::env::var("HOME")
+                .map(|h| format!("{h}/.local/share/fonts"))
+                .unwrap_or_default(),
+        ]
+    };
+
+    for dir in &dirs {
+        if dir.is_empty() {
+            continue;
+        }
+        scan_font_dir(dir, &mut fonts);
+    }
+    fonts.sort_by(|a, b| a.name.cmp(&b.name));
+    fonts
+}
+
+/// Recursively scan a directory for font files.
+fn scan_font_dir(dir: &str, fonts: &mut Vec<FontInfo>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_font_dir(&path.to_string_lossy(), fonts);
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if !matches!(ext.as_str(), "ttf" | "otf" | "ttc" | "otc") {
+            continue;
+        }
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        // Infer style from filename
+        let lower = file_stem.to_lowercase();
+        let style = if lower.contains("bolditalic") || lower.contains("bold-italic") {
+            "bold-italic"
+        } else if lower.contains("bold") {
+            "bold"
+        } else if lower.contains("italic") || lower.contains("oblique") {
+            "italic"
+        } else if lower.contains("light") {
+            "light"
+        } else if lower.contains("thin") {
+            "thin"
+        } else if lower.contains("medium") {
+            "medium"
+        } else {
+            "regular"
+        };
+
+        // Clean name: remove style suffixes
+        let name = file_stem
+            .replace("-Bold", "")
+            .replace("-Italic", "")
+            .replace("-Regular", "")
+            .replace("-Light", "")
+            .replace("-Thin", "")
+            .replace("-Medium", "")
+            .replace("-BoldItalic", "")
+            .replace("-Oblique", "");
+
+        fonts.push(FontInfo {
+            name,
+            path: path.to_string_lossy().to_string(),
+            style: style.to_string(),
+        });
+    }
+}
+
+/// Load a font by name or path. If None, uses first available system sans-serif.
+fn load_font(font_spec: Option<&str>) -> Result<FontArc, mlua::Error> {
+    if let Some(spec) = font_spec {
+        // If it looks like a path (contains / or \), load directly
+        if spec.contains('/') || spec.contains('\\') {
+            let data = std::fs::read(spec).map_err(|e| {
+                mlua::Error::external(format!("image.text: failed to read font '{spec}': {e}"))
+            })?;
+            return FontArc::try_from_vec(data).map_err(|_| {
+                mlua::Error::external(format!("image.text: invalid font file '{spec}'"))
+            });
+        }
+
+        // Search system fonts by name (case-insensitive)
+        let lower = spec.to_lowercase();
+        let fonts = discover_system_fonts();
+        for font_info in &fonts {
+            if font_info.name.to_lowercase() == lower
+                || font_info
+                    .path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .starts_with(&lower)
+            {
+                let data = std::fs::read(&font_info.path).map_err(|e| {
+                    mlua::Error::external(format!(
+                        "image.text: failed to read font '{}': {e}",
+                        font_info.path
+                    ))
+                })?;
+                return FontArc::try_from_vec(data).map_err(|_| {
+                    mlua::Error::external(format!(
+                        "image.text: invalid font file '{}'",
+                        font_info.path
+                    ))
+                });
+            }
+        }
+        return Err(mlua::Error::external(format!(
+            "image.text: font '{spec}' not found. Use image.fonts() to list available fonts."
+        )));
+    }
+
+    // Default: find a sans-serif font
+    let preferred = [
+        "Helvetica",
+        "HelveticaNeue",
+        "Arial",
+        "SF-Pro",
+        "SFPro",
+        "DejaVuSans",
+        "LiberationSans",
+        "NotoSans",
+    ];
+    let fonts = discover_system_fonts();
+    for pref in &preferred {
+        let lower = pref.to_lowercase();
+        if let Some(found) = fonts
+            .iter()
+            .find(|f| f.name.to_lowercase() == lower && f.style == "regular")
+        {
+            let data = std::fs::read(&found.path).ok();
+            if let Some(data) = data {
+                if let Ok(font) = FontArc::try_from_vec(data) {
+                    return Ok(font);
+                }
+            }
+        }
+    }
+    // Fallback: use the first regular font we find
+    for font_info in &fonts {
+        if font_info.style == "regular" {
+            let data = std::fs::read(&font_info.path).ok();
+            if let Some(data) = data {
+                if let Ok(font) = FontArc::try_from_vec(data) {
+                    return Ok(font);
+                }
+            }
+        }
+    }
+    // Last resort: any font at all
+    for font_info in &fonts {
+        let data = std::fs::read(&font_info.path).ok();
+        if let Some(data) = data {
+            if let Ok(font) = FontArc::try_from_vec(data) {
+                return Ok(font);
+            }
+        }
+    }
+    Err(mlua::Error::external(
+        "image.text: no system fonts found. Use the font parameter with a path to a .ttf/.otf file.",
+    ))
+}
+
+fn register_image_info_and_transforms(
+    lua: &Lua,
+    image_table: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // image.info(path) -> {width, height, format}
     {
         let m = mounts.clone();
@@ -1268,6 +1492,14 @@ pub fn register_image_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), 
         )?;
     }
 
+    Ok(())
+}
+
+fn register_image_composition_and_drawing(
+    lua: &Lua,
+    image_table: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // image.composite(base, overlay, output, opts?)
     {
         let m = mounts.clone();
@@ -1480,104 +1712,112 @@ pub fn register_image_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), 
         )?;
     }
 
+    Ok(())
+}
+
+fn register_image_text_and_fonts(
+    lua: &Lua,
+    image_table: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // image.text(input, output, opts)
     {
         let m = mounts.clone();
         image_table.set(
-            "text",
-            lua.create_function(move |_, args: MultiValue| {
-                if args.is_empty() {
-                    return Err(arg_error("image.text", IMAGE_DOC.params("text")));
-                }
-                let input = extract_string(&args, 0, "input", "image.text")?;
-                let output_path = extract_string(&args, 1, "output", "image.text")?;
+        "text",
+        lua.create_function(move |_, args: MultiValue| {
+            if args.is_empty() {
+                return Err(arg_error("image.text", IMAGE_DOC.params("text")));
+            }
+            let input = extract_string(&args, 0, "input", "image.text")?;
+            let output_path = extract_string(&args, 1, "output", "image.text")?;
 
-                let opts = extract_opts(&args, 2).ok_or_else(|| {
-                    mlua::Error::external(
-                        "image.text: missing opts table {text, x, y, size, color, font?, align?, valign?}",
-                    )
-                })?;
+            let opts = extract_opts(&args, 2).ok_or_else(|| {
+                mlua::Error::external(
+                    "image.text: missing opts table {text, x, y, size, color, font?, align?, valign?}",
+                )
+            })?;
 
-                let text: String = opts.get("text").map_err(|_| {
-                    mlua::Error::external("image.text: opts.text is required (string)")
-                })?;
-                let x: i32 = opts.get::<f64>("x").map_err(|_| {
-                    mlua::Error::external("image.text: opts.x is required (number)")
-                })? as i32;
-                let y: i32 = opts.get::<f64>("y").map_err(|_| {
-                    mlua::Error::external("image.text: opts.y is required (number)")
-                })? as i32;
-                let size: f32 = opts.get::<f64>("size").map_err(|_| {
-                    mlua::Error::external("image.text: opts.size is required (number)")
-                })? as f32;
-                let color = extract_rgba_color(&opts, "color", [0, 0, 0, 255])?;
+            let text: String = opts.get("text").map_err(|_| {
+                mlua::Error::external("image.text: opts.text is required (string)")
+            })?;
+            let x: i32 = opts.get::<f64>("x").map_err(|_| {
+                mlua::Error::external("image.text: opts.x is required (number)")
+            })? as i32;
+            let y: i32 = opts.get::<f64>("y").map_err(|_| {
+                mlua::Error::external("image.text: opts.y is required (number)")
+            })? as i32;
+            let size: f32 = opts.get::<f64>("size").map_err(|_| {
+                mlua::Error::external("image.text: opts.size is required (number)")
+            })? as f32;
+            let color = extract_rgba_color(&opts, "color", [0, 0, 0, 255])?;
 
-                // Optional alignment fields
-                let align: String = opts
-                    .get::<String>("align")
-                    .unwrap_or_else(|_| "left".to_string());
-                let valign: String = opts
-                    .get::<String>("valign")
-                    .unwrap_or_else(|_| "top".to_string());
+            // Optional alignment fields
+            let align: String = opts
+                .get::<String>("align")
+                .unwrap_or_else(|_| "left".to_string());
+            let valign: String = opts
+                .get::<String>("valign")
+                .unwrap_or_else(|_| "top".to_string());
 
-                if !matches!(align.as_str(), "left" | "center" | "right") {
-                    return Err(mlua::Error::external(
-                        "image.text: opts.align must be 'left', 'center', or 'right'",
-                    ));
-                }
-                if !matches!(valign.as_str(), "top" | "center" | "bottom") {
-                    return Err(mlua::Error::external(
-                        "image.text: opts.valign must be 'top', 'center', or 'bottom'",
-                    ));
-                }
+            if !matches!(align.as_str(), "left" | "center" | "right") {
+                return Err(mlua::Error::external(
+                    "image.text: opts.align must be 'left', 'center', or 'right'",
+                ));
+            }
+            if !matches!(valign.as_str(), "top" | "center" | "bottom") {
+                return Err(mlua::Error::external(
+                    "image.text: opts.valign must be 'top', 'center', or 'bottom'",
+                ));
+            }
 
-                // Load font
-                let font_spec: Option<String> = opts.get("font").ok();
-                let font = load_font(font_spec.as_deref())?;
+            // Load font
+            let font_spec: Option<String> = opts.get("font").ok();
+            let font = load_font(font_spec.as_deref())?;
 
-                let img = load_image(&m, &input)?;
-                let mut canvas = img.to_rgba8();
+            let img = load_image(&m, &input)?;
+            let mut canvas = img.to_rgba8();
 
-                let scale = PxScale::from(size);
-                let scaled_font = font.as_scaled(scale);
+            let scale = PxScale::from(size);
+            let scaled_font = font.as_scaled(scale);
 
-                let lines: Vec<&str> = text.split('\n').collect();
-                let line_spacing = size * 1.2;
-                let total_height = lines.len() as f32 * line_spacing;
+            let lines: Vec<&str> = text.split('\n').collect();
+            let line_spacing = size * 1.2;
+            let total_height = lines.len() as f32 * line_spacing;
 
-                // Compute vertical offset based on valign
-                let base_y = match valign.as_str() {
-                    "center" => y - (total_height / 2.0) as i32,
-                    "bottom" => y - total_height as i32,
-                    _ => y, // "top"
+            // Compute vertical offset based on valign
+            let base_y = match valign.as_str() {
+                "center" => y - (total_height / 2.0) as i32,
+                "bottom" => y - total_height as i32,
+                _ => y, // "top"
+            };
+
+            for (line_idx, line) in lines.iter().enumerate() {
+                let line_y = base_y + (line_idx as f32 * line_spacing) as i32;
+
+                // Compute horizontal offset based on align
+                let draw_x = match align.as_str() {
+                    "center" | "right" => {
+                        let line_width: f32 = line
+                            .chars()
+                            .map(|c| scaled_font.h_advance(font.glyph_id(c)))
+                            .sum();
+                        if align == "center" {
+                            x - (line_width / 2.0) as i32
+                        } else {
+                            x - line_width as i32
+                        }
+                    }
+                    _ => x, // "left"
                 };
 
-                for (line_idx, line) in lines.iter().enumerate() {
-                    let line_y = base_y + (line_idx as f32 * line_spacing) as i32;
+                draw_text_mut(&mut canvas, color, draw_x, line_y, scale, &font, line);
+            }
 
-                    // Compute horizontal offset based on align
-                    let draw_x = match align.as_str() {
-                        "center" | "right" => {
-                            let line_width: f32 = line
-                                .chars()
-                                .map(|c| scaled_font.h_advance(font.glyph_id(c)))
-                                .sum();
-                            if align == "center" {
-                                x - (line_width / 2.0) as i32
-                            } else {
-                                x - line_width as i32
-                            }
-                        }
-                        _ => x, // "left"
-                    };
-
-                    draw_text_mut(&mut canvas, color, draw_x, line_y, scale, &font, line);
-                }
-
-                save_image(&m, &output_path, &DynamicImage::ImageRgba8(canvas))?;
-                Ok(output_path)
-            })?,
-        )?;
+            save_image(&m, &output_path, &DynamicImage::ImageRgba8(canvas))?;
+            Ok(output_path)
+        })?,
+    )?;
     }
 
     // image.fonts()
@@ -1662,6 +1902,14 @@ pub fn register_image_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), 
         )?;
     }
 
+    Ok(())
+}
+
+fn register_image_filter_effects(
+    lua: &Lua,
+    image_table: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // image.blur(input, output, sigma)
     {
         let m = mounts.clone();
@@ -1745,213 +1993,5 @@ pub fn register_image_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), 
         )?;
     }
 
-    // PIL compatibility aliases
-    let composite_fn: mlua::Function = image_table.get("composite")?;
-    image_table.set("paste", composite_fn)?;
-
-    register_help_functions(lua, &image_table, &IMAGE_DOC)?;
-
-    lua.globals().set("image", image_table)?;
-    wrap_module_with_help_hints(lua, "image")?;
-
     Ok(())
-}
-
-/// A discovered system font.
-struct FontInfo {
-    name: String,
-    path: String,
-    style: String,
-}
-
-/// Discover system fonts from standard OS directories.
-fn discover_system_fonts() -> Vec<FontInfo> {
-    let mut fonts = Vec::new();
-    let dirs = if cfg!(target_os = "macos") {
-        vec![
-            "/System/Library/Fonts".to_string(),
-            "/Library/Fonts".to_string(),
-            std::env::var("HOME")
-                .map(|h| format!("{h}/Library/Fonts"))
-                .unwrap_or_default(),
-        ]
-    } else {
-        vec![
-            "/usr/share/fonts".to_string(),
-            "/usr/local/share/fonts".to_string(),
-            std::env::var("HOME")
-                .map(|h| format!("{h}/.fonts"))
-                .unwrap_or_default(),
-            std::env::var("HOME")
-                .map(|h| format!("{h}/.local/share/fonts"))
-                .unwrap_or_default(),
-        ]
-    };
-
-    for dir in &dirs {
-        if dir.is_empty() {
-            continue;
-        }
-        scan_font_dir(dir, &mut fonts);
-    }
-    fonts.sort_by(|a, b| a.name.cmp(&b.name));
-    fonts
-}
-
-/// Recursively scan a directory for font files.
-fn scan_font_dir(dir: &str, fonts: &mut Vec<FontInfo>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            scan_font_dir(&path.to_string_lossy(), fonts);
-            continue;
-        }
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if !matches!(ext.as_str(), "ttf" | "otf" | "ttc" | "otc") {
-            continue;
-        }
-        let file_stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        // Infer style from filename
-        let lower = file_stem.to_lowercase();
-        let style = if lower.contains("bolditalic") || lower.contains("bold-italic") {
-            "bold-italic"
-        } else if lower.contains("bold") {
-            "bold"
-        } else if lower.contains("italic") || lower.contains("oblique") {
-            "italic"
-        } else if lower.contains("light") {
-            "light"
-        } else if lower.contains("thin") {
-            "thin"
-        } else if lower.contains("medium") {
-            "medium"
-        } else {
-            "regular"
-        };
-
-        // Clean name: remove style suffixes
-        let name = file_stem
-            .replace("-Bold", "")
-            .replace("-Italic", "")
-            .replace("-Regular", "")
-            .replace("-Light", "")
-            .replace("-Thin", "")
-            .replace("-Medium", "")
-            .replace("-BoldItalic", "")
-            .replace("-Oblique", "");
-
-        fonts.push(FontInfo {
-            name,
-            path: path.to_string_lossy().to_string(),
-            style: style.to_string(),
-        });
-    }
-}
-
-/// Load a font by name or path. If None, uses first available system sans-serif.
-fn load_font(font_spec: Option<&str>) -> Result<FontArc, mlua::Error> {
-    if let Some(spec) = font_spec {
-        // If it looks like a path (contains / or \), load directly
-        if spec.contains('/') || spec.contains('\\') {
-            let data = std::fs::read(spec).map_err(|e| {
-                mlua::Error::external(format!("image.text: failed to read font '{spec}': {e}"))
-            })?;
-            return FontArc::try_from_vec(data).map_err(|_| {
-                mlua::Error::external(format!("image.text: invalid font file '{spec}'"))
-            });
-        }
-
-        // Search system fonts by name (case-insensitive)
-        let lower = spec.to_lowercase();
-        let fonts = discover_system_fonts();
-        for font_info in &fonts {
-            if font_info.name.to_lowercase() == lower
-                || font_info
-                    .path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .starts_with(&lower)
-            {
-                let data = std::fs::read(&font_info.path).map_err(|e| {
-                    mlua::Error::external(format!(
-                        "image.text: failed to read font '{}': {e}",
-                        font_info.path
-                    ))
-                })?;
-                return FontArc::try_from_vec(data).map_err(|_| {
-                    mlua::Error::external(format!(
-                        "image.text: invalid font file '{}'",
-                        font_info.path
-                    ))
-                });
-            }
-        }
-        return Err(mlua::Error::external(format!(
-            "image.text: font '{spec}' not found. Use image.fonts() to list available fonts."
-        )));
-    }
-
-    // Default: find a sans-serif font
-    let preferred = [
-        "Helvetica",
-        "HelveticaNeue",
-        "Arial",
-        "SF-Pro",
-        "SFPro",
-        "DejaVuSans",
-        "LiberationSans",
-        "NotoSans",
-    ];
-    let fonts = discover_system_fonts();
-    for pref in &preferred {
-        let lower = pref.to_lowercase();
-        if let Some(found) = fonts
-            .iter()
-            .find(|f| f.name.to_lowercase() == lower && f.style == "regular")
-        {
-            let data = std::fs::read(&found.path).ok();
-            if let Some(data) = data {
-                if let Ok(font) = FontArc::try_from_vec(data) {
-                    return Ok(font);
-                }
-            }
-        }
-    }
-    // Fallback: use the first regular font we find
-    for font_info in &fonts {
-        if font_info.style == "regular" {
-            let data = std::fs::read(&font_info.path).ok();
-            if let Some(data) = data {
-                if let Ok(font) = FontArc::try_from_vec(data) {
-                    return Ok(font);
-                }
-            }
-        }
-    }
-    // Last resort: any font at all
-    for font_info in &fonts {
-        let data = std::fs::read(&font_info.path).ok();
-        if let Some(data) = data {
-            if let Ok(font) = FontArc::try_from_vec(data) {
-                return Ok(font);
-            }
-        }
-    }
-    Err(mlua::Error::external(
-        "image.text: no system fonts found. Use the font parameter with a path to a .ttf/.otf file.",
-    ))
 }

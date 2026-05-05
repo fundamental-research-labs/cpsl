@@ -3,7 +3,7 @@
 //! Exposes `numpy.*` globals backed by `ndarray` (array ops) + `faer` (linalg).
 //! Arrays are stored as Lua userdata wrapping `NdArray`.
 
-use crate::sandbox::{wrap_module_with_help_hints, FnDoc, ModuleDoc, Param, ParamType, ReturnType};
+use crate::sandbox::wrap_module_with_help_hints;
 use mlua::{Lua, UserData, UserDataMethods, Value};
 use ndarray::{Array1, Array2, Axis};
 use std::sync::Arc;
@@ -361,1610 +361,24 @@ fn max_slice(s: &[f64]) -> f64 {
 
 // ── Documentation ───────────────────────────────────────────────────
 
-pub(crate) static NUMPY_DOC: ModuleDoc = ModuleDoc {
-    name: "numx",
-    summary: "Multi-dimensional array and linear algebra operations",
-    functions: &[
-        FnDoc {
-            name: "array",
-            description: "Create array from data. 1D: [1,2,3]. 2D: [[1,2],[3,4]].",
-            params: &[Param {
-                name: "data",
-                short: None,
-                typ: ParamType::Table,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: Some(r#"local a = numx.array({{1,2,3},{4,5,6}}) -- 2x3 matrix"#),
-        },
-        FnDoc {
-            name: "zeros",
-            description: "Array of zeros. Shape: n or {rows, cols}.",
-            params: &[Param {
-                name: "shape",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.zeros({3, 4}) -- 3x4 matrix of zeros"#),
-        },
-        FnDoc {
-            name: "ones",
-            description: "Array of ones.",
-            params: &[Param {
-                name: "shape",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.ones(5) -- 1D array of five ones"#),
-        },
-        FnDoc {
-            name: "full",
-            description: "Array filled with val.",
-            params: &[
-                Param {
-                    name: "shape",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "val",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "arange",
-            description: "Evenly spaced values in [start, stop).",
-            params: &[
-                Param {
-                    name: "start",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "stop",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "step",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.arange(0, 10, 2) -- {0,2,4,6,8}"#),
-        },
-        FnDoc {
-            name: "linspace",
-            description: "count evenly spaced values in [start, stop].",
-            params: &[
-                Param {
-                    name: "start",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "stop",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "count",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.linspace(0, 1, 5) -- {0, 0.25, 0.5, 0.75, 1}"#),
-        },
-        FnDoc {
-            name: "eye",
-            description: "n×n identity matrix.",
-            params: &[Param {
-                name: "n",
-                short: None,
-                typ: ParamType::Number,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "diag",
-            description: "Diagonal matrix from 1D array or list.",
-            params: &[Param {
-                name: "values",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "add",
-            description: "Element-wise addition. Supports scalar broadcasting.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "sub",
-            description: "Element-wise subtraction.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "mul",
-            description: "Element-wise multiplication.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "div",
-            description: "Element-wise division.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "pow",
-            description: "Element-wise power.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "exp",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "abs",
-            description: "Element-wise absolute value.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "sqrt",
-            description: "Element-wise square root.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "log",
-            description: "Element-wise natural logarithm.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "exp",
-            description: "Element-wise exponential.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "sin",
-            description: "Element-wise sine.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "cos",
-            description: "Element-wise cosine.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "tan",
-            description: "Element-wise tangent.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "floor",
-            description: "Element-wise floor.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "ceil",
-            description: "Element-wise ceiling.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "round",
-            description: "Element-wise rounding.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "decimals",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "sum",
-            description: "Sum. axis=nil: total, 0: along rows, 1: along cols.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.sum({1, 2, 3, 4}) -- 10"#),
-        },
-        FnDoc {
-            name: "mean",
-            description: "Mean.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.mean({10, 20, 30}) -- 20"#),
-        },
-        FnDoc {
-            name: "std",
-            description: "Standard deviation (population).",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "var",
-            description: "Variance (population).",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "min",
-            description: "Minimum.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "max",
-            description: "Maximum.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "argmin",
-            description: "Index of minimum value (1-based).",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Number,
-            example: None,
-        },
-        FnDoc {
-            name: "argmax",
-            description: "Index of maximum value (1-based).",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Number,
-            example: None,
-        },
-        FnDoc {
-            name: "cumsum",
-            description: "Cumulative sum.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "shape",
-            description: "Return the shape of an array.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Table,
-            example: None,
-        },
-        FnDoc {
-            name: "reshape",
-            description: "Reshape array.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "shape",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "transpose",
-            description: "Transpose a 2D array.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "flatten",
-            description: "Flatten to 1D.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "concatenate",
-            description: "Concatenate arrays along axis.",
-            params: &[
-                Param {
-                    name: "arrays",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "stack",
-            description: "Stack arrays along new axis.",
-            params: &[
-                Param {
-                    name: "arrays",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "sort",
-            description: "Sort array.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "axis",
-                    short: None,
-                    typ: ParamType::Number,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "argsort",
-            description: "Indices that would sort the array (1-based).",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "where_",
-            description: "Element-wise conditional: where cond!=0 pick x, else y.",
-            params: &[
-                Param {
-                    name: "cond",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "x",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "y",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.where_({1,0,1}, {10,20,30}, {-1,-2,-3}) -- {10,-2,30}"#),
-        },
-        FnDoc {
-            name: "unique",
-            description: "Unique values, sorted.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "dot",
-            description: "Dot product (1D·1D→scalar, 2D·2D→matmul).",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: Some(r#"numx.dot({1,2,3}, {4,5,6}) -- 32"#),
-        },
-        FnDoc {
-            name: "matmul",
-            description: "Matrix multiplication.",
-            params: &[
-                Param {
-                    name: "a",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "b",
-                    short: None,
-                    typ: ParamType::Value,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Value,
-            example: None,
-        },
-        FnDoc {
-            name: "tolist",
-            description: "Convert array to a native collection.",
-            params: &[Param {
-                name: "a",
-                short: None,
-                typ: ParamType::Value,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Table,
-            example: None,
-        },
-    ],
-};
+mod doc;
 
-// ── Registration ────────────────────────────────────────────────────
+pub(crate) use doc::NUMPY_DOC;
 
 pub fn register_numpy_globals(lua: &Lua) -> Result<(), mlua::Error> {
     let np = lua.create_table()?;
 
-    // ── Array creation ──────────────────────────────────────────
+    register_array_creation(lua, &np)?;
 
-    // numx.array(data) → NdArray
-    np.set(
-        "array",
-        lua.create_function(|lua, data: Value| {
-            let arr = match &data {
-                Value::Table(t) => table_to_array(t)?,
-                _ => return Err(mlua::Error::external("numx.array expects a table")),
-            };
-            lua.create_userdata(arr)
-        })?,
-    )?;
+    register_elementwise_ops(lua, &np)?;
 
-    // numx.zeros(shape)
-    np.set(
-        "zeros",
-        lua.create_function(|lua, shape: Value| {
-            let s = parse_shape(&shape)?;
-            lua.create_userdata(make_filled(&s, 0.0)?)
-        })?,
-    )?;
+    register_aggregation_ops(lua, &np)?;
 
-    // numx.ones(shape)
-    np.set(
-        "ones",
-        lua.create_function(|lua, shape: Value| {
-            let s = parse_shape(&shape)?;
-            lua.create_userdata(make_filled(&s, 1.0)?)
-        })?,
-    )?;
+    register_shape_ops(lua, &np)?;
 
-    // numx.full(shape, val)
-    np.set(
-        "full",
-        lua.create_function(|lua, (shape, val): (Value, f64)| {
-            let s = parse_shape(&shape)?;
-            lua.create_userdata(make_filled(&s, val)?)
-        })?,
-    )?;
+    register_sorting_ops(lua, &np)?;
 
-    // numx.arange(start, stop, step?)
-    np.set(
-        "arange",
-        lua.create_function(|lua, (start, stop, step): (f64, f64, Option<f64>)| {
-            let step = step.unwrap_or(1.0);
-            if step == 0.0 {
-                return Err(mlua::Error::external("step cannot be zero"));
-            }
-            let mut vals = Vec::new();
-            let mut v = start;
-            if step > 0.0 {
-                while v < stop {
-                    vals.push(v);
-                    v += step;
-                }
-            } else {
-                while v > stop {
-                    vals.push(v);
-                    v += step;
-                }
-            }
-            lua.create_userdata(NdArray::D1(Array1::from_vec(vals)))
-        })?,
-    )?;
-
-    // numx.linspace(start, stop, count)
-    np.set(
-        "linspace",
-        lua.create_function(|lua, (start, stop, count): (f64, f64, usize)| {
-            if count == 0 {
-                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
-            }
-            if count == 1 {
-                return lua.create_userdata(NdArray::D1(Array1::from_vec(vec![start])));
-            }
-            let step = (stop - start) / (count - 1) as f64;
-            let vals: Vec<f64> = (0..count).map(|i| start + step * i as f64).collect();
-            lua.create_userdata(NdArray::D1(Array1::from_vec(vals)))
-        })?,
-    )?;
-
-    // numx.eye(n)
-    np.set(
-        "eye",
-        lua.create_function(|lua, n: usize| {
-            let mut arr = Array2::zeros((n, n));
-            for i in 0..n {
-                arr[[i, i]] = 1.0;
-            }
-            lua.create_userdata(NdArray::D2(arr))
-        })?,
-    )?;
-
-    // numx.diag(values)
-    np.set(
-        "diag",
-        lua.create_function(|lua, data: Value| {
-            let vals = match &data {
-                Value::UserData(ud) => {
-                    let arr = ud.borrow::<NdArray>()?;
-                    match &*arr {
-                        NdArray::D1(a) => a.to_vec(),
-                        NdArray::D2(a) => {
-                            // If 2D, extract diagonal
-                            let n = a.nrows().min(a.ncols());
-                            (0..n).map(|i| a[[i, i]]).collect()
-                        }
-                    }
-                }
-                Value::Table(t) => {
-                    let t = unwrap_py_table(&t)?;
-                    let len = t.raw_len();
-                    let mut v = Vec::with_capacity(len);
-                    for i in 1..=len {
-                        let val: Value = t.get(i)?;
-                        v.push(lua_num(&val)?);
-                    }
-                    v
-                }
-                _ => return Err(mlua::Error::external("numx.diag expects array or table")),
-            };
-            // If input was 1D, create diagonal matrix
-            if let Value::UserData(ud) = &data {
-                let arr = ud.borrow::<NdArray>()?;
-                if matches!(&*arr, NdArray::D2(_)) {
-                    // Extracted diagonal → return as 1D
-                    return lua.create_userdata(NdArray::D1(Array1::from_vec(vals)));
-                }
-            }
-            let n = vals.len();
-            let mut arr = Array2::zeros((n, n));
-            for (i, &v) in vals.iter().enumerate() {
-                arr[[i, i]] = v;
-            }
-            lua.create_userdata(NdArray::D2(arr))
-        })?,
-    )?;
-
-    // ── Element-wise ops ────────────────────────────────────────
-
-    np.set(
-        "add",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            lua.create_userdata(binop(&a, &b, |x, y| x + y)?)
-        })?,
-    )?;
-
-    np.set(
-        "sub",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            lua.create_userdata(binop(&a, &b, |x, y| x - y)?)
-        })?,
-    )?;
-
-    np.set(
-        "mul",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            lua.create_userdata(binop(&a, &b, |x, y| x * y)?)
-        })?,
-    )?;
-
-    np.set(
-        "div",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            lua.create_userdata(binop(&a, &b, |x, y| x / y)?)
-        })?,
-    )?;
-
-    np.set(
-        "pow",
-        lua.create_function(|lua, (a, exp): (Value, Value)| {
-            lua.create_userdata(binop(&a, &exp, |x, e| x.powf(e))?)
-        })?,
-    )?;
-
-    // Unary ops
-    np.set(
-        "abs",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.abs()))
-        })?,
-    )?;
-
-    np.set(
-        "sqrt",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.sqrt()))
-        })?,
-    )?;
-
-    np.set(
-        "log",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.ln()))
-        })?,
-    )?;
-
-    np.set(
-        "exp",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.exp()))
-        })?,
-    )?;
-
-    np.set(
-        "sin",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.sin()))
-        })?,
-    )?;
-
-    np.set(
-        "cos",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.cos()))
-        })?,
-    )?;
-
-    np.set(
-        "tan",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.tan()))
-        })?,
-    )?;
-
-    np.set(
-        "floor",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.floor()))
-        })?,
-    )?;
-
-    np.set(
-        "ceil",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(arr.map_elem(|x| x.ceil()))
-        })?,
-    )?;
-
-    np.set(
-        "round",
-        lua.create_function(|lua, (a, decimals): (Value, Option<i32>)| {
-            let arr = value_to_array(&a)?;
-            let d = decimals.unwrap_or(0);
-            let factor = 10f64.powi(d);
-            lua.create_userdata(arr.map_elem(|x| (x * factor).round() / factor))
-        })?,
-    )?;
-
-    // ── Aggregation ─────────────────────────────────────────────
-
-    np.set(
-        "sum",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, sum_slice, "sum")?)
-        })?,
-    )?;
-
-    np.set(
-        "mean",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, mean_slice, "mean")?)
-        })?,
-    )?;
-
-    np.set(
-        "std",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, std_slice, "std")?)
-        })?,
-    )?;
-
-    np.set(
-        "var",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, var_slice, "var")?)
-        })?,
-    )?;
-
-    np.set(
-        "min",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, min_slice, "min")?)
-        })?,
-    )?;
-
-    np.set(
-        "max",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(aggregate(&arr, axis, max_slice, "max")?)
-        })?,
-    )?;
-
-    np.set(
-        "argmin",
-        lua.create_function(|_, a: Value| {
-            let arr = value_to_array(&a)?;
-            let flat = arr.to_flat_vec();
-            if flat.is_empty() {
-                return Err(mlua::Error::external("argmin of empty array"));
-            }
-            let idx = flat
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap()
-                .0;
-            Ok(idx + 1) // 1-based for Lua
-        })?,
-    )?;
-
-    np.set(
-        "argmax",
-        lua.create_function(|_, a: Value| {
-            let arr = value_to_array(&a)?;
-            let flat = arr.to_flat_vec();
-            if flat.is_empty() {
-                return Err(mlua::Error::external("argmax of empty array"));
-            }
-            let idx = flat
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap()
-                .0;
-            Ok(idx + 1) // 1-based for Lua
-        })?,
-    )?;
-
-    np.set(
-        "cumsum",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            match axis {
-                None => {
-                    let flat = arr.to_flat_vec();
-                    let mut cumulative = Vec::with_capacity(flat.len());
-                    let mut s = 0.0;
-                    for v in &flat {
-                        s += v;
-                        cumulative.push(s);
-                    }
-                    lua.create_userdata(NdArray::D1(Array1::from_vec(cumulative)))
-                }
-                Some(ax) => {
-                    let a2 = arr.as_2d();
-                    let (nrows, ncols) = (a2.nrows(), a2.ncols());
-                    let mut result = a2.clone();
-                    match ax {
-                        0 => {
-                            for j in 0..ncols {
-                                for i in 1..nrows {
-                                    result[[i, j]] += result[[i - 1, j]];
-                                }
-                            }
-                        }
-                        1 => {
-                            for i in 0..nrows {
-                                for j in 1..ncols {
-                                    result[[i, j]] += result[[i, j - 1]];
-                                }
-                            }
-                        }
-                        _ => return Err(mlua::Error::external("axis must be 0 or 1")),
-                    }
-                    lua.create_userdata(NdArray::D2(result))
-                }
-            }
-        })?,
-    )?;
-
-    // ── Shape ops ───────────────────────────────────────────────
-
-    np.set(
-        "shape",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            let s = arr.shape_vec();
-            let t = lua.create_table()?;
-            for (i, &d) in s.iter().enumerate() {
-                t.set(i + 1, d)?;
-            }
-            Ok(Value::Table(t))
-        })?,
-    )?;
-
-    np.set(
-        "reshape",
-        lua.create_function(|lua, (a, shape): (Value, Value)| {
-            let arr = value_to_array(&a)?;
-            let s = parse_shape(&shape)?;
-            let flat = arr.to_flat_vec();
-            let total: usize = s.iter().product();
-            if total != flat.len() {
-                return Err(mlua::Error::external(format!(
-                    "cannot reshape array of size {} into shape {:?}",
-                    flat.len(),
-                    s
-                )));
-            }
-            let result = match s.len() {
-                1 => NdArray::D1(Array1::from_vec(flat)),
-                2 => NdArray::D2(
-                    Array2::from_shape_vec((s[0], s[1]), flat)
-                        .map_err(|e| mlua::Error::external(e.to_string()))?,
-                ),
-                _ => return Err(mlua::Error::external("shape must be 1D or 2D")),
-            };
-            lua.create_userdata(result)
-        })?,
-    )?;
-
-    np.set(
-        "transpose",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            match arr {
-                NdArray::D1(a) => lua.create_userdata(NdArray::D1(a)), // no-op for 1D
-                NdArray::D2(a) => lua.create_userdata(NdArray::D2(a.t().to_owned())),
-            }
-        })?,
-    )?;
-
-    np.set(
-        "flatten",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            lua.create_userdata(NdArray::D1(Array1::from_vec(arr.to_flat_vec())))
-        })?,
-    )?;
-
-    np.set(
-        "concatenate",
-        lua.create_function(|lua, (arrays, axis): (mlua::Table, Option<i64>)| {
-            let axis = axis.unwrap_or(0);
-            let arrays = unwrap_py_table(&arrays)?;
-            let len = arrays.raw_len();
-            if len == 0 {
-                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
-            }
-
-            let mut arrs: Vec<NdArray> = Vec::with_capacity(len);
-            for i in 1..=len {
-                let v: Value = arrays.get(i)?;
-                arrs.push(value_to_array(&v)?);
-            }
-
-            // All 1D → concatenate into 1D
-            let all_1d = arrs.iter().all(|a| matches!(a, NdArray::D1(_)));
-            if all_1d && axis == 0 {
-                let mut flat = Vec::new();
-                for a in &arrs {
-                    flat.extend(a.to_flat_vec());
-                }
-                return lua.create_userdata(NdArray::D1(Array1::from_vec(flat)));
-            }
-
-            // 2D concatenation
-            let mats: Vec<Array2<f64>> = arrs.iter().map(|a| a.as_2d()).collect();
-            match axis {
-                0 => {
-                    // Stack vertically
-                    let ncols = mats[0].ncols();
-                    let mut rows = Vec::new();
-                    for m in &mats {
-                        if m.ncols() != ncols {
-                            return Err(mlua::Error::external(
-                                "all arrays must have same ncols for axis=0 concat",
-                            ));
-                        }
-                        rows.extend(m.iter().copied());
-                    }
-                    let nrows: usize = mats.iter().map(|m| m.nrows()).sum();
-                    let result = Array2::from_shape_vec((nrows, ncols), rows)
-                        .map_err(|e| mlua::Error::external(e.to_string()))?;
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                1 => {
-                    // Stack horizontally
-                    let nrows = mats[0].nrows();
-                    for m in &mats {
-                        if m.nrows() != nrows {
-                            return Err(mlua::Error::external(
-                                "all arrays must have same nrows for axis=1 concat",
-                            ));
-                        }
-                    }
-                    let total_cols: usize = mats.iter().map(|m| m.ncols()).sum();
-                    let mut result = Array2::zeros((nrows, total_cols));
-                    let mut col_offset = 0;
-                    for m in &mats {
-                        for i in 0..nrows {
-                            for j in 0..m.ncols() {
-                                result[[i, col_offset + j]] = m[[i, j]];
-                            }
-                        }
-                        col_offset += m.ncols();
-                    }
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                _ => Err(mlua::Error::external("axis must be 0 or 1")),
-            }
-        })?,
-    )?;
-
-    np.set(
-        "stack",
-        lua.create_function(|lua, (arrays, axis): (mlua::Table, Option<i64>)| {
-            let axis = axis.unwrap_or(0);
-            let arrays = unwrap_py_table(&arrays)?;
-            let len = arrays.raw_len();
-            if len == 0 {
-                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
-            }
-
-            let mut arrs: Vec<NdArray> = Vec::with_capacity(len);
-            for i in 1..=len {
-                let v: Value = arrays.get(i)?;
-                arrs.push(value_to_array(&v)?);
-            }
-
-            // All must be 1D with same length for stack
-            let vecs: Vec<Vec<f64>> = arrs.iter().map(|a| a.to_flat_vec()).collect();
-            let elem_len = vecs[0].len();
-            for v in &vecs {
-                if v.len() != elem_len {
-                    return Err(mlua::Error::external(
-                        "all arrays must have same shape for stack",
-                    ));
-                }
-            }
-
-            match axis {
-                0 => {
-                    // Stack as rows → (n_arrays, elem_len) matrix
-                    let mut data = Vec::with_capacity(len * elem_len);
-                    for v in &vecs {
-                        data.extend(v);
-                    }
-                    let result = Array2::from_shape_vec((len, elem_len), data)
-                        .map_err(|e| mlua::Error::external(e.to_string()))?;
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                1 => {
-                    // Stack as columns → (elem_len, n_arrays) matrix
-                    let mut result = Array2::zeros((elem_len, len));
-                    for (j, v) in vecs.iter().enumerate() {
-                        for (i, &val) in v.iter().enumerate() {
-                            result[[i, j]] = val;
-                        }
-                    }
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                _ => Err(mlua::Error::external("axis must be 0 or 1")),
-            }
-        })?,
-    )?;
-
-    // ── Sorting/search ──────────────────────────────────────────
-
-    np.set(
-        "sort",
-        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
-            let arr = value_to_array(&a)?;
-            match axis {
-                None | Some(0) => {
-                    match arr {
-                        NdArray::D1(a) => {
-                            let mut v = a.to_vec();
-                            v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                            lua.create_userdata(NdArray::D1(Array1::from_vec(v)))
-                        }
-                        NdArray::D2(a) => {
-                            // Sort each column (axis=0) or each row
-                            let axis_val = axis.unwrap_or(0);
-                            let (nrows, ncols) = (a.nrows(), a.ncols());
-                            let mut result = a.clone();
-                            if axis_val == 0 {
-                                for j in 0..ncols {
-                                    let mut col: Vec<f64> = (0..nrows).map(|i| a[[i, j]]).collect();
-                                    col.sort_by(|a, b| {
-                                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                                    });
-                                    for (i, &v) in col.iter().enumerate() {
-                                        result[[i, j]] = v;
-                                    }
-                                }
-                            } else {
-                                for i in 0..nrows {
-                                    let mut row: Vec<f64> = (0..ncols).map(|j| a[[i, j]]).collect();
-                                    row.sort_by(|a, b| {
-                                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                                    });
-                                    for (j, &v) in row.iter().enumerate() {
-                                        result[[i, j]] = v;
-                                    }
-                                }
-                            }
-                            lua.create_userdata(NdArray::D2(result))
-                        }
-                    }
-                }
-                Some(1) => {
-                    let a2 = arr.as_2d();
-                    let (nrows, ncols) = (a2.nrows(), a2.ncols());
-                    let mut result = a2.clone();
-                    for i in 0..nrows {
-                        let mut row: Vec<f64> = (0..ncols).map(|j| a2[[i, j]]).collect();
-                        row.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                        for (j, &v) in row.iter().enumerate() {
-                            result[[i, j]] = v;
-                        }
-                    }
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                _ => Err(mlua::Error::external("axis must be 0 or 1")),
-            }
-        })?,
-    )?;
-
-    np.set(
-        "argsort",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            let flat = arr.to_flat_vec();
-            let mut indices: Vec<usize> = (0..flat.len()).collect();
-            indices.sort_by(|&a, &b| {
-                flat[a]
-                    .partial_cmp(&flat[b])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            // 1-based for Lua
-            let result: Vec<f64> = indices.iter().map(|&i| (i + 1) as f64).collect();
-            lua.create_userdata(NdArray::D1(Array1::from_vec(result)))
-        })?,
-    )?;
-
-    // numx.where_(cond, x, y) — named where_ to avoid Lua keyword issues
-    // Also register as "where" for Luau access
-    let where_fn = lua.create_function(|lua, (cond, x, y): (Value, Value, Value)| {
-        let c = value_to_array(&cond)?;
-        let xv = value_to_array(&x)?;
-        let yv = value_to_array(&y)?;
-        let cf = c.to_flat_vec();
-        let xf = xv.to_flat_vec();
-        let yf = yv.to_flat_vec();
-        if cf.len() != xf.len() || cf.len() != yf.len() {
-            return Err(mlua::Error::external(
-                "where: all arrays must have same length",
-            ));
-        }
-        let result: Vec<f64> = cf
-            .iter()
-            .zip(xf.iter().zip(yf.iter()))
-            .map(|(&c, (&x, &y))| if c != 0.0 { x } else { y })
-            .collect();
-        // Preserve shape from cond
-        match c {
-            NdArray::D1(_) => lua.create_userdata(NdArray::D1(Array1::from_vec(result))),
-            NdArray::D2(ref a) => {
-                let arr = Array2::from_shape_vec(a.dim(), result)
-                    .map_err(|e| mlua::Error::external(e.to_string()))?;
-                lua.create_userdata(NdArray::D2(arr))
-            }
-        }
-    })?;
-    np.set("where_", where_fn.clone())?;
-    // Luau doesn't reserve "where", so register it directly too
-    np.set("where", where_fn)?;
-
-    np.set(
-        "unique",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            let mut flat = arr.to_flat_vec();
-            flat.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            flat.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
-            lua.create_userdata(NdArray::D1(Array1::from_vec(flat)))
-        })?,
-    )?;
-
-    // ── Conversion ──────────────────────────────────────────────
-
-    np.set(
-        "tolist",
-        lua.create_function(|lua, a: Value| {
-            let arr = value_to_array(&a)?;
-            array_to_lua(lua, &arr)
-        })?,
-    )?;
-
-    // ── Dot product / matmul (basic, faer-backed linalg added in 1b) ──
-
-    np.set(
-        "dot",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            let arr_a = value_to_array(&a)?;
-            let arr_b = value_to_array(&b)?;
-            match (&arr_a, &arr_b) {
-                (NdArray::D1(a), NdArray::D1(b)) => {
-                    if a.len() != b.len() {
-                        return Err(mlua::Error::external(
-                            "dot: 1D arrays must have same length",
-                        ));
-                    }
-                    let result: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
-                    lua.create_userdata(NdArray::D1(Array1::from_vec(vec![result])))
-                }
-                (NdArray::D2(a), NdArray::D2(b)) => {
-                    if a.ncols() != b.nrows() {
-                        return Err(mlua::Error::external(format!(
-                            "matmul: ({},{}) × ({},{}) — inner dimensions must match",
-                            a.nrows(),
-                            a.ncols(),
-                            b.nrows(),
-                            b.ncols()
-                        )));
-                    }
-                    let result = a.dot(b);
-                    lua.create_userdata(NdArray::D2(result))
-                }
-                (NdArray::D2(a), NdArray::D1(b)) => {
-                    if a.ncols() != b.len() {
-                        return Err(mlua::Error::external(
-                            "dot: matrix cols must match vector length",
-                        ));
-                    }
-                    let result = a.dot(b);
-                    lua.create_userdata(NdArray::D1(result))
-                }
-                (NdArray::D1(a), NdArray::D2(b)) => {
-                    if a.len() != b.nrows() {
-                        return Err(mlua::Error::external(
-                            "dot: vector length must match matrix rows",
-                        ));
-                    }
-                    let result = b.t().dot(a);
-                    lua.create_userdata(NdArray::D1(result))
-                }
-            }
-        })?,
-    )?;
-
-    np.set(
-        "matmul",
-        lua.create_function(|lua, (a, b): (Value, Value)| {
-            let arr_a = value_to_array(&a)?;
-            let arr_b = value_to_array(&b)?;
-            let ma = arr_a.as_2d();
-            let mb = arr_b.as_2d();
-            if ma.ncols() != mb.nrows() {
-                return Err(mlua::Error::external(format!(
-                    "matmul: ({},{}) × ({},{}) — inner dimensions must match",
-                    ma.nrows(),
-                    ma.ncols(),
-                    mb.nrows(),
-                    mb.ncols()
-                )));
-            }
-            let result = ma.dot(&mb);
-            lua.create_userdata(NdArray::D2(result))
-        })?,
-    )?;
+    register_conversion_and_matrix_ops(lua, &np)?;
 
     // ── Help ────────────────────────────────────────────────────
 
@@ -2360,6 +774,810 @@ pub fn register_numpy_random(lua: &Lua) -> Result<(), mlua::Error> {
             })?,
         )?;
     }
+
+    Ok(())
+}
+
+fn register_array_creation(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Array creation ──────────────────────────────────────────
+
+    // numx.array(data) → NdArray
+    np.set(
+        "array",
+        lua.create_function(|lua, data: Value| {
+            let arr = match &data {
+                Value::Table(t) => table_to_array(t)?,
+                _ => return Err(mlua::Error::external("numx.array expects a table")),
+            };
+            lua.create_userdata(arr)
+        })?,
+    )?;
+
+    // numx.zeros(shape)
+    np.set(
+        "zeros",
+        lua.create_function(|lua, shape: Value| {
+            let s = parse_shape(&shape)?;
+            lua.create_userdata(make_filled(&s, 0.0)?)
+        })?,
+    )?;
+
+    // numx.ones(shape)
+    np.set(
+        "ones",
+        lua.create_function(|lua, shape: Value| {
+            let s = parse_shape(&shape)?;
+            lua.create_userdata(make_filled(&s, 1.0)?)
+        })?,
+    )?;
+
+    // numx.full(shape, val)
+    np.set(
+        "full",
+        lua.create_function(|lua, (shape, val): (Value, f64)| {
+            let s = parse_shape(&shape)?;
+            lua.create_userdata(make_filled(&s, val)?)
+        })?,
+    )?;
+
+    // numx.arange(start, stop, step?)
+    np.set(
+        "arange",
+        lua.create_function(|lua, (start, stop, step): (f64, f64, Option<f64>)| {
+            let step = step.unwrap_or(1.0);
+            if step == 0.0 {
+                return Err(mlua::Error::external("step cannot be zero"));
+            }
+            let mut vals = Vec::new();
+            let mut v = start;
+            if step > 0.0 {
+                while v < stop {
+                    vals.push(v);
+                    v += step;
+                }
+            } else {
+                while v > stop {
+                    vals.push(v);
+                    v += step;
+                }
+            }
+            lua.create_userdata(NdArray::D1(Array1::from_vec(vals)))
+        })?,
+    )?;
+
+    // numx.linspace(start, stop, count)
+    np.set(
+        "linspace",
+        lua.create_function(|lua, (start, stop, count): (f64, f64, usize)| {
+            if count == 0 {
+                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
+            }
+            if count == 1 {
+                return lua.create_userdata(NdArray::D1(Array1::from_vec(vec![start])));
+            }
+            let step = (stop - start) / (count - 1) as f64;
+            let vals: Vec<f64> = (0..count).map(|i| start + step * i as f64).collect();
+            lua.create_userdata(NdArray::D1(Array1::from_vec(vals)))
+        })?,
+    )?;
+
+    // numx.eye(n)
+    np.set(
+        "eye",
+        lua.create_function(|lua, n: usize| {
+            let mut arr = Array2::zeros((n, n));
+            for i in 0..n {
+                arr[[i, i]] = 1.0;
+            }
+            lua.create_userdata(NdArray::D2(arr))
+        })?,
+    )?;
+
+    // numx.diag(values)
+    np.set(
+        "diag",
+        lua.create_function(|lua, data: Value| {
+            let vals = match &data {
+                Value::UserData(ud) => {
+                    let arr = ud.borrow::<NdArray>()?;
+                    match &*arr {
+                        NdArray::D1(a) => a.to_vec(),
+                        NdArray::D2(a) => {
+                            // If 2D, extract diagonal
+                            let n = a.nrows().min(a.ncols());
+                            (0..n).map(|i| a[[i, i]]).collect()
+                        }
+                    }
+                }
+                Value::Table(t) => {
+                    let t = unwrap_py_table(&t)?;
+                    let len = t.raw_len();
+                    let mut v = Vec::with_capacity(len);
+                    for i in 1..=len {
+                        let val: Value = t.get(i)?;
+                        v.push(lua_num(&val)?);
+                    }
+                    v
+                }
+                _ => return Err(mlua::Error::external("numx.diag expects array or table")),
+            };
+            // If input was 1D, create diagonal matrix
+            if let Value::UserData(ud) = &data {
+                let arr = ud.borrow::<NdArray>()?;
+                if matches!(&*arr, NdArray::D2(_)) {
+                    // Extracted diagonal → return as 1D
+                    return lua.create_userdata(NdArray::D1(Array1::from_vec(vals)));
+                }
+            }
+            let n = vals.len();
+            let mut arr = Array2::zeros((n, n));
+            for (i, &v) in vals.iter().enumerate() {
+                arr[[i, i]] = v;
+            }
+            lua.create_userdata(NdArray::D2(arr))
+        })?,
+    )?;
+
+    Ok(())
+}
+
+fn register_elementwise_ops(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Element-wise ops ────────────────────────────────────────
+
+    np.set(
+        "add",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            lua.create_userdata(binop(&a, &b, |x, y| x + y)?)
+        })?,
+    )?;
+
+    np.set(
+        "sub",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            lua.create_userdata(binop(&a, &b, |x, y| x - y)?)
+        })?,
+    )?;
+
+    np.set(
+        "mul",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            lua.create_userdata(binop(&a, &b, |x, y| x * y)?)
+        })?,
+    )?;
+
+    np.set(
+        "div",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            lua.create_userdata(binop(&a, &b, |x, y| x / y)?)
+        })?,
+    )?;
+
+    np.set(
+        "pow",
+        lua.create_function(|lua, (a, exp): (Value, Value)| {
+            lua.create_userdata(binop(&a, &exp, |x, e| x.powf(e))?)
+        })?,
+    )?;
+
+    // Unary ops
+    np.set(
+        "abs",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.abs()))
+        })?,
+    )?;
+
+    np.set(
+        "sqrt",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.sqrt()))
+        })?,
+    )?;
+
+    np.set(
+        "log",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.ln()))
+        })?,
+    )?;
+
+    np.set(
+        "exp",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.exp()))
+        })?,
+    )?;
+
+    np.set(
+        "sin",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.sin()))
+        })?,
+    )?;
+
+    np.set(
+        "cos",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.cos()))
+        })?,
+    )?;
+
+    np.set(
+        "tan",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.tan()))
+        })?,
+    )?;
+
+    np.set(
+        "floor",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.floor()))
+        })?,
+    )?;
+
+    np.set(
+        "ceil",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(arr.map_elem(|x| x.ceil()))
+        })?,
+    )?;
+
+    np.set(
+        "round",
+        lua.create_function(|lua, (a, decimals): (Value, Option<i32>)| {
+            let arr = value_to_array(&a)?;
+            let d = decimals.unwrap_or(0);
+            let factor = 10f64.powi(d);
+            lua.create_userdata(arr.map_elem(|x| (x * factor).round() / factor))
+        })?,
+    )?;
+
+    Ok(())
+}
+
+fn register_aggregation_ops(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Aggregation ─────────────────────────────────────────────
+
+    np.set(
+        "sum",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, sum_slice, "sum")?)
+        })?,
+    )?;
+
+    np.set(
+        "mean",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, mean_slice, "mean")?)
+        })?,
+    )?;
+
+    np.set(
+        "std",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, std_slice, "std")?)
+        })?,
+    )?;
+
+    np.set(
+        "var",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, var_slice, "var")?)
+        })?,
+    )?;
+
+    np.set(
+        "min",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, min_slice, "min")?)
+        })?,
+    )?;
+
+    np.set(
+        "max",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(aggregate(&arr, axis, max_slice, "max")?)
+        })?,
+    )?;
+
+    np.set(
+        "argmin",
+        lua.create_function(|_, a: Value| {
+            let arr = value_to_array(&a)?;
+            let flat = arr.to_flat_vec();
+            if flat.is_empty() {
+                return Err(mlua::Error::external("argmin of empty array"));
+            }
+            let idx = flat
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap()
+                .0;
+            Ok(idx + 1) // 1-based for Lua
+        })?,
+    )?;
+
+    np.set(
+        "argmax",
+        lua.create_function(|_, a: Value| {
+            let arr = value_to_array(&a)?;
+            let flat = arr.to_flat_vec();
+            if flat.is_empty() {
+                return Err(mlua::Error::external("argmax of empty array"));
+            }
+            let idx = flat
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap()
+                .0;
+            Ok(idx + 1) // 1-based for Lua
+        })?,
+    )?;
+
+    np.set(
+        "cumsum",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            match axis {
+                None => {
+                    let flat = arr.to_flat_vec();
+                    let mut cumulative = Vec::with_capacity(flat.len());
+                    let mut s = 0.0;
+                    for v in &flat {
+                        s += v;
+                        cumulative.push(s);
+                    }
+                    lua.create_userdata(NdArray::D1(Array1::from_vec(cumulative)))
+                }
+                Some(ax) => {
+                    let a2 = arr.as_2d();
+                    let (nrows, ncols) = (a2.nrows(), a2.ncols());
+                    let mut result = a2.clone();
+                    match ax {
+                        0 => {
+                            for j in 0..ncols {
+                                for i in 1..nrows {
+                                    result[[i, j]] += result[[i - 1, j]];
+                                }
+                            }
+                        }
+                        1 => {
+                            for i in 0..nrows {
+                                for j in 1..ncols {
+                                    result[[i, j]] += result[[i, j - 1]];
+                                }
+                            }
+                        }
+                        _ => return Err(mlua::Error::external("axis must be 0 or 1")),
+                    }
+                    lua.create_userdata(NdArray::D2(result))
+                }
+            }
+        })?,
+    )?;
+
+    Ok(())
+}
+
+fn register_shape_ops(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Shape ops ───────────────────────────────────────────────
+
+    np.set(
+        "shape",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            let s = arr.shape_vec();
+            let t = lua.create_table()?;
+            for (i, &d) in s.iter().enumerate() {
+                t.set(i + 1, d)?;
+            }
+            Ok(Value::Table(t))
+        })?,
+    )?;
+
+    np.set(
+        "reshape",
+        lua.create_function(|lua, (a, shape): (Value, Value)| {
+            let arr = value_to_array(&a)?;
+            let s = parse_shape(&shape)?;
+            let flat = arr.to_flat_vec();
+            let total: usize = s.iter().product();
+            if total != flat.len() {
+                return Err(mlua::Error::external(format!(
+                    "cannot reshape array of size {} into shape {:?}",
+                    flat.len(),
+                    s
+                )));
+            }
+            let result = match s.len() {
+                1 => NdArray::D1(Array1::from_vec(flat)),
+                2 => NdArray::D2(
+                    Array2::from_shape_vec((s[0], s[1]), flat)
+                        .map_err(|e| mlua::Error::external(e.to_string()))?,
+                ),
+                _ => return Err(mlua::Error::external("shape must be 1D or 2D")),
+            };
+            lua.create_userdata(result)
+        })?,
+    )?;
+
+    np.set(
+        "transpose",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            match arr {
+                NdArray::D1(a) => lua.create_userdata(NdArray::D1(a)), // no-op for 1D
+                NdArray::D2(a) => lua.create_userdata(NdArray::D2(a.t().to_owned())),
+            }
+        })?,
+    )?;
+
+    np.set(
+        "flatten",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            lua.create_userdata(NdArray::D1(Array1::from_vec(arr.to_flat_vec())))
+        })?,
+    )?;
+
+    np.set(
+        "concatenate",
+        lua.create_function(|lua, (arrays, axis): (mlua::Table, Option<i64>)| {
+            let axis = axis.unwrap_or(0);
+            let arrays = unwrap_py_table(&arrays)?;
+            let len = arrays.raw_len();
+            if len == 0 {
+                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
+            }
+
+            let mut arrs: Vec<NdArray> = Vec::with_capacity(len);
+            for i in 1..=len {
+                let v: Value = arrays.get(i)?;
+                arrs.push(value_to_array(&v)?);
+            }
+
+            // All 1D → concatenate into 1D
+            let all_1d = arrs.iter().all(|a| matches!(a, NdArray::D1(_)));
+            if all_1d && axis == 0 {
+                let mut flat = Vec::new();
+                for a in &arrs {
+                    flat.extend(a.to_flat_vec());
+                }
+                return lua.create_userdata(NdArray::D1(Array1::from_vec(flat)));
+            }
+
+            // 2D concatenation
+            let mats: Vec<Array2<f64>> = arrs.iter().map(|a| a.as_2d()).collect();
+            match axis {
+                0 => {
+                    // Stack vertically
+                    let ncols = mats[0].ncols();
+                    let mut rows = Vec::new();
+                    for m in &mats {
+                        if m.ncols() != ncols {
+                            return Err(mlua::Error::external(
+                                "all arrays must have same ncols for axis=0 concat",
+                            ));
+                        }
+                        rows.extend(m.iter().copied());
+                    }
+                    let nrows: usize = mats.iter().map(|m| m.nrows()).sum();
+                    let result = Array2::from_shape_vec((nrows, ncols), rows)
+                        .map_err(|e| mlua::Error::external(e.to_string()))?;
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                1 => {
+                    // Stack horizontally
+                    let nrows = mats[0].nrows();
+                    for m in &mats {
+                        if m.nrows() != nrows {
+                            return Err(mlua::Error::external(
+                                "all arrays must have same nrows for axis=1 concat",
+                            ));
+                        }
+                    }
+                    let total_cols: usize = mats.iter().map(|m| m.ncols()).sum();
+                    let mut result = Array2::zeros((nrows, total_cols));
+                    let mut col_offset = 0;
+                    for m in &mats {
+                        for i in 0..nrows {
+                            for j in 0..m.ncols() {
+                                result[[i, col_offset + j]] = m[[i, j]];
+                            }
+                        }
+                        col_offset += m.ncols();
+                    }
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                _ => Err(mlua::Error::external("axis must be 0 or 1")),
+            }
+        })?,
+    )?;
+
+    np.set(
+        "stack",
+        lua.create_function(|lua, (arrays, axis): (mlua::Table, Option<i64>)| {
+            let axis = axis.unwrap_or(0);
+            let arrays = unwrap_py_table(&arrays)?;
+            let len = arrays.raw_len();
+            if len == 0 {
+                return lua.create_userdata(NdArray::D1(Array1::zeros(0)));
+            }
+
+            let mut arrs: Vec<NdArray> = Vec::with_capacity(len);
+            for i in 1..=len {
+                let v: Value = arrays.get(i)?;
+                arrs.push(value_to_array(&v)?);
+            }
+
+            // All must be 1D with same length for stack
+            let vecs: Vec<Vec<f64>> = arrs.iter().map(|a| a.to_flat_vec()).collect();
+            let elem_len = vecs[0].len();
+            for v in &vecs {
+                if v.len() != elem_len {
+                    return Err(mlua::Error::external(
+                        "all arrays must have same shape for stack",
+                    ));
+                }
+            }
+
+            match axis {
+                0 => {
+                    // Stack as rows → (n_arrays, elem_len) matrix
+                    let mut data = Vec::with_capacity(len * elem_len);
+                    for v in &vecs {
+                        data.extend(v);
+                    }
+                    let result = Array2::from_shape_vec((len, elem_len), data)
+                        .map_err(|e| mlua::Error::external(e.to_string()))?;
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                1 => {
+                    // Stack as columns → (elem_len, n_arrays) matrix
+                    let mut result = Array2::zeros((elem_len, len));
+                    for (j, v) in vecs.iter().enumerate() {
+                        for (i, &val) in v.iter().enumerate() {
+                            result[[i, j]] = val;
+                        }
+                    }
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                _ => Err(mlua::Error::external("axis must be 0 or 1")),
+            }
+        })?,
+    )?;
+
+    Ok(())
+}
+
+fn register_sorting_ops(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Sorting/search ──────────────────────────────────────────
+
+    np.set(
+        "sort",
+        lua.create_function(|lua, (a, axis): (Value, Option<i64>)| {
+            let arr = value_to_array(&a)?;
+            match axis {
+                None | Some(0) => {
+                    match arr {
+                        NdArray::D1(a) => {
+                            let mut v = a.to_vec();
+                            v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                            lua.create_userdata(NdArray::D1(Array1::from_vec(v)))
+                        }
+                        NdArray::D2(a) => {
+                            // Sort each column (axis=0) or each row
+                            let axis_val = axis.unwrap_or(0);
+                            let (nrows, ncols) = (a.nrows(), a.ncols());
+                            let mut result = a.clone();
+                            if axis_val == 0 {
+                                for j in 0..ncols {
+                                    let mut col: Vec<f64> = (0..nrows).map(|i| a[[i, j]]).collect();
+                                    col.sort_by(|a, b| {
+                                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                                    });
+                                    for (i, &v) in col.iter().enumerate() {
+                                        result[[i, j]] = v;
+                                    }
+                                }
+                            } else {
+                                for i in 0..nrows {
+                                    let mut row: Vec<f64> = (0..ncols).map(|j| a[[i, j]]).collect();
+                                    row.sort_by(|a, b| {
+                                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                                    });
+                                    for (j, &v) in row.iter().enumerate() {
+                                        result[[i, j]] = v;
+                                    }
+                                }
+                            }
+                            lua.create_userdata(NdArray::D2(result))
+                        }
+                    }
+                }
+                Some(1) => {
+                    let a2 = arr.as_2d();
+                    let (nrows, ncols) = (a2.nrows(), a2.ncols());
+                    let mut result = a2.clone();
+                    for i in 0..nrows {
+                        let mut row: Vec<f64> = (0..ncols).map(|j| a2[[i, j]]).collect();
+                        row.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        for (j, &v) in row.iter().enumerate() {
+                            result[[i, j]] = v;
+                        }
+                    }
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                _ => Err(mlua::Error::external("axis must be 0 or 1")),
+            }
+        })?,
+    )?;
+
+    np.set(
+        "argsort",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            let flat = arr.to_flat_vec();
+            let mut indices: Vec<usize> = (0..flat.len()).collect();
+            indices.sort_by(|&a, &b| {
+                flat[a]
+                    .partial_cmp(&flat[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            // 1-based for Lua
+            let result: Vec<f64> = indices.iter().map(|&i| (i + 1) as f64).collect();
+            lua.create_userdata(NdArray::D1(Array1::from_vec(result)))
+        })?,
+    )?;
+
+    // numx.where_(cond, x, y) — named where_ to avoid Lua keyword issues
+    // Also register as "where" for Luau access
+    let where_fn = lua.create_function(|lua, (cond, x, y): (Value, Value, Value)| {
+        let c = value_to_array(&cond)?;
+        let xv = value_to_array(&x)?;
+        let yv = value_to_array(&y)?;
+        let cf = c.to_flat_vec();
+        let xf = xv.to_flat_vec();
+        let yf = yv.to_flat_vec();
+        if cf.len() != xf.len() || cf.len() != yf.len() {
+            return Err(mlua::Error::external(
+                "where: all arrays must have same length",
+            ));
+        }
+        let result: Vec<f64> = cf
+            .iter()
+            .zip(xf.iter().zip(yf.iter()))
+            .map(|(&c, (&x, &y))| if c != 0.0 { x } else { y })
+            .collect();
+        // Preserve shape from cond
+        match c {
+            NdArray::D1(_) => lua.create_userdata(NdArray::D1(Array1::from_vec(result))),
+            NdArray::D2(ref a) => {
+                let arr = Array2::from_shape_vec(a.dim(), result)
+                    .map_err(|e| mlua::Error::external(e.to_string()))?;
+                lua.create_userdata(NdArray::D2(arr))
+            }
+        }
+    })?;
+    np.set("where_", where_fn.clone())?;
+    // Luau doesn't reserve "where", so register it directly too
+    np.set("where", where_fn)?;
+
+    np.set(
+        "unique",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            let mut flat = arr.to_flat_vec();
+            flat.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            flat.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
+            lua.create_userdata(NdArray::D1(Array1::from_vec(flat)))
+        })?,
+    )?;
+
+    Ok(())
+}
+
+fn register_conversion_and_matrix_ops(lua: &Lua, np: &mlua::Table) -> Result<(), mlua::Error> {
+    // ── Conversion ──────────────────────────────────────────────
+
+    np.set(
+        "tolist",
+        lua.create_function(|lua, a: Value| {
+            let arr = value_to_array(&a)?;
+            array_to_lua(lua, &arr)
+        })?,
+    )?;
+
+    // ── Dot product / matmul (basic, faer-backed linalg added in 1b) ──
+
+    np.set(
+        "dot",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            let arr_a = value_to_array(&a)?;
+            let arr_b = value_to_array(&b)?;
+            match (&arr_a, &arr_b) {
+                (NdArray::D1(a), NdArray::D1(b)) => {
+                    if a.len() != b.len() {
+                        return Err(mlua::Error::external(
+                            "dot: 1D arrays must have same length",
+                        ));
+                    }
+                    let result: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
+                    lua.create_userdata(NdArray::D1(Array1::from_vec(vec![result])))
+                }
+                (NdArray::D2(a), NdArray::D2(b)) => {
+                    if a.ncols() != b.nrows() {
+                        return Err(mlua::Error::external(format!(
+                            "matmul: ({},{}) × ({},{}) — inner dimensions must match",
+                            a.nrows(),
+                            a.ncols(),
+                            b.nrows(),
+                            b.ncols()
+                        )));
+                    }
+                    let result = a.dot(b);
+                    lua.create_userdata(NdArray::D2(result))
+                }
+                (NdArray::D2(a), NdArray::D1(b)) => {
+                    if a.ncols() != b.len() {
+                        return Err(mlua::Error::external(
+                            "dot: matrix cols must match vector length",
+                        ));
+                    }
+                    let result = a.dot(b);
+                    lua.create_userdata(NdArray::D1(result))
+                }
+                (NdArray::D1(a), NdArray::D2(b)) => {
+                    if a.len() != b.nrows() {
+                        return Err(mlua::Error::external(
+                            "dot: vector length must match matrix rows",
+                        ));
+                    }
+                    let result = b.t().dot(a);
+                    lua.create_userdata(NdArray::D1(result))
+                }
+            }
+        })?,
+    )?;
+
+    np.set(
+        "matmul",
+        lua.create_function(|lua, (a, b): (Value, Value)| {
+            let arr_a = value_to_array(&a)?;
+            let arr_b = value_to_array(&b)?;
+            let ma = arr_a.as_2d();
+            let mb = arr_b.as_2d();
+            if ma.ncols() != mb.nrows() {
+                return Err(mlua::Error::external(format!(
+                    "matmul: ({},{}) × ({},{}) — inner dimensions must match",
+                    ma.nrows(),
+                    ma.ncols(),
+                    mb.nrows(),
+                    mb.ncols()
+                )));
+            }
+            let result = ma.dot(&mb);
+            lua.create_userdata(NdArray::D2(result))
+        })?,
+    )?;
 
     Ok(())
 }

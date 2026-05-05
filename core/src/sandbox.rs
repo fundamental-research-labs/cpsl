@@ -6,684 +6,17 @@ use native_http::HttpGateway;
 use sfae_core::store::SecretStore;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use thiserror::Error;
 
-// --- Module documentation convention ---
-// Every sandbox module (fs, http, etc.) must have a help() function.
-// Argument errors automatically hint at help() for discoverability.
+mod doc;
 
-/// Type of a function parameter, used for validation and help rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ParamType {
-    String,
-    Number,
-    Table,
-    #[allow(dead_code)]
-    Boolean,
-    /// Any type (for encode-style functions that accept varied input).
-    Value,
-}
-
-impl ParamType {
-    pub fn label(self) -> &'static str {
-        match self {
-            ParamType::String => "string",
-            ParamType::Number => "number",
-            ParamType::Table => "table",
-            ParamType::Boolean => "boolean",
-            ParamType::Value => "value",
-        }
-    }
-
-    /// Shell-friendly label (table → JSON for CLI context).
-    pub fn shell_label(self) -> &'static str {
-        match self {
-            ParamType::Table => "JSON",
-            _ => self.label(),
-        }
-    }
-
-    /// Check whether an mlua::Value matches this expected type.
-    pub fn matches(self, val: &mlua::Value) -> bool {
-        match self {
-            ParamType::String => matches!(val, mlua::Value::String(_)),
-            ParamType::Number => matches!(val, mlua::Value::Number(_) | mlua::Value::Integer(_)),
-            ParamType::Table => matches!(val, mlua::Value::Table(_)),
-            ParamType::Boolean => matches!(val, mlua::Value::Boolean(_)),
-            ParamType::Value => true, // accepts anything (except nil, checked separately)
-        }
-    }
-}
-
-/// Documents a named field within an opts table parameter.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct FieldDoc {
-    pub name: &'static str,
-    pub typ: &'static str,
-    pub required: bool,
-    pub description: &'static str,
-}
-
-/// Structured parameter metadata for a sandbox function.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Param {
-    pub name: &'static str,
-    pub short: Option<char>,
-    pub typ: ParamType,
-    pub required: bool,
-    /// Known fields when type is Table or Value (rendered as sub-items in help).
-    pub fields: Option<&'static [FieldDoc]>,
-}
-
-/// Type of a function's return value, used for help rendering and validation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReturnType {
-    String,
-    Number,
-    Table,
-    Boolean,
-    /// Any type (e.g. json.decode returns varied types).
-    Value,
-    /// No return value (e.g. fs.write, fs.mkdir).
-    Void,
-    /// Userdata object with methods (e.g. DocFuture).
-    UserData,
-}
-
-impl ReturnType {
-    pub fn label(self) -> &'static str {
-        match self {
-            ReturnType::String => "string",
-            ReturnType::Number => "number",
-            ReturnType::Table => "table",
-            ReturnType::Boolean => "boolean",
-            ReturnType::Value => "any",
-            ReturnType::Void => "",
-            ReturnType::UserData => "userdata",
-        }
-    }
-
-    /// Shell-friendly label (table → JSON for CLI context).
-    pub fn shell_label(self) -> &'static str {
-        match self {
-            ReturnType::Table => "JSON",
-            _ => self.label(),
-        }
-    }
-}
-
-pub(crate) struct FnDoc {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub params: &'static [Param],
-    pub returns: ReturnType,
-    /// Optional usage example shown after the description in help output.
-    pub example: Option<&'static str>,
-}
-
-pub(crate) struct ModuleDoc {
-    pub name: &'static str,
-    pub summary: &'static str,
-    pub functions: &'static [FnDoc],
-}
-
-impl ModuleDoc {
-    /// Look up the params for a function by name.
-    ///
-    /// Panics if the name is not found — a wrong name is a bug that will be
-    /// caught immediately on first module registration, not at runtime.
-    pub fn params(&self, fn_name: &str) -> &'static [Param] {
-        self.functions
-            .iter()
-            .find(|f| f.name == fn_name)
-            .unwrap_or_else(|| panic!("no FnDoc named '{}' in module '{}'", fn_name, self.name))
-            .params
-    }
-}
-
-/// Controls whether help output uses Lua call syntax or shell flag syntax.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HelpMode {
-    /// `module.fn(arg1, arg2) -> type`
-    Lua,
-    /// `module fn --arg1 <type> --arg2 <type>`
-    Shell,
-}
-
-impl FnDoc {
-    /// Compact help for error context — signature + example in 2-3 lines.
-    /// Shown inline when a usage error occurs so the agent can self-correct
-    /// without an extra round-trip to call `module.help()`.
-    pub fn format_error_help(&self, module_name: &str) -> String {
-        let sig = self.generated_signature(HelpMode::Lua);
-        let mut out = format!("  Usage: {}.{}{}", module_name, self.name, sig);
-        if let Some(ex) = self.example {
-            out.push_str(&format!("\n  Example: {}", ex));
-        }
-        out
-    }
-
-    /// Generate signature from structured params + returns.
-    pub fn generated_signature(&self, mode: HelpMode) -> String {
-        match mode {
-            HelpMode::Lua => {
-                let ret = if self.returns == ReturnType::Void {
-                    String::new()
-                } else {
-                    format!(" -> {}", self.returns.label())
-                };
-                let params_str: Vec<String> = self
-                    .params
-                    .iter()
-                    .map(|p| {
-                        if p.required {
-                            format!("{}: {}", p.name, p.typ.label())
-                        } else {
-                            format!("{}?: {}", p.name, p.typ.label())
-                        }
-                    })
-                    .collect();
-                format!("({}){}", params_str.join(", "), ret)
-            }
-            HelpMode::Shell => {
-                let ret = if self.returns == ReturnType::Void {
-                    String::new()
-                } else {
-                    format!(" -> {}", self.returns.shell_label())
-                };
-                let flags: Vec<String> = self
-                    .params
-                    .iter()
-                    .map(|p| {
-                        let flag = match p.short {
-                            Some(c) => format!("-{}/--{}", c, p.name),
-                            None => format!("--{}", p.name),
-                        };
-                        if p.required {
-                            format!("{} <{}>", flag, p.typ.shell_label())
-                        } else {
-                            format!("[{} <{}>]", flag, p.typ.shell_label())
-                        }
-                    })
-                    .collect();
-                format!("{}{}", flags.join(" "), ret)
-            }
-        }
-    }
-}
-
-impl ModuleDoc {
-    /// Render help in the given mode.
-    pub fn format_help(&self, mode: HelpMode) -> String {
-        let mut out = format!("{} — {}\n", self.name, self.summary);
-        let mut sorted_fns: Vec<&FnDoc> = self.functions.iter().collect();
-        sorted_fns.sort_by_key(|f| f.name);
-        for f in sorted_fns {
-            let sig = f.generated_signature(mode);
-            match mode {
-                HelpMode::Lua => {
-                    out.push_str(&format!(
-                        "\n  {}.{}{}\n    {}\n",
-                        self.name, f.name, sig, f.description
-                    ));
-                }
-                HelpMode::Shell => {
-                    out.push_str(&format!(
-                        "\n  {} {} {}\n    {}\n",
-                        self.name, f.name, sig, f.description
-                    ));
-                }
-            }
-
-            // Render opts table field docs (Lua mode only — shell uses flags)
-            if mode == HelpMode::Lua {
-                for p in f.params {
-                    if let Some(fields) = p.fields {
-                        out.push_str(&format!("    {} fields:\n", p.name));
-                        for fd in fields {
-                            let req = if fd.required { "" } else { "?" };
-                            out.push_str(&format!(
-                                "      {}{}: {} — {}\n",
-                                fd.name, req, fd.typ, fd.description
-                            ));
-                        }
-                    }
-                }
-            }
-
-            // Render example if present (Lua mode only — examples are Luau code)
-            if mode == HelpMode::Lua {
-                if let Some(ex) = f.example {
-                    out.push_str(&format!("    Example: {}\n", ex));
-                }
-            }
-        }
-        match mode {
-            HelpMode::Lua => {
-                out.push_str(&format!(
-                    "\n  {}.help() -> string\n    Show this help message.\n",
-                    self.name
-                ));
-            }
-            HelpMode::Shell => {
-                out.push_str(&format!(
-                    "\n  {} help\n    Show this help message.\n",
-                    self.name
-                ));
-            }
-        }
-        out
-    }
-}
-
-/// Extract and validate arguments from a `MultiValue` against structured `Param` metadata.
-///
-/// Supports two calling conventions:
-/// - **Positional**: `fn(arg1, arg2, arg3)` — values matched in order to params
-/// - **Table form**: `fn({name1=val1, name2=val2})` — single table with named keys
-///
-/// Returns a `Vec<Value>` aligned with `params` (one entry per param, `Nil` for missing optional).
-/// Errors are human-readable: `"module.fn: missing required argument 'name' (type)"`.
-pub(crate) fn validate_args(
-    args: &MultiValue,
-    params: &[Param],
-    fn_name: &str,
-) -> Result<Vec<Value>, mlua::Error> {
-    let vals = args.iter().collect::<Vec<_>>();
-
-    // Detect table form: exactly one table argument.
-    //
-    // Ambiguity: when a function expects a single Table param, the table could be
-    // the argument itself (positional: `xml.encode(my_table)`) or a wrapper with
-    // named keys (table-form from shell: `xml.encode({tree=my_table})`).
-    // Resolution: try table-form first; if it fails, fall back to positional.
-    if vals.len() == 1 {
-        if let Value::Table(t) = &vals[0] {
-            if params.len() == 1 && params[0].typ == ParamType::Table {
-                // Ambiguous single-table case: try table-form, fall back to positional
-                match validate_table_form(t, params, fn_name) {
-                    Ok(result) => return Ok(result),
-                    Err(_) => return Ok(vec![vals[0].clone()]),
-                }
-            }
-            return validate_table_form(t, params, fn_name);
-        }
-    }
-
-    // Positional form
-    let mut result = Vec::with_capacity(params.len());
-    for (i, param) in params.iter().enumerate() {
-        let val = vals.get(i).copied().unwrap_or(&Value::Nil);
-        if matches!(val, Value::Nil) {
-            if param.required {
-                return Err(arg_error(fn_name, params));
-            }
-            result.push(Value::Nil);
-        } else if !param.typ.matches(val) {
-            return Err(mlua::Error::external(format!(
-                "{}: argument '{}' expected {}, got {}",
-                fn_name,
-                param.name,
-                param.typ.label(),
-                val.type_name()
-            )));
-        } else {
-            result.push(val.clone());
-        }
-    }
-    Ok(result)
-}
-
-/// Validate arguments passed as a single table with named keys.
-fn validate_table_form(
-    t: &mlua::Table,
-    params: &[Param],
-    fn_name: &str,
-) -> Result<Vec<Value>, mlua::Error> {
-    let mut result = Vec::with_capacity(params.len());
-    for (i, param) in params.iter().enumerate() {
-        // Try named key first, then positional index (1-based)
-        let val: Value = t
-            .get::<Value>(param.name)
-            .ok()
-            .filter(|v| !matches!(v, Value::Nil))
-            .or_else(|| {
-                t.get::<Value>(i + 1)
-                    .ok()
-                    .filter(|v| !matches!(v, Value::Nil))
-            })
-            .unwrap_or(Value::Nil);
-
-        if matches!(val, Value::Nil) {
-            if param.required {
-                return Err(arg_error(fn_name, params));
-            }
-            result.push(Value::Nil);
-        } else if !param.typ.matches(&val) {
-            return Err(mlua::Error::external(format!(
-                "{}: argument '{}' expected {}, got {}",
-                fn_name,
-                param.name,
-                param.typ.label(),
-                val.type_name()
-            )));
-        } else {
-            result.push(val);
-        }
-    }
-    Ok(result)
-}
-
-/// Build a clear error listing all missing required arguments.
-pub(crate) fn arg_error(fn_name: &str, params: &[Param]) -> mlua::Error {
-    let required: Vec<String> = params
-        .iter()
-        .filter(|p| p.required)
-        .map(|p| format!("'{}' ({})", p.name, p.typ.label()))
-        .collect();
-    let list = match required.len() {
-        0 => return mlua::Error::external(format!("{}: unknown argument error", fn_name)),
-        1 => format!("missing required argument {}", required[0]),
-        _ => format!("missing required arguments {}", required.join(" and ")),
-    };
-    mlua::Error::external(format!("{}: {}", fn_name, list))
-}
-
-#[cfg(feature = "mod-fs")]
-pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
-    name: "fs",
-    summary: "sandboxed filesystem (read, write, list, mkdir, copy, grep, tree, ...)",
-    functions: &[
-        FnDoc {
-            name: "read",
-            description: "Read the contents of a file. Supports partial reads with offset/limit (1-based line numbers).",
-            params: &[
-                Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "offset", short: Some('o'), typ: ParamType::Number, required: false, fields: None },
-                Param { name: "limit", short: Some('l'), typ: ParamType::Number, required: false, fields: None },
-            ],
-            returns: ReturnType::String,
-            example: Some(r#"local text = fs.read({path="/workspace/data.txt", offset=10, limit=50})"#),
-        },
-        FnDoc {
-            name: "write",
-            description: "Write content to a file.",
-            params: &[
-                Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "content", short: Some('c'), typ: ParamType::String, required: true, fields: None },
-            ],
-            returns: ReturnType::Void,
-            example: Some(r#"fs.write("/artifacts/out.txt", "hello")"#),
-        },
-        FnDoc {
-            name: "list",
-            description: "List entries in a directory.",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Table,
-            example: None,
-        },
-        FnDoc {
-            name: "exists",
-            description: "Check if a path exists (file or directory).",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Boolean,
-            example: None,
-        },
-        FnDoc {
-            name: "writable",
-            description: "Returns true if the path can be written to.",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Boolean,
-            example: None,
-        },
-        FnDoc {
-            name: "mkdir",
-            description: "Create a directory and parents.",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Void,
-            example: None,
-        },
-        FnDoc {
-            name: "rename",
-            description: "Rename/move a file or directory.",
-            params: &[
-                Param { name: "src", short: Some('s'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "dst", short: Some('d'), typ: ParamType::String, required: true, fields: None },
-            ],
-            returns: ReturnType::Void,
-            example: None,
-        },
-        FnDoc {
-            name: "remove",
-            description: "Remove a file or directory (recursive).",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Void,
-            example: None,
-        },
-        FnDoc {
-            name: "isdir",
-            description: "Check if a path is a directory.",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Boolean,
-            example: None,
-        },
-        FnDoc {
-            name: "isfile",
-            description: "Check if a path is a file.",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Boolean,
-            example: None,
-        },
-        FnDoc {
-            name: "size",
-            description: "Get the size of a file in bytes (without reading it).",
-            params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
-            returns: ReturnType::Number,
-            example: None,
-        },
-        FnDoc {
-            name: "copy",
-            description: "Copy a file.",
-            params: &[
-                Param { name: "src", short: Some('s'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "dst", short: Some('d'), typ: ParamType::String, required: true, fields: None },
-            ],
-            returns: ReturnType::Void,
-            example: Some(r#"fs.copy("/workspace/data.txt", "/artifacts/data.txt")"#),
-        },
-        #[cfg(feature = "mod-grep")]
-        FnDoc {
-            name: "grep",
-            description: "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.",
-            params: &[Param {
-                name: "opts",
-                short: None,
-                typ: ParamType::Table,
-                required: true,
-                fields: Some(&[
-                    FieldDoc { name: "pattern", typ: "string", required: true, description: "Regex pattern to search for" },
-                    FieldDoc { name: "path", typ: "string", required: true, description: "File or directory to search" },
-                    FieldDoc { name: "glob", typ: "string", required: false, description: "Glob filter for file names (e.g. \"*.rs\")" },
-                    FieldDoc { name: "max_count", typ: "number", required: false, description: "Maximum number of matches to return" },
-                    FieldDoc { name: "files_only", typ: "boolean", required: false, description: "Return only unique file paths (like rg -l)" },
-                ]),
-            }],
-            returns: ReturnType::Table,
-            example: Some(r#"fs.grep({pattern="TODO", path="/workspace", glob="*.rs", max_count=20})"#),
-        },
-        #[cfg(feature = "mod-grep")]
-        FnDoc {
-            name: "tree",
-            description: "Display a directory tree.",
-            params: &[Param {
-                name: "opts",
-                short: None,
-                typ: ParamType::Table,
-                required: true,
-                fields: Some(&[
-                    FieldDoc { name: "path", typ: "string", required: true, description: "Root directory path" },
-                    FieldDoc { name: "depth", typ: "number", required: false, description: "Max depth (default 3)" },
-                    FieldDoc { name: "dirs_only", typ: "boolean", required: false, description: "Show only directories" },
-                    FieldDoc { name: "glob", typ: "string", required: false, description: "Only show files matching glob pattern (e.g. \"*.rs\")" },
-                ]),
-            }],
-            returns: ReturnType::String,
-            example: Some(r#"print(fs.tree({path="/workspace", depth=5, glob="*.rs"}))"#),
-        },
-    ],
+pub(crate) use doc::{
+    arg_error, validate_args, FieldDoc, FnDoc, HelpMode, ModuleDoc, Param, ParamType, ReturnType,
+    FS_DOC,
 };
 
-#[derive(Debug, Error)]
-pub enum SandboxError {
-    #[error("Lua error: {0}")]
-    Lua(#[from] mlua::Error),
-}
+mod errors;
 
-/// Structured error from sandbox execution.
-///
-/// Contains the clean error message and optional source location,
-/// with all mlua/Luau noise stripped.
-#[derive(Debug, Clone)]
-pub struct ExecError {
-    pub line: Option<usize>,
-    pub column: Option<usize>,
-    pub message: String,
-}
-
-impl std::fmt::Display for ExecError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.line, self.column) {
-            (Some(line), Some(col)) => write!(f, "{}:{}: {}", line, col, self.message),
-            (Some(line), None) => write!(f, "{}: {}", line, self.message),
-            _ => write!(f, "{}", self.message),
-        }
-    }
-}
-
-impl std::error::Error for ExecError {}
-
-/// Extract a clean, structured error from an `mlua::Error`.
-///
-/// Strips all mlua/Luau noise:
-/// - The `[string "..."]:<line>:<col>:` chunk location prefix (extracting line/col)
-/// - `\nstack traceback: ...` suffix
-///
-/// Returns an [`ExecError`] with optional line/column and a clean message.
-pub fn clean_lua_error(err: &mlua::Error) -> ExecError {
-    match err {
-        mlua::Error::SyntaxError { message, .. } => parse_chunk_location(message),
-        mlua::Error::RuntimeError(msg) => {
-            // Strip stack traceback
-            let without_trace = match msg.find("\nstack traceback:") {
-                Some(pos) => &msg[..pos],
-                None => msg.as_str(),
-            };
-            parse_chunk_location(without_trace.trim())
-        }
-        mlua::Error::CallbackError { cause, .. } => clean_lua_error(cause),
-        other => ExecError {
-            line: None,
-            column: None,
-            message: other.to_string(),
-        },
-    }
-}
-
-/// Parse `[string "..."]:<line>: <message>` (Luau error location format).
-///
-/// Handles both `[string "name"]:LINE: message` and `[string "name"]:LINE:COL: message`.
-/// Only reports line/column when the chunk name is "input" (the user's code).
-/// Errors from other chunks (shrt, pyrt, metatable handlers) get `line: None`.
-fn parse_chunk_location(msg: &str) -> ExecError {
-    if let Some(bracket_end) = msg.find("]:") {
-        // Extract chunk name from [string "NAME"]
-        let is_user_input = msg.starts_with("[string \"input\"]");
-
-        let after = &msg[bracket_end + 2..];
-        if let Some(colon) = after.find(':') {
-            if let Ok(line) = after[..colon].parse::<usize>() {
-                let rest = &after[colon + 1..];
-                // Check for column number: <digits>: <message>
-                if let Some(colon2) = rest.find(':') {
-                    if let Ok(col) = rest[..colon2].trim().parse::<usize>() {
-                        return ExecError {
-                            line: if is_user_input { Some(line) } else { None },
-                            column: if is_user_input { Some(col) } else { None },
-                            message: humanize_error(rest[colon2 + 1..].trim()),
-                        };
-                    }
-                }
-                return ExecError {
-                    line: if is_user_input { Some(line) } else { None },
-                    column: None,
-                    message: humanize_error(rest.trim()),
-                };
-            }
-        }
-    }
-    ExecError {
-        line: None,
-        column: None,
-        message: humanize_error(msg.trim()),
-    }
-}
-
-/// Translate Luau's internal error jargon into human-friendly messages.
-///
-/// Patterns that are already clear (FS errors, bad argument errors) pass through unchanged.
-pub fn humanize_error(msg: &str) -> String {
-    // "attempt to call a nil value" → "'X' is not defined" or "function is not defined"
-    if msg == "attempt to call a nil value" {
-        return "function is not defined".to_string();
-    }
-
-    // "attempt to index nil with 'Y'" → "nil has no member 'Y'"
-    if let Some(rest) = msg.strip_prefix("attempt to index nil with '") {
-        if let Some(member) = rest.strip_suffix('\'') {
-            return format!("nil has no member '{}'", member);
-        }
-    }
-
-    // "attempt to index ? (a nil value) with 'Y'" → "nil has no member 'Y'"
-    if msg.starts_with("attempt to index") && msg.contains("(a nil value)") {
-        if let Some(with_pos) = msg.find("with '") {
-            let after = &msg[with_pos + 6..];
-            if let Some(member) = after.strip_suffix('\'') {
-                return format!("nil has no member '{}'", member);
-            }
-        }
-    }
-
-    // "attempt to perform arithmetic (add) on nil and number" → "arithmetic on nil value"
-    if msg.starts_with("attempt to perform arithmetic") {
-        return "arithmetic on nil value".to_string();
-    }
-
-    // "attempt to concatenate string and nil" → hint about nil values in concatenation
-    if msg.starts_with("attempt to concatenate") {
-        return "string concatenation (..) with nil value — check that both sides are strings or numbers".to_string();
-    }
-
-    // "attempt to compare nil < number" → "cannot compare nil with number"
-    if msg.starts_with("attempt to compare") {
-        return msg.replacen("attempt to compare", "cannot compare", 1);
-    }
-
-    // "table index is nil" → "table key cannot be nil"
-    if msg == "table index is nil" {
-        return "table key cannot be nil".to_string();
-    }
-
-    // "attempt to modify a readonly table" → hint at `local` declaration
-    if msg.contains("attempt to modify a readonly table")
-        || msg.contains("cannot modify a readonly table")
-    {
-        return "cannot assign to undeclared variable — use 'local' to declare variables (e.g., local x = 5)".to_string();
-    }
-
-    // Everything else passes through unchanged
-    msg.to_string()
-}
+pub use errors::{clean_lua_error, humanize_error, ExecError, SandboxError};
 
 pub struct Sandbox {
     lua: Lua,
@@ -1456,6 +789,242 @@ fn register_fs_globals(
 ) -> Result<(), mlua::Error> {
     let fs = lua.create_table()?;
 
+    register_fs_read_and_metadata(
+        lua,
+        &fs,
+        mounts.clone(),
+        synthetic_files.clone(),
+        file_activity_cb.clone(),
+    )?;
+
+    register_fs_mutations(lua, &fs, mounts.clone(), file_activity_cb.clone())?;
+
+    register_fs_search(lua, &fs, mounts.clone())?;
+
+    register_fs_tree(lua, &fs, mounts.clone())?;
+
+    crate::lua_util::register_help_functions(lua, &fs, &FS_DOC)?;
+
+    lua.globals().set("fs", fs)?;
+
+    // Wrap all functions (except help) to append hint on argument errors
+    wrap_module_with_help_hints(lua, "fs")?;
+
+    Ok(())
+}
+
+/// Wrap every function in a module table (except `help`) so that errors
+/// include the caller's line number and inline usage help for argument errors.
+///
+/// ## Module error convention
+///
+/// Errors are read by both humans and AI agents. They must be:
+/// - **Located**: always include the caller's source line (via `error(msg, 2)`)
+/// - **Short**: one line of context, no stack traces or internal paths
+/// - **Descriptive**: say what went wrong, not Luau/Rust internals
+/// - **Self-correcting**: usage errors include the function's signature and
+///   example inline so the caller (human or AI) can fix the call immediately
+///   without a round-trip to `module.help()`
+///
+/// Error format after processing by `clean_lua_error()`:
+/// ```text
+/// 1: /attachments/test: Read-only file system     ← runtime error (no help)
+/// 1: plot.bar: expected table of numbers           ← usage error with inline help
+///   Usage: plot.bar(labels: table, values: table, opts: table) -> string
+///   Example: plot.bar({x={"Q1","Q2","Q3"}, y={100,200,150}, output="/artifacts/sales.svg"})
+/// ```
+pub(crate) fn wrap_module_with_help_hints(lua: &Lua, module_name: &str) -> Result<(), mlua::Error> {
+    lua.load(format!(
+        r#"
+        local mod = {module_name}
+        local fn_help = rawget(mod, "__fn_help") or {{}}
+        for k, v in pairs(mod) do
+            if type(v) == "function" and k ~= "help" then
+                local raw = v
+                local usage = fn_help[k]
+                mod[k] = function(...)
+                    local results = table.pack(pcall(raw, ...))
+                    if results[1] then
+                        return table.unpack(results, 2, results.n)
+                    end
+                    local msg = tostring(results[2])
+                    local trace = string.find(msg, "\nstack traceback:")
+                    local clean = trace and string.sub(msg, 1, trace - 1) or msg
+                    if string.find(clean, "bad argument")
+                        or string.find(clean, "missing required argument")
+                        or string.find(clean, "expected ")
+                    then
+                        if usage then
+                            error(clean .. "\n" .. usage, 2)
+                        else
+                            error(clean .. "\n  hint: call {module_name}.help() for usage", 2)
+                        end
+                    else
+                        error(clean, 2)
+                    end
+                end
+            end
+        end
+        setmetatable(mod, {{
+            __index = function(_, key)
+                local k = tostring(key)
+                if k:sub(1, 2) == "__" then return nil end
+                error("{module_name}." .. k .. " does not exist\n  hint: call {module_name}.help() for usage", 2)
+            end
+        }})
+        "#
+    ))
+    .exec()?;
+    Ok(())
+}
+
+fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
+    // help() only prints — exec() picks up the print buffer.
+    // No return, so there's no duplication when exec() combines print+return.
+    //
+    // The module listing is built dynamically at runtime: each module table has
+    // a __summary field (set by register_help_functions). help() probes known
+    // global names and includes only those that are actually registered.
+    let code = r#"
+        function help()
+            local known = {"base64","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
+            local lines = {}
+            for _, name in ipairs(known) do
+                local m = rawget(_G, name)
+                if type(m) == "table" then
+                    local summary = rawget(m, "__summary") or ""
+                    local pad = string.rep(" ", math.max(1, 13 - #name))
+                    table.insert(lines, "  " .. name .. pad .. summary)
+                end
+            end
+            local modules = #lines > 0 and table.concat(lines, "\n") or "  (none)"
+
+            local text = "Sandbox — available modules and globals\n"
+                .. "\n"
+                .. "All modules are available as globals (no require needed).\n"
+                .. "Run <module>.help() for detailed usage — recommended to discover useful options.\n"
+                .. "\n"
+                .. "Modules:\n"
+                .. modules .. "\n"
+                .. "\n"
+                .. "Globals:\n"
+                .. "  print(...)   Output values (captured and returned as result)\n"
+                .. "  require(m)   Load a registered module\n"
+                .. "  help()       Show this help message\n"
+                .. "\n"
+                .. "Standard libraries: string, table, math, bit32, buffer, coroutine, utf8\n"
+                .. "\n"
+                .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
+            print(text)
+        end
+    "#;
+    lua.load(code).exec()?;
+    Ok(())
+}
+
+fn register_print(
+    lua: &Lua,
+    buf: Arc<Mutex<String>>,
+    needs_newline: Arc<Mutex<bool>>,
+) -> Result<(), mlua::Error> {
+    let needs_nl_print = needs_newline.clone();
+    let needs_nl_write = needs_newline;
+    let buf2 = buf.clone();
+
+    let print_fn = lua.create_function(move |_, values: MultiValue| {
+        let line: Vec<String> = values.iter().map(format_value).collect();
+        let Ok(mut b) = buf.lock() else { return Ok(()) };
+        let Ok(mut nl) = needs_nl_print.lock() else {
+            return Ok(());
+        };
+        if *nl {
+            b.push('\n');
+        }
+        b.push_str(&line.join("\t"));
+        *nl = true; // After print, next output needs a newline separator
+        Ok(())
+    })?;
+    lua.globals().set("print", print_fn)?;
+
+    // __write: append text to the output buffer without a trailing newline.
+    // Used by shrt.luau's echo -n support.
+    let write_fn = lua.create_function(move |_, text: String| {
+        let Ok(mut b) = buf2.lock() else {
+            return Ok(());
+        };
+        let Ok(mut nl) = needs_nl_write.lock() else {
+            return Ok(());
+        };
+        if *nl {
+            b.push('\n');
+        }
+        b.push_str(&text);
+        *nl = false; // After __write, next output continues on same line
+        Ok(())
+    })?;
+    lua.globals().set("__write", write_fn)?;
+
+    Ok(())
+}
+
+fn remove_dangerous_globals(lua: &Lua) -> Result<(), mlua::Error> {
+    let globals = lua.globals();
+
+    // Remove io library entirely
+    globals.set("io", mlua::Value::Nil)?;
+
+    // Remove os library entirely — scripts should use fs module for file ops
+    // and the sandbox doesn't need os.clock/os.time/os.difftime
+    globals.set("os", mlua::Value::Nil)?;
+
+    // Remove file loading functions
+    globals.set("loadfile", mlua::Value::Nil)?;
+    globals.set("dofile", mlua::Value::Nil)?;
+
+    Ok(())
+}
+
+fn format_multi_value(values: &MultiValue) -> String {
+    if values.is_empty() {
+        return String::new();
+    }
+    values
+        .iter()
+        .map(format_value)
+        .collect::<Vec<_>>()
+        .join("\t")
+}
+
+fn format_value(value: &Value) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::Integer(i) => i.to_string(),
+        Value::Number(n) => {
+            if *n == (*n as i64) as f64 {
+                format!("{}", *n as i64)
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.to_string_lossy().to_string(),
+        Value::Table(_) => "table".to_string(),
+        Value::Function(_) => "function".to_string(),
+        _ => format!("{:?}", value),
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_read_and_metadata(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+    synthetic_files: Arc<std::collections::HashMap<String, String>>,
+    file_activity_cb: Option<FileActivityCallback>,
+) -> Result<(), mlua::Error> {
     // fs.read(path [, offset, limit]) -> string
     {
         let m = mounts.clone();
@@ -1512,6 +1081,16 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_mutations(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+    file_activity_cb: Option<FileActivityCallback>,
+) -> Result<(), mlua::Error> {
     // fs.write(path, content)
     {
         let m = mounts.clone();
@@ -1822,11 +1401,19 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_search(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // fs.grep(opts) -> table of matches
     #[cfg(feature = "mod-grep")]
     {
         let m = mounts.clone();
-        let _cb = file_activity_cb.clone();
         fs.set(
             "grep",
             lua.create_function(move |lua, args: MultiValue| {
@@ -2032,6 +1619,15 @@ fn register_fs_globals(
         )?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mod-fs")]
+fn register_fs_tree(
+    lua: &Lua,
+    fs: &mlua::Table,
+    mounts: Arc<MountTable>,
+) -> Result<(), mlua::Error> {
     // fs.tree(opts) -> string (ASCII directory tree)
     // Walks through the virtual mount layer (not the host filesystem directly),
     // so it sees all mounts, virtual dirs, and synthetic entries.
@@ -2323,1539 +1919,5 @@ fn register_fs_globals(
         )?;
     }
 
-    crate::lua_util::register_help_functions(lua, &fs, &FS_DOC)?;
-
-    lua.globals().set("fs", fs)?;
-
-    // Wrap all functions (except help) to append hint on argument errors
-    wrap_module_with_help_hints(lua, "fs")?;
-
     Ok(())
-}
-
-/// Wrap every function in a module table (except `help`) so that errors
-/// include the caller's line number and inline usage help for argument errors.
-///
-/// ## Module error convention
-///
-/// Errors are read by both humans and AI agents. They must be:
-/// - **Located**: always include the caller's source line (via `error(msg, 2)`)
-/// - **Short**: one line of context, no stack traces or internal paths
-/// - **Descriptive**: say what went wrong, not Luau/Rust internals
-/// - **Self-correcting**: usage errors include the function's signature and
-///   example inline so the caller (human or AI) can fix the call immediately
-///   without a round-trip to `module.help()`
-///
-/// Error format after processing by `clean_lua_error()`:
-/// ```text
-/// 1: /attachments/test: Read-only file system     ← runtime error (no help)
-/// 1: plot.bar: expected table of numbers           ← usage error with inline help
-///   Usage: plot.bar(labels: table, values: table, opts: table) -> string
-///   Example: plot.bar({x={"Q1","Q2","Q3"}, y={100,200,150}, output="/artifacts/sales.svg"})
-/// ```
-pub(crate) fn wrap_module_with_help_hints(lua: &Lua, module_name: &str) -> Result<(), mlua::Error> {
-    lua.load(format!(
-        r#"
-        local mod = {module_name}
-        local fn_help = rawget(mod, "__fn_help") or {{}}
-        for k, v in pairs(mod) do
-            if type(v) == "function" and k ~= "help" then
-                local raw = v
-                local usage = fn_help[k]
-                mod[k] = function(...)
-                    local results = table.pack(pcall(raw, ...))
-                    if results[1] then
-                        return table.unpack(results, 2, results.n)
-                    end
-                    local msg = tostring(results[2])
-                    local trace = string.find(msg, "\nstack traceback:")
-                    local clean = trace and string.sub(msg, 1, trace - 1) or msg
-                    if string.find(clean, "bad argument")
-                        or string.find(clean, "missing required argument")
-                        or string.find(clean, "expected ")
-                    then
-                        if usage then
-                            error(clean .. "\n" .. usage, 2)
-                        else
-                            error(clean .. "\n  hint: call {module_name}.help() for usage", 2)
-                        end
-                    else
-                        error(clean, 2)
-                    end
-                end
-            end
-        end
-        setmetatable(mod, {{
-            __index = function(_, key)
-                local k = tostring(key)
-                if k:sub(1, 2) == "__" then return nil end
-                error("{module_name}." .. k .. " does not exist\n  hint: call {module_name}.help() for usage", 2)
-            end
-        }})
-        "#
-    ))
-    .exec()?;
-    Ok(())
-}
-
-fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
-    // help() only prints — exec() picks up the print buffer.
-    // No return, so there's no duplication when exec() combines print+return.
-    //
-    // The module listing is built dynamically at runtime: each module table has
-    // a __summary field (set by register_help_functions). help() probes known
-    // global names and includes only those that are actually registered.
-    let code = r#"
-        function help()
-            local known = {"base64","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
-            local lines = {}
-            for _, name in ipairs(known) do
-                local m = rawget(_G, name)
-                if type(m) == "table" then
-                    local summary = rawget(m, "__summary") or ""
-                    local pad = string.rep(" ", math.max(1, 13 - #name))
-                    table.insert(lines, "  " .. name .. pad .. summary)
-                end
-            end
-            local modules = #lines > 0 and table.concat(lines, "\n") or "  (none)"
-
-            local text = "Sandbox — available modules and globals\n"
-                .. "\n"
-                .. "All modules are available as globals (no require needed).\n"
-                .. "Run <module>.help() for detailed usage — recommended to discover useful options.\n"
-                .. "\n"
-                .. "Modules:\n"
-                .. modules .. "\n"
-                .. "\n"
-                .. "Globals:\n"
-                .. "  print(...)   Output values (captured and returned as result)\n"
-                .. "  require(m)   Load a registered module\n"
-                .. "  help()       Show this help message\n"
-                .. "\n"
-                .. "Standard libraries: string, table, math, bit32, buffer, coroutine, utf8\n"
-                .. "\n"
-                .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
-            print(text)
-        end
-    "#;
-    lua.load(code).exec()?;
-    Ok(())
-}
-
-fn register_print(
-    lua: &Lua,
-    buf: Arc<Mutex<String>>,
-    needs_newline: Arc<Mutex<bool>>,
-) -> Result<(), mlua::Error> {
-    let needs_nl_print = needs_newline.clone();
-    let needs_nl_write = needs_newline;
-    let buf2 = buf.clone();
-
-    let print_fn = lua.create_function(move |_, values: MultiValue| {
-        let line: Vec<String> = values.iter().map(format_value).collect();
-        let Ok(mut b) = buf.lock() else { return Ok(()) };
-        let Ok(mut nl) = needs_nl_print.lock() else {
-            return Ok(());
-        };
-        if *nl {
-            b.push('\n');
-        }
-        b.push_str(&line.join("\t"));
-        *nl = true; // After print, next output needs a newline separator
-        Ok(())
-    })?;
-    lua.globals().set("print", print_fn)?;
-
-    // __write: append text to the output buffer without a trailing newline.
-    // Used by shrt.luau's echo -n support.
-    let write_fn = lua.create_function(move |_, text: String| {
-        let Ok(mut b) = buf2.lock() else {
-            return Ok(());
-        };
-        let Ok(mut nl) = needs_nl_write.lock() else {
-            return Ok(());
-        };
-        if *nl {
-            b.push('\n');
-        }
-        b.push_str(&text);
-        *nl = false; // After __write, next output continues on same line
-        Ok(())
-    })?;
-    lua.globals().set("__write", write_fn)?;
-
-    Ok(())
-}
-
-fn remove_dangerous_globals(lua: &Lua) -> Result<(), mlua::Error> {
-    let globals = lua.globals();
-
-    // Remove io library entirely
-    globals.set("io", mlua::Value::Nil)?;
-
-    // Remove os library entirely — scripts should use fs module for file ops
-    // and the sandbox doesn't need os.clock/os.time/os.difftime
-    globals.set("os", mlua::Value::Nil)?;
-
-    // Remove file loading functions
-    globals.set("loadfile", mlua::Value::Nil)?;
-    globals.set("dofile", mlua::Value::Nil)?;
-
-    Ok(())
-}
-
-fn format_multi_value(values: &MultiValue) -> String {
-    if values.is_empty() {
-        return String::new();
-    }
-    values
-        .iter()
-        .map(format_value)
-        .collect::<Vec<_>>()
-        .join("\t")
-}
-
-fn format_value(value: &Value) -> String {
-    match value {
-        Value::Nil => "nil".to_string(),
-        Value::Boolean(b) => b.to_string(),
-        Value::Integer(i) => i.to_string(),
-        Value::Number(n) => {
-            if *n == (*n as i64) as f64 {
-                format!("{}", *n as i64)
-            } else {
-                n.to_string()
-            }
-        }
-        Value::String(s) => s.to_string_lossy().to_string(),
-        Value::Table(_) => "table".to_string(),
-        Value::Function(_) => "function".to_string(),
-        _ => format!("{:?}", value),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_basic_arithmetic() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return 1 + 1").unwrap();
-        assert_eq!(result, "2");
-    }
-
-    #[test]
-    fn test_string_return() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return 'hello'").unwrap();
-        assert_eq!(result, "hello");
-    }
-
-    #[test]
-    fn test_no_return_value() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("local x = 1").unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_multiple_return_values() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return 1, 2, 3").unwrap();
-        assert_eq!(result, "1\t2\t3");
-    }
-
-    #[test]
-    fn test_syntax_error() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("this is not valid luau");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_sandbox_blocks_dangerous_globals() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return string.dump(function() end)");
-        assert!(
-            result.is_err(),
-            "string.dump should be blocked in sandbox mode"
-        );
-    }
-
-    #[test]
-    fn test_global_help_returns_help() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return help()").unwrap();
-        assert!(
-            result.contains("Sandbox"),
-            "should contain title: {}",
-            result
-        );
-        assert!(
-            result.contains("Modules:"),
-            "should have modules section: {}",
-            result
-        );
-        assert!(result.contains("print"), "should list print: {}", result);
-        assert!(
-            result.contains("help()"),
-            "should list help itself: {}",
-            result
-        );
-        assert!(
-            result.contains("string, table, math"),
-            "should list standard libs: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn test_global_help_works_without_return() {
-        // Simulates Python mode where help() is a bare expression statement
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("help()").unwrap();
-        assert!(
-            result.contains("Sandbox"),
-            "bare help() should print: {}",
-            result
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_help_works_without_return() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("fs.help()").unwrap();
-        assert!(
-            result.contains("fs — sandboxed filesystem"),
-            "bare fs.help() should print: {}",
-            result
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_help_returns_help() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return fs.help()").unwrap();
-        assert!(result.contains("fs — sandboxed filesystem"));
-        assert!(result.contains("fs.read"));
-        assert!(result.contains("fs.write"));
-        assert!(result.contains("fs.list"));
-        assert!(result.contains("fs.exists"));
-        assert!(result.contains("fs.mkdir"));
-        assert!(result.contains("fs.help()"));
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_bad_args_includes_inline_help() {
-        let sandbox = Sandbox::new().unwrap();
-        // Missing argument — should inline Usage + Example
-        let err = sandbox.exec("fs.read()").unwrap_err().to_string();
-        assert!(
-            err.contains("Usage: fs.read("),
-            "missing-arg error should contain inline usage: {}",
-            err
-        );
-        // Wrong type (boolean can't coerce to string) — same inline help
-        let err = sandbox.exec("fs.read(true)").unwrap_err().to_string();
-        assert!(
-            err.contains("Usage: fs.read("),
-            "wrong-type error should contain inline usage: {}",
-            err
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_runtime_error_no_hint() {
-        let sandbox = Sandbox::new().unwrap();
-        // Real runtime error (no mount → not found) should NOT have hint
-        let err = sandbox
-            .exec("fs.read('/nonexistent')")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            !err.contains("hint:"),
-            "runtime error should not contain hint: {}",
-            err
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_nil_function_includes_hint() {
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("fs.test()").unwrap_err().to_string();
-        assert!(
-            err.contains("fs.test does not exist"),
-            "nil access should name the key: {}",
-            err
-        );
-        assert!(
-            err.contains("hint: call fs.help() for usage"),
-            "nil access should contain hint: {}",
-            err
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_fs_functions_still_work_through_wrapper() {
-        // Ensure the pcall wrapper doesn't break normal return values
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("return fs.exists('/')").unwrap();
-        assert_eq!(result, "true");
-
-        let result = sandbox.exec("return type(fs.list('/'))").unwrap();
-        assert_eq!(result, "table");
-    }
-
-    #[test]
-    fn test_print_captured() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("print('hello world')").unwrap();
-        assert_eq!(result, "hello world");
-    }
-
-    #[test]
-    fn test_print_multiple_lines() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("print('a')\nprint('b')\nprint('c')").unwrap();
-        assert_eq!(result, "a\nb\nc");
-    }
-
-    #[test]
-    fn test_print_multiple_args() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("print(1, 2, 3)").unwrap();
-        assert_eq!(result, "1\t2\t3");
-    }
-
-    #[test]
-    fn test_print_and_return() {
-        let sandbox = Sandbox::new().unwrap();
-        let result = sandbox.exec("print('printed')\nreturn 42").unwrap();
-        assert_eq!(result, "printed\n42");
-    }
-
-    #[test]
-    fn test_print_buffer_clears_between_execs() {
-        let sandbox = Sandbox::new().unwrap();
-        let r1 = sandbox.exec("print('first')").unwrap();
-        assert_eq!(r1, "first");
-        let r2 = sandbox.exec("print('second')").unwrap();
-        assert_eq!(r2, "second");
-    }
-
-    // -- clean_lua_error tests --
-
-    #[test]
-    fn test_clean_runtime_error_with_line() {
-        let err = mlua::Error::RuntimeError(
-            r#"[string "input"]:3: attempt to call a nil value"#.to_string(),
-        );
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, Some(3));
-        assert_eq!(e.message, "function is not defined");
-    }
-
-    #[test]
-    fn test_clean_runtime_error_strips_traceback() {
-        let err = mlua::Error::RuntimeError(
-            "[string \"input\"]:1: attempt to call a nil value\nstack traceback:\n    [string \"input\"]:1: in main chunk".to_string(),
-        );
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, Some(1));
-        assert_eq!(e.message, "function is not defined");
-    }
-
-    #[test]
-    fn test_clean_syntax_error() {
-        let err = mlua::Error::SyntaxError {
-            message:
-                "[string \"input\"]:1: Expected 'end' (to close 'function' at line 1), got <eof>"
-                    .to_string(),
-            incomplete_input: true,
-        };
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, Some(1));
-        assert!(e.message.contains("Expected 'end'"), "msg: {}", e.message);
-    }
-
-    #[test]
-    fn test_clean_error_no_rust_paths() {
-        // Errors should never contain Rust source paths
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("foo()").unwrap_err();
-        let s = err.to_string();
-        assert!(!s.contains("sandbox.rs"), "leaked Rust path: {}", s);
-        assert!(!s.contains(".rs:"), "leaked Rust file ref: {}", s);
-    }
-
-    #[test]
-    fn test_clean_error_no_location() {
-        // Errors re-thrown through pcall wrapper (level 0) have no location
-        let err = mlua::Error::RuntimeError("some error without location".to_string());
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, None);
-        assert_eq!(e.message, "some error without location");
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_clean_fs_error_passthrough() {
-        // FS errors are already clean — they should pass through unchanged
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("fs.read('/nonexistent')").unwrap_err();
-        assert!(
-            err.message.contains("No such file or directory"),
-            "msg: {}",
-            err.message
-        );
-    }
-
-    #[test]
-    fn test_non_input_chunk_has_no_line_number() {
-        // Errors from shrt or other non-input chunks should have line: None
-        let err = mlua::Error::RuntimeError(
-            r#"[string "shrt"]:908: xml.lfdskl does not exist"#.to_string(),
-        );
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, None, "non-input chunk should have no line number");
-        assert!(e.message.contains("does not exist"), "msg: {}", e.message);
-    }
-
-    #[test]
-    fn test_unnamed_chunk_has_no_line_number() {
-        // Errors from unnamed chunks (e.g., metatable handlers) should have line: None
-        let err = mlua::Error::RuntimeError(r#"[string ""]:5: some internal error"#.to_string());
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, None, "unnamed chunk should have no line number");
-    }
-
-    #[test]
-    fn test_input_chunk_preserves_line_number() {
-        // Errors from input (user code) should still have line numbers
-        let err =
-            mlua::Error::RuntimeError(r#"[string "input"]:5: something went wrong"#.to_string());
-        let e = clean_lua_error(&err);
-        assert_eq!(e.line, Some(5));
-        assert_eq!(e.message, "something went wrong");
-    }
-
-    // -- humanize_error tests --
-
-    #[test]
-    fn test_humanize_nil_call() {
-        assert_eq!(
-            humanize_error("attempt to call a nil value"),
-            "function is not defined"
-        );
-    }
-
-    #[test]
-    fn test_humanize_nil_index() {
-        assert_eq!(
-            humanize_error("attempt to index nil with 'bar'"),
-            "nil has no member 'bar'"
-        );
-    }
-
-    #[test]
-    fn test_humanize_nil_index_named() {
-        // Format: attempt to index foo (a nil value) with 'bar'
-        assert_eq!(
-            humanize_error("attempt to index foo (a nil value) with 'bar'"),
-            "nil has no member 'bar'"
-        );
-    }
-
-    #[test]
-    fn test_humanize_arithmetic_nil() {
-        assert_eq!(
-            humanize_error("attempt to perform arithmetic (add) on nil and number"),
-            "arithmetic on nil value"
-        );
-    }
-
-    #[test]
-    fn test_humanize_compare_nil() {
-        assert_eq!(
-            humanize_error("attempt to compare nil < number"),
-            "cannot compare nil < number"
-        );
-    }
-
-    #[test]
-    fn test_humanize_table_nil_key() {
-        assert_eq!(
-            humanize_error("table index is nil"),
-            "table key cannot be nil"
-        );
-    }
-
-    #[test]
-    fn test_humanize_passthrough() {
-        // Messages we don't recognize should pass through unchanged
-        assert_eq!(
-            humanize_error("/path: Read-only file system"),
-            "/path: Read-only file system"
-        );
-        assert_eq!(
-            humanize_error("bad argument #1 to 'read'"),
-            "bad argument #1 to 'read'"
-        );
-    }
-
-    // -- Integration tests: exec() returns clean ExecError --
-
-    #[test]
-    fn test_exec_error_undefined_function() {
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("foo()").unwrap_err();
-        assert_eq!(err.line, Some(1));
-        assert_eq!(err.message, "function is not defined");
-        assert_eq!(err.to_string(), "1: function is not defined");
-    }
-
-    #[test]
-    fn test_exec_error_syntax() {
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("if then end").unwrap_err();
-        assert_eq!(err.line, Some(1));
-        // Syntax error message should be clean, no Rust paths
-        assert!(!err.message.contains("sandbox.rs"), "msg: {}", err.message);
-    }
-
-    #[test]
-    fn test_exec_error_multiline() {
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("local x = 1\nlocal y = 2\nfoo()").unwrap_err();
-        assert_eq!(err.line, Some(3), "should point to line 3 where foo() is");
-        assert_eq!(err.message, "function is not defined");
-    }
-
-    #[test]
-    #[cfg(feature = "mod-fs")]
-    fn test_exec_error_readonly_fs() {
-        let sandbox = Sandbox::new().unwrap();
-        let err = sandbox.exec("fs.read('/nonexistent')").unwrap_err();
-        assert_eq!(err.line, Some(1), "FS errors should include caller's line");
-        assert!(err.message.contains("No such file or directory"));
-    }
-
-    // -- validate_args tests --
-
-    fn test_params() -> &'static [Param] {
-        &[
-            Param {
-                name: "text",
-                short: None,
-                typ: ParamType::String,
-                required: true,
-                fields: None,
-            },
-            Param {
-                name: "count",
-                short: None,
-                typ: ParamType::Number,
-                required: false,
-                fields: None,
-            },
-        ]
-    }
-
-    #[test]
-    fn test_validate_args_positional_all_present() {
-        let lua = Lua::new();
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::String(lua.create_string("hello").unwrap()));
-        mv.push_back(Value::Number(42.0));
-
-        let result = validate_args(&mv, test_params(), "test.fn").unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(&result[0], Value::String(s) if s.to_string_lossy() == "hello"));
-        assert!(matches!(&result[1], Value::Number(n) if *n == 42.0));
-    }
-
-    #[test]
-    fn test_validate_args_positional_optional_missing() {
-        let lua = Lua::new();
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::String(lua.create_string("hello").unwrap()));
-
-        let result = validate_args(&mv, test_params(), "test.fn").unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(&result[0], Value::String(_)));
-        assert!(matches!(&result[1], Value::Nil));
-    }
-
-    #[test]
-    fn test_validate_args_missing_required() {
-        let mv = MultiValue::new();
-        let err = validate_args(&mv, test_params(), "test.fn").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("test.fn"), "should name the function: {}", msg);
-        assert!(
-            msg.contains("'text'"),
-            "should name the missing param: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn test_validate_args_wrong_type() {
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::Number(123.0)); // should be string
-
-        let err = validate_args(&mv, test_params(), "test.fn").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("'text'"), "should name the param: {}", msg);
-        assert!(msg.contains("string"), "should name expected type: {}", msg);
-    }
-
-    #[test]
-    fn test_validate_args_table_form_named() {
-        let lua = Lua::new();
-        let t = lua.create_table().unwrap();
-        t.set("text", lua.create_string("hello").unwrap()).unwrap();
-        t.set("count", 5.0).unwrap();
-
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::Table(t));
-
-        let result = validate_args(&mv, test_params(), "test.fn").unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(&result[0], Value::String(s) if s.to_string_lossy() == "hello"));
-    }
-
-    #[test]
-    fn test_validate_args_table_form_positional() {
-        let lua = Lua::new();
-        let t = lua.create_table().unwrap();
-        t.set(1, lua.create_string("hello").unwrap()).unwrap();
-        t.set(2, 5.0).unwrap();
-
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::Table(t));
-
-        let result = validate_args(&mv, test_params(), "test.fn").unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(&result[0], Value::String(s) if s.to_string_lossy() == "hello"));
-    }
-
-    #[test]
-    fn test_validate_args_table_form_missing_required() {
-        let lua = Lua::new();
-        let t = lua.create_table().unwrap();
-        t.set("count", 5.0).unwrap(); // text is missing
-
-        let mut mv = MultiValue::new();
-        mv.push_back(Value::Table(t));
-
-        let err = validate_args(&mv, test_params(), "test.fn").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("'text'"), "should name missing param: {}", msg);
-    }
-
-    #[test]
-    fn test_validate_args_no_args_mentions_all_required() {
-        let params: &[Param] = &[
-            Param {
-                name: "doc",
-                short: None,
-                typ: ParamType::Table,
-                required: true,
-                fields: None,
-            },
-            Param {
-                name: "path",
-                short: Some('p'),
-                typ: ParamType::String,
-                required: true,
-                fields: None,
-            },
-        ];
-        let mv = MultiValue::new();
-        let err = validate_args(&mv, params, "xml.query").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("'doc'"), "should mention doc: {}", msg);
-        assert!(msg.contains("'path'"), "should mention path: {}", msg);
-        assert!(
-            msg.contains("xml.query"),
-            "should mention function: {}",
-            msg
-        );
-    }
-
-    // -- format_help tests --
-
-    fn test_module_doc() -> ModuleDoc {
-        ModuleDoc {
-            name: "xml",
-            summary: "XML parse, query & encode",
-            functions: &[
-                FnDoc {
-                    name: "parse",
-                    description: "Parse an XML string into a tree.",
-                    params: &[Param {
-                        name: "text",
-                        short: None,
-                        typ: ParamType::String,
-                        required: true,
-                        fields: None,
-                    }],
-                    returns: ReturnType::Table,
-                    example: None,
-                },
-                FnDoc {
-                    name: "query",
-                    description: "Filter nodes by path.",
-                    params: &[
-                        Param {
-                            name: "doc",
-                            short: None,
-                            typ: ParamType::Table,
-                            required: true,
-                            fields: None,
-                        },
-                        Param {
-                            name: "path",
-                            short: None,
-                            typ: ParamType::String,
-                            required: true,
-                            fields: None,
-                        },
-                    ],
-                    returns: ReturnType::Table,
-                    example: None,
-                },
-                FnDoc {
-                    name: "encode",
-                    description: "Encode to XML.",
-                    params: &[
-                        Param {
-                            name: "table",
-                            short: None,
-                            typ: ParamType::Table,
-                            required: true,
-                            fields: None,
-                        },
-                        Param {
-                            name: "opts",
-                            short: None,
-                            typ: ParamType::Table,
-                            required: false,
-                            fields: None,
-                        },
-                    ],
-                    returns: ReturnType::String,
-                    example: None,
-                },
-            ],
-        }
-    }
-
-    #[test]
-    fn test_format_help_lua_mode() {
-        let doc = test_module_doc();
-        let help = doc.format_help(HelpMode::Lua);
-        // Title
-        assert!(
-            help.contains("xml — XML parse, query & encode"),
-            "title: {}",
-            help
-        );
-        // Structured param rendering: module.fn(params) -> type
-        assert!(
-            help.contains("xml.parse(text: string) -> table"),
-            "parse sig: {}",
-            help
-        );
-        assert!(
-            help.contains("xml.query(doc: table, path: string) -> table"),
-            "query sig: {}",
-            help
-        );
-        // Optional params have ?
-        assert!(
-            help.contains("xml.encode(table: table, opts?: table) -> string"),
-            "encode sig: {}",
-            help
-        );
-        // Help entry
-        assert!(help.contains("xml.help()"), "help entry: {}", help);
-    }
-
-    #[test]
-    fn test_format_help_shell_mode() {
-        let doc = test_module_doc();
-        let help = doc.format_help(HelpMode::Shell);
-        // Title same in both modes
-        assert!(
-            help.contains("xml — XML parse, query & encode"),
-            "title: {}",
-            help
-        );
-        // Shell flag syntax
-        assert!(
-            help.contains("xml parse --text <string>"),
-            "parse shell: {}",
-            help
-        );
-        assert!(
-            help.contains("xml query --doc <JSON> --path <string>"),
-            "query shell: {}",
-            help
-        );
-        // Optional in brackets
-        assert!(help.contains("[--opts <JSON>]"), "opts optional: {}", help);
-        // Help entry uses shell syntax
-        assert!(help.contains("xml help"), "shell help entry: {}", help);
-        assert!(
-            !help.contains("xml.help()"),
-            "shell help should not use Lua syntax: {}",
-            help
-        );
-    }
-
-    #[test]
-    fn test_format_help_empty_params() {
-        // When params is empty, generated signature shows () with no args
-        let doc = ModuleDoc {
-            name: "json",
-            summary: "JSON encode & decode",
-            functions: &[FnDoc {
-                name: "decode",
-                description: "Parse JSON.",
-                params: &[],
-                returns: ReturnType::Void,
-                example: None,
-            }],
-        };
-        let lua_help = doc.format_help(HelpMode::Lua);
-        assert!(
-            lua_help.contains("json.decode()"),
-            "lua empty params: {}",
-            lua_help
-        );
-        let shell_help = doc.format_help(HelpMode::Shell);
-        assert!(
-            shell_help.contains("json decode"),
-            "shell empty params: {}",
-            shell_help
-        );
-    }
-
-    // -- ReturnType tests --
-
-    #[test]
-    fn test_return_type_labels() {
-        assert_eq!(ReturnType::String.label(), "string");
-        assert_eq!(ReturnType::Number.label(), "number");
-        assert_eq!(ReturnType::Table.label(), "table");
-        assert_eq!(ReturnType::Boolean.label(), "boolean");
-        assert_eq!(ReturnType::Value.label(), "any");
-        assert_eq!(ReturnType::Void.label(), "");
-    }
-
-    // -- generated_signature unit tests --
-
-    #[test]
-    fn test_generated_signature_lua_required_params() {
-        let f = FnDoc {
-            name: "parse",
-            description: "",
-            params: &[Param {
-                name: "text",
-                short: None,
-                typ: ParamType::String,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::Table,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Lua),
-            "(text: string) -> table"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_lua_optional_param() {
-        let f = FnDoc {
-            name: "encode",
-            description: "",
-            params: &[
-                Param {
-                    name: "tree",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "opts",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::String,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Lua),
-            "(tree: table, opts?: table) -> string"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_lua_void_return() {
-        let f = FnDoc {
-            name: "write",
-            description: "",
-            params: &[
-                Param {
-                    name: "path",
-                    short: Some('p'),
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "content",
-                    short: Some('c'),
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Void,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Lua),
-            "(path: string, content: string)"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_lua_no_params() {
-        let f = FnDoc {
-            name: "help",
-            description: "",
-            params: &[],
-            returns: ReturnType::String,
-            example: None,
-        };
-        assert_eq!(f.generated_signature(HelpMode::Lua), "() -> string");
-    }
-
-    #[test]
-    fn test_generated_signature_shell_required_params() {
-        let f = FnDoc {
-            name: "query",
-            description: "",
-            params: &[
-                Param {
-                    name: "doc",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "path",
-                    short: None,
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Table,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Shell),
-            "--doc <JSON> --path <string> -> JSON"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_shell_optional_brackets() {
-        let f = FnDoc {
-            name: "encode",
-            description: "",
-            params: &[
-                Param {
-                    name: "tree",
-                    short: None,
-                    typ: ParamType::Table,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "indent",
-                    short: None,
-                    typ: ParamType::Boolean,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::String,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Shell),
-            "--tree <JSON> [--indent <boolean>] -> string"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_shell_no_params() {
-        let f = FnDoc {
-            name: "help",
-            description: "",
-            params: &[],
-            returns: ReturnType::Void,
-            example: None,
-        };
-        assert_eq!(f.generated_signature(HelpMode::Shell), "");
-    }
-
-    // -- Short flag tests --
-
-    #[test]
-    fn test_generated_signature_shell_with_short_flags() {
-        let f = FnDoc {
-            name: "zip",
-            description: "",
-            params: &[
-                Param {
-                    name: "source",
-                    short: Some('s'),
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "archive",
-                    short: Some('a'),
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Void,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Shell),
-            "-s/--source <string> -a/--archive <string>"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_shell_short_flag_optional() {
-        let f = FnDoc {
-            name: "get",
-            description: "",
-            params: &[
-                Param {
-                    name: "url",
-                    short: Some('u'),
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                },
-                Param {
-                    name: "headers",
-                    short: Some('H'),
-                    typ: ParamType::Table,
-                    required: false,
-                    fields: None,
-                },
-            ],
-            returns: ReturnType::Table,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Shell),
-            "-u/--url <string> [-H/--headers <JSON>] -> JSON"
-        );
-    }
-
-    #[test]
-    fn test_generated_signature_lua_ignores_short_flags() {
-        // Lua mode should never show short flags
-        let f = FnDoc {
-            name: "read",
-            description: "",
-            params: &[Param {
-                name: "path",
-                short: Some('p'),
-                typ: ParamType::String,
-                required: true,
-                fields: None,
-            }],
-            returns: ReturnType::String,
-            example: None,
-        };
-        assert_eq!(
-            f.generated_signature(HelpMode::Lua),
-            "(path: string) -> string"
-        );
-    }
-
-    #[test]
-    fn test_format_help_shell_mode_with_short_flags() {
-        let doc = ModuleDoc {
-            name: "compress",
-            summary: "zip, tar, gzip",
-            functions: &[FnDoc {
-                name: "zip",
-                description: "Create a zip archive.",
-                params: &[
-                    Param {
-                        name: "source",
-                        short: Some('s'),
-                        typ: ParamType::String,
-                        required: true,
-                        fields: None,
-                    },
-                    Param {
-                        name: "archive",
-                        short: Some('a'),
-                        typ: ParamType::String,
-                        required: true,
-                        fields: None,
-                    },
-                ],
-                returns: ReturnType::Void,
-                example: None,
-            }],
-        };
-        let help = doc.format_help(HelpMode::Shell);
-        assert!(
-            help.contains("compress zip -s/--source <string> -a/--archive <string>"),
-            "shell short flags: {}",
-            help
-        );
-    }
-
-    // -- Phase 4: ALL_MODULE_DOCS registry and exhaustive verification --
-
-    /// Central registry of every module's documentation static.
-    /// Used by exhaustive tests to verify consistency across all modules.
-    fn all_module_docs() -> Vec<(&'static str, &'static ModuleDoc)> {
-        let mut docs = Vec::new();
-        #[cfg(feature = "mod-fs")]
-        docs.push(("fs", &FS_DOC));
-        #[cfg(feature = "mod-json")]
-        docs.push(("json", &crate::json::JSON_DOC));
-        #[cfg(feature = "mod-yaml")]
-        docs.push(("yaml", &crate::yaml::YAML_DOC));
-        #[cfg(feature = "mod-xml")]
-        docs.push(("xml", &crate::xml::XML_DOC));
-        #[cfg(feature = "mod-csv")]
-        docs.push(("csv", &crate::csv_mod::CSV_DOC));
-        #[cfg(feature = "mod-compress")]
-        docs.push(("compress", &crate::compress::COMPRESS_DOC));
-        #[cfg(feature = "mod-doc")]
-        docs.push(("doc", &crate::doc::DOC_MOD_DOC));
-        #[cfg(feature = "mod-http")]
-        docs.push(("http", &crate::http::HTTP_DOC));
-        #[cfg(feature = "mod-plot")]
-        docs.push(("plot", &crate::plot::PLOT_DOC));
-        #[cfg(feature = "mod-numpy")]
-        docs.push(("numx", &crate::numpy::NUMPY_DOC));
-        #[cfg(feature = "mod-fuzzy")]
-        docs.push(("fuzzy", &crate::fuzzy::FUZZY_DOC));
-        #[cfg(feature = "mod-phone")]
-        docs.push(("phone", &crate::phone::PHONE_DOC));
-        #[cfg(feature = "mod-email")]
-        docs.push(("email", &crate::email::EMAIL_DOC));
-        #[cfg(feature = "mod-country")]
-        {
-            docs.push(("country", &crate::country::COUNTRY_DOC));
-            docs.push(("currency", &crate::country::CURRENCY_DOC));
-        }
-        #[cfg(feature = "mod-datetime")]
-        docs.push(("datetime", &crate::datetime::DATETIME_DOC));
-        #[cfg(feature = "mod-fin")]
-        docs.push(("fin", &crate::fin::FIN_DOC));
-        #[cfg(feature = "mod-yfinance")]
-        docs.push(("yfinance", &crate::yfinance::YFINANCE_DOC));
-        #[cfg(feature = "mod-edgar")]
-        docs.push(("edgar", &crate::edgar::EDGAR_DOC));
-        #[cfg(feature = "mod-image")]
-        docs.push(("image", &crate::image::IMAGE_DOC));
-        #[cfg(feature = "mod-random")]
-        docs.push(("random", &crate::random::RANDOM_DOC));
-        #[cfg(feature = "mod-base64")]
-        docs.push(("base64", &crate::base64::BASE64_DOC));
-        #[cfg(feature = "mod-crypto")]
-        docs.push(("crypto", &crate::crypto::CRYPTO_DOC));
-        #[cfg(feature = "mod-regex")]
-        docs.push(("regex", &crate::regex_mod::REGEX_DOC));
-        #[cfg(feature = "mod-html")]
-        docs.push(("html", &crate::html_mod::HTML_DOC));
-        #[cfg(feature = "mod-url")]
-        docs.push(("url", &crate::url_mod::URL_DOC));
-        #[cfg(feature = "mod-qr")]
-        docs.push(("qr", &crate::qr::QR_DOC));
-        docs
-    }
-
-    #[test]
-    fn test_all_modules_have_nonempty_params() {
-        // Parameterless functions are allowed (e.g. datetime.now()).
-        // This test verifies that most functions have structured params
-        // for shell dispatch and help rendering.
-        let allowed_empty = &[
-            ("datetime", "now"),
-            ("image", "fonts"),
-            ("random", "random"),
-            ("crypto", "uuid"),
-            ("crypto", "uuid_v7"),
-        ];
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                if allowed_empty.contains(&(mod_name, f.name)) {
-                    continue;
-                }
-                assert!(
-                    !f.params.is_empty(),
-                    "{}::{} has empty params — every function should have structured params",
-                    mod_name,
-                    f.name
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_no_duplicate_function_names_within_module() {
-        for (mod_name, doc) in all_module_docs() {
-            let mut seen = std::collections::HashSet::new();
-            for f in doc.functions {
-                assert!(
-                    seen.insert(f.name),
-                    "{}::{} is duplicated in module doc",
-                    mod_name,
-                    f.name
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_no_duplicate_short_flags_within_function() {
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                let mut seen = std::collections::HashSet::new();
-                for p in f.params {
-                    if let Some(c) = p.short {
-                        assert!(
-                            seen.insert(c),
-                            "{}::{} has duplicate short flag '-{}'",
-                            mod_name,
-                            f.name,
-                            c
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_void_return_consistency() {
-        // Functions that write/mutate (writeFile, mkdir, remove, rename) should return Void.
-        // Functions that read/compute should NOT return Void.
-        let void_fn_patterns = ["write", "mkdir", "remove", "rename"];
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                let is_void = f.returns == ReturnType::Void;
-                let name_lower = f.name.to_lowercase();
-                let looks_like_write = void_fn_patterns.iter().any(|p| name_lower.contains(p));
-
-                if looks_like_write && !is_void {
-                    // Some write-like functions do return values (e.g. compress.zip might return path)
-                    // This is a soft check — just flag it, don't fail
-                    // eprintln!("note: {}::{} looks like a write fn but returns {:?}", mod_name, f.name, f.returns);
-                }
-
-                // Hard check: Void functions should not have "Returns" in description
-                if is_void && f.description.contains("Returns ") {
-                    panic!(
-                        "{}::{} returns Void but description says 'Returns': {}",
-                        mod_name, f.name, f.description
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_generated_signature_param_count_matches() {
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                let lua_sig = f.generated_signature(HelpMode::Lua);
-                // Count params in Lua signature: parse "(a, b?, c)" -> count commas + 1
-                // Handle empty case: "()" -> 0 params
-                let inner = &lua_sig[1..lua_sig.find(')').unwrap()];
-                let sig_param_count = if inner.is_empty() {
-                    0
-                } else {
-                    inner.split(',').count()
-                };
-                assert_eq!(
-                    sig_param_count,
-                    f.params.len(),
-                    "{}::{}: Lua signature '{}' has {} params but params array has {}",
-                    mod_name,
-                    f.name,
-                    lua_sig,
-                    sig_param_count,
-                    f.params.len()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_module_doc_name_matches_registry() {
-        for (mod_name, doc) in all_module_docs() {
-            assert_eq!(
-                mod_name, doc.name,
-                "Registry name '{}' doesn't match ModuleDoc.name '{}'",
-                mod_name, doc.name
-            );
-        }
-    }
-
-    #[test]
-    fn test_format_help_renders_example() {
-        let doc = ModuleDoc {
-            name: "test",
-            summary: "test module",
-            functions: &[FnDoc {
-                name: "foo",
-                description: "Do stuff.",
-                params: &[Param {
-                    name: "x",
-                    short: None,
-                    typ: ParamType::String,
-                    required: true,
-                    fields: None,
-                }],
-                returns: ReturnType::String,
-                example: Some(r#"test.foo("hello")"#),
-            }],
-        };
-        let help = doc.format_help(HelpMode::Lua);
-        assert!(
-            help.contains("Example:"),
-            "help should contain 'Example:' when example is set: {}",
-            help
-        );
-        assert!(
-            help.contains(r#"test.foo("hello")"#),
-            "help should contain the example text: {}",
-            help
-        );
-    }
-
-    #[test]
-    fn test_format_help_renders_field_docs() {
-        static FIELDS: &[FieldDoc] = &[
-            FieldDoc {
-                name: "width",
-                typ: "number",
-                required: true,
-                description: "Width in pixels",
-            },
-            FieldDoc {
-                name: "title",
-                typ: "string",
-                required: false,
-                description: "Chart title",
-            },
-        ];
-        static PARAMS: &[Param] = &[Param {
-            name: "opts",
-            short: None,
-            typ: ParamType::Table,
-            required: true,
-            fields: Some(FIELDS),
-        }];
-        static FUNCS: &[FnDoc] = &[FnDoc {
-            name: "bar",
-            description: "Draw stuff.",
-            params: PARAMS,
-            returns: ReturnType::Void,
-            example: None,
-        }];
-        let doc = ModuleDoc {
-            name: "test",
-            summary: "test module",
-            functions: FUNCS,
-        };
-        let help = doc.format_help(HelpMode::Lua);
-        assert!(
-            help.contains("width: number"),
-            "help should contain field name and type: {}",
-            help
-        );
-        assert!(
-            help.contains("title?: string"),
-            "optional field should have '?': {}",
-            help
-        );
-        assert!(
-            help.contains("Width in pixels"),
-            "help should contain field description: {}",
-            help
-        );
-    }
-
-    #[test]
-    fn test_functions_with_3_plus_params_have_examples() {
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                if f.params.len() >= 3 && f.example.is_none() {
-                    panic!(
-                        "{}::{} has {} params but no example",
-                        mod_name,
-                        f.name,
-                        f.params.len()
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_table_params_have_field_docs() {
-        // Soft check: log warnings but don't fail
-        for (mod_name, doc) in all_module_docs() {
-            for f in doc.functions {
-                for p in f.params {
-                    if p.typ == ParamType::Table && p.fields.is_none() && p.name == "opts" {
-                        eprintln!(
-                            "note: {}::{} param '{}' is Table but has no FieldDoc",
-                            mod_name, f.name, p.name
-                        );
-                    }
-                }
-            }
-        }
-    }
 }
