@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta
+      name="description"
+      content="CPSL is a composable sandbox runtime for agent software with an in-browser WASM demo."
+    >
+    <title>CPSL</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="CPSL home">CPSL</a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#demo">Demo</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/fundamental-research-labs/cpsl">GitHub</a>
+        <button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">
+          <span class="theme-toggle__icon" aria-hidden="true"></span>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <div class="hero-copy">
+          <p class="eyebrow">Composable sandboxes for agent software</p>
+          <h1 id="title">CPSL</h1>
+          <p class="lede">
+            Package tools, permissions, files, network access, and language adapters into explicit
+            sandbox images. The same runtime contract can live in a CLI, server, app host, or browser.
+          </p>
+          <div class="hero-actions" aria-label="Project links">
+            <a class="button button-primary" href="#install">Install</a>
+          </div>
+        </div>
+
+        <section class="terminal-shell" id="demo" aria-labelledby="demo-title">
+          <div class="terminal-toolbar">
+            <h2 id="demo-title">cpsl-web</h2>
+            <div class="mode-tabs" role="tablist" aria-label="CPSL mode">
+              <button type="button" role="tab" aria-selected="true" data-mode="0">Shell</button>
+              <button type="button" role="tab" aria-selected="false" data-mode="1">Python</button>
+              <button type="button" role="tab" aria-selected="false" data-mode="2">Luau</button>
+            </div>
+            <button class="icon-button" type="button" id="clear-terminal" aria-label="Clear console" title="Clear console (Cmd+K)">clear</button>
+            <button class="icon-button icon-only" type="button" id="fullscreen-terminal" aria-label="Expand terminal to full page" aria-pressed="false" title="Full page">
+              <svg class="fullscreen-icon fullscreen-icon--expand" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
+              </svg>
+              <svg class="fullscreen-icon fullscreen-icon--collapse" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="terminal" aria-live="polite" aria-label="Interactive CPSL terminal">
+            <div class="terminal-screen" id="terminal-screen">
+              <div class="terminal-output" id="terminal-output"></div>
+              <form class="terminal-input-row" id="terminal-form" autocomplete="off">
+                <label class="prompt" for="terminal-input" id="terminal-prompt">$</label>
+                <span class="terminal-input-wrap">
+                  <input
+                    id="terminal-input"
+                    name="command"
+                    type="text"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    aria-label="CPSL command"
+                  >
+                  <span class="terminal-placeholder" id="terminal-placeholder" aria-hidden="true"></span>
+                </span>
+              </form>
+            </div>
+          </div>
+
+          <div class="demo-meta" aria-label="Sandbox build details">
+            <span class="capsule-source">
+              Capsule built with
+              <a href="https://github.com/fundamental-research-labs/cpsl/blob/main/web/public/cpsl-web.toml">cpsl-web.toml</a>
+            </span>
+            <span class="allowed-domains">
+              <span class="meta-label">Allowed domains</span>
+              <span id="allowed-domains"><code>httpbin.org</code></span>
+            </span>
+          </div>
+        </section>
+      </section>
+
+      <section class="details" aria-label="CPSL overview">
+        <article>
+          <h2>Small Capsules</h2>
+          <p>Build only the modules a task needs and leave everything else outside the runtime.</p>
+        </article>
+        <article>
+          <h2>Policy First</h2>
+          <p>Filesystem mounts, HTTP domains, and native capabilities are selected deliberately.</p>
+        </article>
+        <article>
+          <h2>Agent Native</h2>
+          <p>Run Bash-style commands, a Python-compatible subset, or direct Luau in one sandbox.</p>
+        </article>
+      </section>
+
+      <section class="install" id="install" aria-labelledby="install-title">
+        <div>
+          <p class="eyebrow">From source</p>
+          <h2 id="install-title">Install CPSL</h2>
+        </div>
+        <pre><code>git clone https://github.com/fundamental-research-labs/cpsl
+cd cpsl
+./build-cli.sh
+./cpsl -i</code></pre>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>&copy; <span id="copyright-year"></span> Fundamental Research Labs</span>
+      <span class="footer-links">
+        <span>MIT License</span>
+        <a href="https://github.com/fundamental-research-labs/cpsl">GitHub</a>
+      </span>
+    </footer>
+  </body>
+</html>

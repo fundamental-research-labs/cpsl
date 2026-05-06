@@ -99,6 +99,10 @@ local function tostring_val(v)
     return tostring(v)
 end
 
+-- Forward-declare emit so helpers above its definition close over this local.
+-- Luau's `local function emit` would not be visible to earlier function bodies.
+local emit
+
 -- Wrap a filesystem operation with error handling (shell semantics: print error, set $?=1, continue).
 -- Returns (true, result) on success, (false, error_message) on failure.
 local function try_io(fn, ...)
@@ -139,7 +143,7 @@ end
 
 -- Print only when not inside a pipe (pipe_depth == 0)
 -- Strips one trailing newline since print() adds its own.
-local function emit(s)
+emit = function(s)
     if pipe_depth == 0 and s ~= nil and s ~= "" then
         if string.sub(s, -1) == "\n" then
             s = string.sub(s, 1, -2)

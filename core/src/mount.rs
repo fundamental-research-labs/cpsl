@@ -279,6 +279,27 @@ impl MountTable {
         false
     }
 
+    /// Return the synthetic directory that owns this path, if any.
+    ///
+    /// This treats both the synthetic directory itself and any descendant path as
+    /// covered by that synthetic namespace. Callers use this to keep pseudo
+    /// filesystems such as `/proc`, `/etc`, and `/dev` read-only even when `/`
+    /// is backed by a writable root mount.
+    pub fn synthetic_dir_for(&self, virtual_path: &str) -> Option<String> {
+        let normalized = normalize_virtual(virtual_path);
+        let mut best: Option<&str> = None;
+        for synthetic_path in self.synthetic_dirs.keys() {
+            if normalized == *synthetic_path
+                || normalized.starts_with(&format!("{}/", synthetic_path))
+            {
+                if best.is_none() || synthetic_path.len() > best.unwrap().len() {
+                    best = Some(synthetic_path);
+                }
+            }
+        }
+        best.map(|path| path.to_string())
+    }
+
     /// Resolve a virtual path to a host path, enforcing mount boundaries.
     pub fn resolve(&self, virtual_path: &str) -> Result<(PathBuf, MountPermission), MountError> {
         let normalized = normalize_virtual(virtual_path);
@@ -851,5 +872,27 @@ mod tests {
         assert!(table.is_synthetic_entry("/dev/zero"));
         assert!(!table.is_synthetic_entry("/dev/random"));
         assert!(!table.is_synthetic_entry("/dev"));
+    }
+
+    #[test]
+    fn test_synthetic_dir_for() {
+        let mut table = MountTable::new();
+        table.add_synthetic_dir("/proc", vec!["version".into()]);
+        table.add_synthetic_dir("/proc/sys", vec!["kernel".into()]);
+
+        assert_eq!(table.synthetic_dir_for("/proc"), Some("/proc".to_string()));
+        assert_eq!(
+            table.synthetic_dir_for("/proc/version"),
+            Some("/proc".to_string())
+        );
+        assert_eq!(
+            table.synthetic_dir_for("/proc/new/file"),
+            Some("/proc".to_string())
+        );
+        assert_eq!(
+            table.synthetic_dir_for("/proc/sys/kernel"),
+            Some("/proc/sys".to_string())
+        );
+        assert_eq!(table.synthetic_dir_for("/tmp/proc"), None);
     }
 }

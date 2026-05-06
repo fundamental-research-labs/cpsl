@@ -170,6 +170,32 @@ fn mkdir_under_attachments_fails() {
 }
 
 #[test]
+fn write_under_synthetic_dir_fails_even_with_writable_root() {
+    let (sb, _root, _ws, _att, _art) = standard_sandbox();
+    let result = sb.exec("fs.write('/proc/newfile', 'data')");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("/proc/newfile: Read-only file system"),
+        "expected synthetic dir read-only error, got: {}",
+        err
+    );
+}
+
+#[test]
+fn mkdir_under_synthetic_dir_fails_even_with_writable_root() {
+    let (sb, _root, _ws, _att, _art) = standard_sandbox();
+    let result = sb.exec("fs.mkdir('/proc/newdir')");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("/proc/newdir: Read-only file system"),
+        "expected synthetic dir read-only error, got: {}",
+        err
+    );
+}
+
+#[test]
 fn rename_into_attachments_fails() {
     let (sb, _root, _ws, _att, _art) = standard_sandbox();
     sb.exec("fs.write('/artifacts/file.txt', 'data')").unwrap();

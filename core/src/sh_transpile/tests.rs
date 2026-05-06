@@ -220,6 +220,36 @@ fn test_e2e_echo_quoted() {
 }
 
 #[test]
+fn test_e2e_write_denied_errors_use_shell_message() {
+    let output = exec_sh("touch /proc/newfile");
+    assert!(
+        output.contains("/proc is read-only"),
+        "should explain that /proc is read-only, got: {}",
+        output
+    );
+    assert!(
+        !output.contains("function is not defined"),
+        "should not leak Luau nil-function errors, got: {}",
+        output
+    );
+}
+
+#[test]
+fn test_e2e_missing_file_errors_use_shell_message() {
+    let output = exec_sh("cat /missing");
+    assert!(
+        output.contains("No such file or directory"),
+        "should explain missing file, got: {}",
+        output
+    );
+    assert!(
+        !output.contains("function is not defined"),
+        "should not leak Luau nil-function errors, got: {}",
+        output
+    );
+}
+
+#[test]
 fn test_e2e_variable() {
     let output = exec_sh("NAME=\"world\"\necho \"hello $NAME\"");
     assert_eq!(output, "hello world");

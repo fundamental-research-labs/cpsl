@@ -1116,8 +1116,9 @@ fn register_fs_mutations(
                         _ => Err(mlua::Error::external(crate::MountError::ReadOnly(path))),
                     };
                 }
-                // /proc and /etc synthetic files are read-only
-                if m.is_synthetic_entry(&path) {
+                // Synthetic namespaces (/proc, /etc, most of /dev) are read-only
+                // even when the sandbox has a writable root mount.
+                if m.synthetic_dir_for(&path).is_some() {
                     return Err(mlua::Error::external(crate::MountError::ReadOnly(path)));
                 }
                 let content = match &validated[1] {
@@ -1188,6 +1189,9 @@ fn register_fs_mutations(
                     Value::String(s) => s.to_string_lossy().to_string(),
                     _ => unreachable!("validate_args ensures string"),
                 };
+                if m.synthetic_dir_for(&path).is_some() {
+                    return Ok(false);
+                }
                 // Check if resolve_write would succeed (ignoring whether the path exists)
                 Ok(m.resolve_write(&path).is_ok() || m.resolve_write_deep(&path).is_ok())
             })?,
@@ -1206,6 +1210,9 @@ fn register_fs_mutations(
                     Value::String(s) => s.to_string_lossy().to_string(),
                     _ => unreachable!("validate_args ensures string"),
                 };
+                if m.synthetic_dir_for(&path).is_some() {
+                    return Err(mlua::Error::external(crate::MountError::ReadOnly(path)));
+                }
                 let host_path = m.resolve_write_deep(&path).map_err(mlua::Error::external)?;
                 std::fs::create_dir_all(&host_path).map_err(mlua::Error::external)?;
                 if let Some(ref cb) = cb {
@@ -1232,6 +1239,12 @@ fn register_fs_mutations(
                     Value::String(s) => s.to_string_lossy().to_string(),
                     _ => unreachable!("validate_args ensures string"),
                 };
+                if m.synthetic_dir_for(&src).is_some() {
+                    return Err(mlua::Error::external(crate::MountError::ReadOnly(src)));
+                }
+                if m.synthetic_dir_for(&dst).is_some() {
+                    return Err(mlua::Error::external(crate::MountError::ReadOnly(dst)));
+                }
                 if m.is_mount_root(&src) {
                     return Err(mlua::Error::external(crate::MountError::MountRoot(src)));
                 }
@@ -1266,6 +1279,9 @@ fn register_fs_mutations(
                     Value::String(s) => s.to_string_lossy().to_string(),
                     _ => unreachable!("validate_args ensures string"),
                 };
+                if m.synthetic_dir_for(&path).is_some() {
+                    return Err(mlua::Error::external(crate::MountError::ReadOnly(path)));
+                }
                 if m.is_mount_root(&path) {
                     return Err(mlua::Error::external(crate::MountError::MountRoot(path)));
                 }
@@ -1386,6 +1402,9 @@ fn register_fs_mutations(
                     Value::String(s) => s.to_string_lossy().to_string(),
                     _ => unreachable!("validate_args ensures string"),
                 };
+                if m.synthetic_dir_for(&dst).is_some() {
+                    return Err(mlua::Error::external(crate::MountError::ReadOnly(dst)));
+                }
                 let host_src = m.resolve_read(&src).map_err(mlua::Error::external)?;
                 if !host_src.exists() {
                     return Err(mlua::Error::external(crate::MountError::NotFound(src)));
