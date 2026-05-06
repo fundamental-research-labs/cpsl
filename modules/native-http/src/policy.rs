@@ -1,3 +1,5 @@
+//! Domain allow/deny policy and credential storage for HTTP requests.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 

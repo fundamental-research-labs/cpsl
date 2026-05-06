@@ -1,3 +1,5 @@
+//! Policy-aware HTTP gateway that validates requests before dispatch.
+
 use crate::backend::HttpBackend;
 use crate::policy::{CredentialStore, DomainPolicy, DomainPrompt, DomainVerdict};
 use crate::types::{HttpError, Limits, Request, Response};

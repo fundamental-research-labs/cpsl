@@ -1,3 +1,5 @@
+//! Configuration parsing and module feature selection for the CPSL CLI.
+
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;

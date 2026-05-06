@@ -1,3 +1,5 @@
+//! Shared HTTP request, response, limits, and error types.
+
 use std::collections::HashMap;
 use std::time::Duration;
 use thiserror::Error;

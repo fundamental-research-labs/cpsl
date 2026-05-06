@@ -1,3 +1,5 @@
+//! SFAE credential and proxy integration exposed to the Lua sandbox.
+
 use crate::lua_util::register_help_functions;
 use crate::sandbox::{
     arg_error, wrap_module_with_help_hints, FieldDoc, FnDoc, ModuleDoc, Param, ParamType,

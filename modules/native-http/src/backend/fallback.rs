@@ -1,3 +1,5 @@
+//! Reqwest-based HTTP backend used on non-macOS platforms.
+
 use super::HttpBackend;
 use crate::types::{Headers, HttpError, Method, Request, Response};
 

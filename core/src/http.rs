@@ -1,3 +1,5 @@
+//! Lua-facing HTTP module backed by the policy-gated native HTTP gateway.
+
 use crate::sandbox::{
     arg_error, wrap_module_with_help_hints, FieldDoc, FnDoc, ModuleDoc, Param, ParamType,
     ReturnType,

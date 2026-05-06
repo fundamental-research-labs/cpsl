@@ -4,6 +4,7 @@ members = [
     "cli",
     "modules/native-http",
     "modules/native-webview-pdf",
+    "tools/ci-check",
 ]
 resolver = "2"
 

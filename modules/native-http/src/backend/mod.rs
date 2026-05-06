@@ -1,3 +1,5 @@
+//! Platform backend selection and shared HTTP backend trait.
+
 use crate::types::{HttpError, Request, Response};
 
 #[cfg(not(target_os = "macos"))]

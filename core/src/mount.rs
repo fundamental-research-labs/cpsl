@@ -1,3 +1,5 @@
+//! Mount table and path resolution for sandboxed filesystem access.
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use thiserror::Error;

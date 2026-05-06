@@ -1,3 +1,5 @@
+//! Command-line interface and REPL entry point for CPSL.
+
 mod config;
 
 use clap::{Args, Parser, Subcommand};

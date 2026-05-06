@@ -1,3 +1,5 @@
+//! Luau sandbox construction, execution, and global module registration.
+
 use crate::mount::MountTable;
 use mlua::{Lua, MultiValue, Value};
 #[cfg(feature = "mod-http")]

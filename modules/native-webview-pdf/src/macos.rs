@@ -5,11 +5,9 @@
 //! **Fast path** (already on main thread): Create the webview, spin the run loop
 //! until loading completes, call `createPDF`, spin until PDF bytes arrive.
 //!
-//! **Background-thread path**: Break the operation into non-blocking phases,
-//! each dispatched to the GCD main queue via `dispatch_async_f`/`dispatch_after_f`.
-//! Between phases the main queue is free to process WebKit's internal callbacks
-//! (a serial queue can only run one block at a time, so re-entrant `runUntilDate`
-//! from within a `dispatch_sync` block cannot drain WebKit's GCD work).
+//! **Background-thread path**: Break work into non-blocking phases dispatched
+//! to the GCD main queue. Between phases, the main queue is free to process
+//! WebKit callbacks that would otherwise be blocked by a synchronous dispatch.
 //! The calling thread blocks on a condvar until the result is ready.
 
 use crate::{PdfError, PdfOptions};

@@ -1,3 +1,5 @@
+//! Native HTTP transport with domain policy and credential injection.
+
 mod backend;
 mod gateway;
 mod policy;

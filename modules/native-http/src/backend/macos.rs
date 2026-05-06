@@ -1,3 +1,5 @@
+//! macOS HTTP backend implemented with NSURLSession.
+
 use super::HttpBackend;
 use crate::types::{Headers, HttpError, Method, Request, Response};
 use objc2::msg_send;

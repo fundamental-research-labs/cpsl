@@ -1,3 +1,5 @@
+//! Core sandbox, transpilation, and built-in module exports for CPSL.
+
 #[cfg(feature = "mod-base64")]
 pub(crate) mod base64;
 #[cfg(feature = "mod-compress")]
