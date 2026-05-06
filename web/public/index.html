@@ -35,8 +35,7 @@
             sandbox images. The same runtime contract can live in a CLI, server, app host, or browser.
           </p>
           <div class="hero-actions" aria-label="Project links">
-            <a class="button button-primary" href="#demo">Try the demo</a>
-            <a class="button" href="#install">Install</a>
+            <a class="button button-primary" href="#install">Install</a>
           </div>
         </div>
 
@@ -64,24 +63,31 @@
               <div class="terminal-output" id="terminal-output"></div>
               <form class="terminal-input-row" id="terminal-form" autocomplete="off">
                 <label class="prompt" for="terminal-input" id="terminal-prompt">$</label>
-                <input
-                  id="terminal-input"
-                  name="command"
-                  type="text"
-                  spellcheck="false"
-                  autocapitalize="off"
-                  autocomplete="off"
-                  aria-label="CPSL command"
-                >
+                <span class="terminal-input-wrap">
+                  <input
+                    id="terminal-input"
+                    name="command"
+                    type="text"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    aria-label="CPSL command"
+                  >
+                  <span class="terminal-placeholder" id="terminal-placeholder" aria-hidden="true"></span>
+                </span>
               </form>
             </div>
           </div>
 
-          <div class="quick-commands" aria-label="Example commands">
-            <button type="button" data-command="echo hello from CPSL" data-mode="0">echo</button>
-            <button type="button" data-command="ls /" data-mode="0">ls</button>
-            <button type="button" data-command='print(json.encode({hello="world"}))' data-mode="2">json</button>
-            <button type="button" data-command="print(6 * 7)" data-mode="1">python</button>
+          <div class="demo-meta" aria-label="Sandbox build details">
+            <span class="capsule-source">
+              Capsule built with
+              <a href="https://github.com/fundamental-research-labs/cpsl/blob/main/web/public/cpsl-web.toml">cpsl-web.toml</a>
+            </span>
+            <span class="allowed-domains">
+              <span class="meta-label">Allowed domains</span>
+              <span id="allowed-domains"><code>httpbin.org</code></span>
+            </span>
           </div>
         </section>
       </section>
@@ -114,8 +120,11 @@ cd cpsl
     </main>
 
     <footer class="site-footer">
-      <span>MIT License</span>
-      <a href="https://github.com/fundamental-research-labs/cpsl">GitHub</a>
+      <span>&copy; <span id="copyright-year"></span> Fundamental Research Labs</span>
+      <span class="footer-links">
+        <span>MIT License</span>
+        <a href="https://github.com/fundamental-research-labs/cpsl">GitHub</a>
+      </span>
     </footer>
   </body>
 </html>

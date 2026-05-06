@@ -1,0 +1,23 @@
+# Browser-hosted CPSL demo sandbox.
+# Build: ./web/build.sh
+# Start: ./web/server.sh
+
+[sandbox]
+name = "cpsl-web"
+
+[modules]
+fs = true
+json = true
+http = true
+base64 = true
+random = true
+fin = true
+regex = true
+url = true
+
+[python]
+enabled = true
+
+[http]
+allowed_domains = ["httpbin.org"]
+denied_domains = []

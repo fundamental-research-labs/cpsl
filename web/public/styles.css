@@ -388,7 +388,15 @@ h1 {
   display: none;
 }
 
+.terminal-input-wrap {
+  position: relative;
+  min-width: 0;
+  height: 1.48em;
+}
+
 .terminal-input-row input {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 1.48em;
   padding: 0;
@@ -405,21 +413,73 @@ h1 {
   opacity: 1;
 }
 
-.quick-commands {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.terminal-placeholder {
+  position: absolute;
+  inset: 0;
+  color: color-mix(in srgb, var(--terminal-muted), transparent 42%);
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 0;
+}
+
+.terminal-placeholder:empty {
+  display: none;
+}
+
+.terminal-input-row input::placeholder {
+  color: color-mix(in srgb, var(--terminal-muted), transparent 42%);
+  opacity: 1;
+}
+
+.demo-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
   padding: 0.75rem;
   border-top: 1px solid var(--line);
   background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
-.quick-commands button {
-  min-height: 2rem;
-  padding: 0 0.75rem;
-  color: var(--muted);
+.demo-meta a,
+.demo-meta code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82rem;
+}
+
+.demo-meta a,
+.demo-meta span {
+  min-width: 0;
+}
+
+.demo-meta code {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.capsule-source {
+  overflow-wrap: anywhere;
+}
+
+.allowed-domains,
+#allowed-domains {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+.allowed-domains {
+  justify-self: end;
+  text-align: right;
+}
+
+.meta-label {
+  margin-right: 0.35rem;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .details,
@@ -479,6 +539,12 @@ code {
   color: var(--muted);
 }
 
+.footer-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 @media (max-width: 900px) {
   .hero,
   .install {
@@ -535,5 +601,15 @@ code {
     min-height: 18rem;
     max-height: calc(100dvh - 8rem);
     font-size: 0.88rem;
+  }
+
+  .demo-meta {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .allowed-domains {
+    justify-self: start;
+    text-align: left;
   }
 }

@@ -2,7 +2,9 @@
 
 use crate::types::{HttpError, Request, Response};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "emscripten")]
+mod emscripten;
+#[cfg(all(not(target_os = "macos"), not(target_os = "emscripten")))]
 mod fallback;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -14,11 +16,15 @@ pub trait HttpBackend: Send + Sync {
 
 /// Create a backend appropriate for the current platform.
 pub fn platform_default() -> Box<dyn HttpBackend> {
+    #[cfg(target_os = "emscripten")]
+    {
+        Box::new(emscripten::EmscriptenBackend::new())
+    }
     #[cfg(target_os = "macos")]
     {
         Box::new(macos::MacosBackend::new())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(target_os = "emscripten")))]
     {
         Box::new(fallback::FallbackBackend::new())
     }

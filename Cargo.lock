@@ -731,6 +731,7 @@ name = "cpsl-web"
 version = "0.1.0"
 dependencies = [
  "cpsl-core",
+ "toml",
 ]
 
 [[package]]
@@ -3026,6 +3027,8 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "reqwest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "url",
 ]

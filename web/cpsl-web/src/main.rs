@@ -4,7 +4,7 @@ use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const MODE_BASH: u32 = 0;
 const MODE_PYTHON: u32 = 1;
@@ -12,6 +12,8 @@ const MODE_LUA: u32 = 2;
 
 const PYRT: &str = include_str!("../../../runtime/pyrt.luau");
 const SHRT: &str = include_str!("../../../runtime/shrt.luau");
+#[cfg(feature = "mod-http")]
+const WEB_HTTP_ALLOWED_DOMAINS: &str = env!("CPSL_WEB_HTTP_ALLOWED_DOMAINS");
 
 static LAST_ERROR: Mutex<Option<CString>> = Mutex::new(None);
 
@@ -66,7 +68,17 @@ impl Mode {
 impl Session {
     fn new() -> Result<Self, String> {
         let (mounts, workspace_dir) = web_workspace_mounts()?;
-        let sandbox = match Sandbox::with_mounts(mounts) {
+        let mut builder = Sandbox::builder().mounts(mounts);
+        #[cfg(feature = "mod-http")]
+        {
+            let mut gateway = cpsl_core::HttpGateway::builder();
+            for domain in web_http_allowed_domains() {
+                gateway = gateway.allow_domain(domain);
+            }
+            builder = builder.http_gateway(Arc::new(gateway.build()));
+        }
+
+        let sandbox = match builder.build() {
             Ok(sandbox) => sandbox,
             Err(e) => {
                 let _ = std::fs::remove_dir_all(&workspace_dir);
@@ -230,6 +242,16 @@ fn web_workspace_mounts() -> Result<(MountTable, PathBuf), String> {
         .map_err(|e| format!("failed to mount browser filesystem: {e}"))?;
 
     Ok((mounts, workspace_dir))
+}
+
+#[cfg(feature = "mod-http")]
+fn web_http_allowed_domains() -> Vec<String> {
+    WEB_HTTP_ALLOWED_DOMAINS
+        .split(',')
+        .map(str::trim)
+        .filter(|domain| !domain.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn starts_python_block(input: &str) -> bool {
@@ -491,5 +513,16 @@ mod tests {
         let listing = ok(second.eval(Mode::Bash, "ls"));
 
         assert!(!listing.lines().any(|line| line == "first-only.txt"));
+    }
+
+    #[cfg(feature = "mod-http")]
+    #[test]
+    fn session_exposes_http_with_manifest_default_domain() {
+        let mut session = Session::new().unwrap();
+
+        assert_eq!(ok(session.eval(Mode::Lua, "return type(http)")), "table");
+        assert!(web_http_allowed_domains()
+            .iter()
+            .any(|domain| domain == "httpbin.org"));
     }
 }

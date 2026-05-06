@@ -6,18 +6,30 @@ publish = false
 
 [features]
 default = ["web-demo"]
+mod-fs = ["cpsl-core/mod-fs"]
+mod-json = ["cpsl-core/mod-json"]
+mod-http = ["cpsl-core/mod-http"]
+mod-base64 = ["cpsl-core/mod-base64"]
+mod-random = ["cpsl-core/mod-random"]
+mod-fin = ["cpsl-core/mod-fin"]
+mod-regex = ["cpsl-core/mod-regex"]
+mod-url = ["cpsl-core/mod-url"]
 web-demo = [
-    "cpsl-core/mod-fs",
-    "cpsl-core/mod-json",
-    "cpsl-core/mod-base64",
-    "cpsl-core/mod-random",
-    "cpsl-core/mod-fin",
-    "cpsl-core/mod-regex",
-    "cpsl-core/mod-url",
+    "mod-fs",
+    "mod-json",
+    "mod-http",
+    "mod-base64",
+    "mod-random",
+    "mod-fin",
+    "mod-regex",
+    "mod-url",
 ]
 
 [dependencies]
 cpsl-core = { path = "../../core", default-features = false }
+
+[build-dependencies]
+toml = "0.8"
 
 [[bin]]
 name = "cpsl-web"

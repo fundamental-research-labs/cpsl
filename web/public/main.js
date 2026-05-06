@@ -84,11 +84,24 @@ const MODULE_METHODS = {
     "tree",
     "help",
   ],
+  http: ["get", "post", "put", "patch", "delete", "request", "help"],
   json: ["decode", "encode", "help"],
   random: ["seed", "random", "randint", "uniform", "randrange", "choice", "shuffle", "sample", "help"],
   regex: ["match", "find_all", "replace", "replace_all", "split", "is_match", "escape", "help"],
   url: ["parse", "build", "encode", "decode", "query_parse", "query_build", "join", "help"],
 };
+
+const EXAMPLE_PLACEHOLDERS = new Map([
+  [0, ['echo hello from CPSL', 'ls /', 'http get "https://httpbin.org/get"']],
+  [1, ["print(6 * 7)", 'print("hello from Python")']],
+  [
+    2,
+    [
+      'print(json.encode({hello="world"}))',
+      'local r = http.get("https://httpbin.org/get"); print(r.status)',
+    ],
+  ],
+]);
 
 const MODULE_NAMES = Object.keys(MODULE_METHODS).sort();
 const MODULE_MEMBER_COMPLETIONS = MODULE_NAMES.flatMap((moduleName) =>
@@ -181,12 +194,14 @@ const terminalScreen = document.querySelector("#terminal-screen");
 const output = document.querySelector("#terminal-output");
 const form = document.querySelector("#terminal-form");
 const input = document.querySelector("#terminal-input");
+const placeholderEl = document.querySelector("#terminal-placeholder");
 const promptEl = document.querySelector("#terminal-prompt");
 const clearButton = document.querySelector("#clear-terminal");
 const fullscreenButton = document.querySelector("#fullscreen-terminal");
 const themeToggle = document.querySelector(".theme-toggle");
 const modeButtons = [...document.querySelectorAll(".mode-tabs [data-mode]")];
-const quickButtons = [...document.querySelectorAll(".quick-commands [data-command]")];
+const allowedDomainsEl = document.querySelector("#allowed-domains");
+const copyrightYearEl = document.querySelector("#copyright-year");
 
 let mode = 0;
 let prompt = "$";
@@ -194,6 +209,13 @@ let ready = false;
 let busy = false;
 let history = [];
 let historyIndex = 0;
+let placeholderTimer = 0;
+let placeholderIndex = 0;
+let placeholderCharacter = 0;
+let placeholderDeleting = false;
+let commandSent = false;
+let demoInViewport = true;
+let shouldRestorePromptFocus = false;
 
 const BUILD_ID = "__CPSL_BUILD_ID__";
 const cacheSuffix = BUILD_ID.startsWith("__") ? "" : `?v=${encodeURIComponent(BUILD_ID)}`;
@@ -214,6 +236,10 @@ const savedTheme = localStorage.getItem("theme");
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 applyTheme(savedTheme || (systemDark ? "dark" : "light"));
 
+if (copyrightYearEl) {
+  copyrightYearEl.textContent = new Date().getFullYear().toString();
+}
+
 themeToggle.addEventListener("click", () => {
   const next = root.dataset.theme === "dark" ? "light" : "dark";
   localStorage.setItem("theme", next);
@@ -226,15 +252,180 @@ function scrollTerminalToBottom() {
   });
 }
 
+function currentPlaceholderExamples() {
+  return EXAMPLE_PLACEHOLDERS.get(mode) || EXAMPLE_PLACEHOLDERS.get(0) || [];
+}
+
+function setPromptPlaceholder(value) {
+  if (commandSent || !demoInViewport || input.value) {
+    if (placeholderEl) placeholderEl.textContent = "";
+    return;
+  }
+  if (placeholderEl) placeholderEl.textContent = value;
+}
+
+function stopPlaceholderLoop() {
+  window.clearTimeout(placeholderTimer);
+  if (placeholderEl) placeholderEl.textContent = "";
+}
+
+function schedulePlaceholder(delay) {
+  if (commandSent || !demoInViewport) {
+    stopPlaceholderLoop();
+    return;
+  }
+
+  window.clearTimeout(placeholderTimer);
+  placeholderTimer = window.setTimeout(typePlaceholder, delay);
+}
+
+function typePlaceholder() {
+  if (commandSent || !demoInViewport) {
+    stopPlaceholderLoop();
+    return;
+  }
+
+  const examples = currentPlaceholderExamples();
+  if (!examples.length) return;
+
+  if (input.value) {
+    if (placeholderEl) placeholderEl.textContent = "";
+    schedulePlaceholder(180);
+    return;
+  }
+
+  const example = examples[placeholderIndex % examples.length];
+  let delay = 54;
+
+  if (placeholderDeleting) {
+    placeholderCharacter = Math.max(0, placeholderCharacter - 1);
+    delay = 24;
+    if (placeholderCharacter === 0) {
+      placeholderDeleting = false;
+      placeholderIndex = (placeholderIndex + 1) % examples.length;
+      delay = 260;
+    }
+  } else {
+    placeholderCharacter = Math.min(example.length, placeholderCharacter + 1);
+    if (placeholderCharacter === example.length) {
+      placeholderDeleting = true;
+      delay = 1450;
+    }
+  }
+
+  setPromptPlaceholder(example.slice(0, placeholderCharacter));
+  schedulePlaceholder(delay);
+}
+
+function restartPlaceholderLoop() {
+  window.clearTimeout(placeholderTimer);
+  placeholderCharacter = 0;
+  placeholderDeleting = false;
+  if (placeholderEl) placeholderEl.textContent = "";
+
+  if (commandSent || !demoInViewport) return;
+
+  schedulePlaceholder(180);
+}
+
+function extractAllowedDomains(toml) {
+  let inHttpSection = false;
+  let assignment = "";
+  let collectingAllowedDomains = false;
+
+  for (const line of toml.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (collectingAllowedDomains) {
+      assignment += trimmed;
+      if (trimmed.includes("]")) break;
+      continue;
+    }
+
+    if (/^\[[^\]]+\]$/.test(trimmed)) {
+      inHttpSection = trimmed === "[http]";
+      continue;
+    }
+    if (!inHttpSection) continue;
+
+    const match = trimmed.match(/^allowed_domains\s*=\s*(\[.*)$/);
+    if (match) {
+      assignment = match[1];
+      if (assignment.includes("]")) break;
+      collectingAllowedDomains = true;
+    }
+  }
+
+  if (!assignment) return [];
+
+  return [...assignment.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => {
+    try {
+      return JSON.parse(`"${match[1]}"`);
+    } catch {
+      return match[1];
+    }
+  });
+}
+
+function renderAllowedDomains(domains) {
+  if (!allowedDomainsEl) return;
+
+  allowedDomainsEl.replaceChildren();
+  const visibleDomains = domains.length ? domains : ["none"];
+
+  for (const domain of visibleDomains) {
+    const code = document.createElement("code");
+    code.textContent = domain;
+    allowedDomainsEl.append(code);
+  }
+}
+
+async function loadAllowedDomains() {
+  try {
+    const response = await fetch(`./cpsl-web.toml${cacheSuffix}`);
+    if (!response.ok) return;
+    renderAllowedDomains(extractAllowedDomains(await response.text()));
+  } catch {
+    // Keep the HTML fallback when the static manifest is unavailable.
+  }
+}
+
+function terminalOwnsFocus() {
+  return terminalShell.contains(document.activeElement);
+}
+
+function restorePageScroll(scrollX, scrollY) {
+  if (window.scrollX === scrollX && window.scrollY === scrollY) return;
+
+  const previousBehavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  window.scrollTo(scrollX, scrollY);
+  root.style.scrollBehavior = previousBehavior;
+}
+
 function focusPrompt() {
-  input.focus();
+  const pageScrollX = window.scrollX;
+  const pageScrollY = window.scrollY;
+
+  try {
+    input.focus({ preventScroll: true });
+  } catch {
+    input.focus();
+  }
+
+  restorePageScroll(pageScrollX, pageScrollY);
+  requestAnimationFrame(() => restorePageScroll(pageScrollX, pageScrollY));
   scrollTerminalToBottom();
 }
 
 function clearConsole() {
   output.replaceChildren();
+  commandSent = false;
+  if (terminalOwnsFocus() && document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+  restartPlaceholderLoop();
   scrollTerminalToBottom();
-  focusPrompt();
 }
 
 function setFullPage(expanded) {
@@ -276,7 +467,7 @@ function appendBlock(text, kind = "output") {
   }
 }
 
-function setMode(nextMode, announce = true) {
+function setMode(nextMode, announce = true, { refocus = false } = {}) {
   mode = nextMode;
   prompt = PROMPTS.get(mode) || "$";
   promptEl.textContent = prompt;
@@ -290,7 +481,12 @@ function setMode(nextMode, announce = true) {
     appendLine(`mode: ${MODE_LABELS.get(mode)}`, "system");
   }
 
-  focusPrompt();
+  restartPlaceholderLoop();
+  if (refocus && demoInViewport) {
+    focusPrompt();
+  } else {
+    scrollTerminalToBottom();
+  }
 }
 
 function setBusy(nextBusy) {
@@ -303,6 +499,9 @@ function setBusy(nextBusy) {
 function sendEval(command) {
   if (!ready || busy) return;
 
+  shouldRestorePromptFocus = terminalOwnsFocus() && demoInViewport;
+  commandSent = true;
+  stopPlaceholderLoop();
   appendLine(command, "command", prompt);
   if (command.trim()) {
     history.push(command);
@@ -445,23 +644,38 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
+input.addEventListener("input", () => {
+  if (input.value) {
+    if (placeholderEl) placeholderEl.textContent = "";
+  }
+});
+
 terminal.addEventListener("click", (event) => {
   if (event.target !== input) {
     focusPrompt();
   }
 });
 
-modeButtons.forEach((button) => {
-  button.addEventListener("click", () => setMode(Number(button.dataset.mode)));
-});
+if ("IntersectionObserver" in window) {
+  const placeholderObserver = new IntersectionObserver(
+    ([entry]) => {
+      demoInViewport = entry.isIntersecting && entry.intersectionRatio > 0.25;
+      if (demoInViewport) {
+        restartPlaceholderLoop();
+      } else {
+        stopPlaceholderLoop();
+        if (terminalOwnsFocus()) input.blur();
+      }
+    },
+    { threshold: [0, 0.25, 0.5, 1] }
+  );
+  placeholderObserver.observe(terminalShell);
+}
 
-quickButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const nextMode = Number(button.dataset.mode);
-    if (nextMode !== mode) setMode(nextMode);
-    input.value = button.dataset.command;
-    focusPrompt();
-  });
+modeButtons.forEach((button) => {
+  button.addEventListener("click", (event) =>
+    setMode(Number(button.dataset.mode), true, { refocus: event.detail > 0 })
+  );
 });
 
 clearButton.addEventListener("click", () => {
@@ -474,6 +688,7 @@ fullscreenButton.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
   if (isClearShortcut(event)) {
+    if (!terminalOwnsFocus()) return;
     event.preventDefault();
     event.stopPropagation();
     clearConsole();
@@ -492,8 +707,7 @@ worker.addEventListener("message", (event) => {
     ready = true;
     setBusy(false);
     appendLine("CPSL WASM runtime ready", "system");
-    appendLine("try: echo hello from CPSL", "system");
-    focusPrompt();
+    scrollTerminalToBottom();
     return;
   }
 
@@ -503,7 +717,12 @@ worker.addEventListener("message", (event) => {
     prompt = PROMPTS.get(mode) || "$";
     promptEl.textContent = prompt;
     appendLine("session reset", "system");
-    focusPrompt();
+    if (shouldRestorePromptFocus && demoInViewport) {
+      focusPrompt();
+    } else {
+      scrollTerminalToBottom();
+    }
+    shouldRestorePromptFocus = false;
     return;
   }
 
@@ -519,7 +738,12 @@ worker.addEventListener("message", (event) => {
     }
     prompt = message.prompt || prompt;
     promptEl.textContent = prompt;
-    focusPrompt();
+    if (shouldRestorePromptFocus && demoInViewport) {
+      focusPrompt();
+    } else {
+      scrollTerminalToBottom();
+    }
+    shouldRestorePromptFocus = false;
     return;
   }
 
@@ -540,4 +764,6 @@ worker.addEventListener("error", (event) => {
 
 setBusy(true);
 appendLine("loading CPSL WASM runtime...", "system");
+loadAllowedDomains();
+restartPlaceholderLoop();
 worker.postMessage({ type: "init" });

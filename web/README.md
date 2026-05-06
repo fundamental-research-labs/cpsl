@@ -6,6 +6,11 @@ The demo runs CPSL in a Web Worker. The worker loads an Emscripten-built WASM
 bundle from `web/dist/assets/wasm/` and calls the Rust C ABI exposed by
 `web/cpsl-web`.
 
+The browser sandbox shape is declared in `web/public/cpsl-web.toml`. The web
+build derives the compiled module feature set from that manifest, and the Rust
+wrapper reads its HTTP allow-list at compile time. The default HTTP allow-list
+includes `httpbin.org` for simple request tests.
+
 Each browser session gets a fresh writable in-memory filesystem mounted at the
 sandbox root. Files are available to shell commands and `fs.*` calls for the
 life of that session, then discarded on reset or page reload. The demo does not
