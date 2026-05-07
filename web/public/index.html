@@ -52,15 +52,15 @@
                 <div class="demo-copy">
                     <h1 id="title">CPSL</h1>
                     <p class="lede lede-small">
-                        Safe mini-OS "Capsules" for agents that can run
-                        everywhere. (Linux, macOS, Windows, Web Browsers, iOS,
+                        Safe mini-OS "capsules" for agents that can run
+                        everywhere: Linux, macOS, Windows, web browsers, iOS,
                         Android...)
                     </p>
                     <p class="lede lede-small">
-                        Package tools, files & permissions. Build. Run.
+                        Package tools, files, and permissions. Build. Run.
                     </p>
                     <p class="lede lede-small">
-                        Agents can communicate with CPSL using Bash, Python or
+                        Agents can communicate with CPSL using Bash, Python, or
                         Lua,<br />and so can you. 👇
                     </p>
                 </div>
@@ -199,12 +199,12 @@
             >
                 <div class="manifest-copy">
                     <div class="section-heading">
-                        <h2 id="manifest-title">Describe, Build, Run.</h2>
+                        <h2 id="manifest-title">Describe, build, run.</h2>
                         <p>
                             A capsule starts as TOML. Name your sandbox, pick
-                            modules, pin network domains. Then use CPSL CLI to
-                            build & run. File mounts and allowed domains can be
-                            edited while the capsule is running.
+                            modules, and pin network domains. Then use the CPSL
+                            CLI to build and run. File mounts and allowed
+                            domains can be edited while the capsule is running.
                         </p>
                     </div>
 
@@ -256,7 +256,9 @@ hello from inside</code></pre>
             <section class="how-section" id="how" aria-labelledby="how-title">
                 <div class="section-heading">
                     <h2 id="how-title">How does it work?</h2>
-                    <p>CPSL is a Luau VM exposing Rust crate assemblies.</p>
+                    <p>
+                        CPSL is a Luau VM that exposes Rust crate assemblies.
+                    </p>
                 </div>
                 <div class="info-grid">
                     <article class="info-card">
@@ -265,18 +267,19 @@ hello from inside</code></pre>
                             <a href="https://github.com/luau-lang/luau">Luau</a>
                             is a small, fast, and embeddable programming
                             language based on Lua with a gradual type system.
-                            Built and open-sourced by
+                            It was built and open-sourced by
                             <a
                                 href="https://luau.org/news/2022-11-04-luau-origins-and-evolution/"
                                 >Roblox</a
-                            >, battle-tested by millions users.
+                            >
+                            and is battle-tested by millions of users.
                         </p>
                     </article>
                     <article class="info-card">
                         <h3>🧩 Composable</h3>
                         <p>
-                            File System, Networking, JSON, Compression, Custom
-                            Modules...<br />
+                            File system, networking, JSON, compression, custom
+                            modules...<br />
                             If you just need JSON and HTTP with one allowed
                             domain, then stick to the bare minimum.
                         </p>
@@ -284,9 +287,9 @@ hello from inside</code></pre>
                     <article class="info-card">
                         <h3>🎙️ Communication</h3>
                         <p>
-                            Agents and Humans can interract with CPSL using
-                            Bash, Python or Lua/Luau.<br />Luau runtime under
-                            the hood, Bash & Python transpiled.
+                            Agents and humans can interact with CPSL using
+                            Bash, Python, or Lua/Luau.<br />A Luau runtime runs
+                            under the hood; Bash and Python are transpiled.
                         </p>
                     </article>
                 </div>
@@ -297,10 +300,10 @@ hello from inside</code></pre>
                     <div>
                         <h3>💡 Python-on-Luau</h3>
                         <p>
-                            Python code can run faster transpiled into Luau,
-                            including transpilation time. 😅<br />See
+                            Python code can run faster when transpiled into
+                            Luau, even including transpilation time. 😅<br />See
                             <a href="#" class="inline-code">./run_tests.sh</a>
-                            script in the repo.
+                            in the repo.
                         </p>
                     </div>
                     <code>./run_tests.sh</code>
@@ -315,9 +318,10 @@ hello from inside</code></pre>
                     <article class="info-card">
                         <h3>Not Linux</h3>
                         <p>
-                            It looks and feels like Unix (programs, everything
-                            is a file, FS tree rooted at /, sh/bash-compatible
-                            shellm etc.). What's important is that it's
+                            It looks and feels like Unix: programs, everything
+                            is a file, the FS tree is rooted at /, and there is
+                            a sh/bash-compatible shell, etc. What's important
+                            is that it's
                             Unix-like enough for agents.
                         </p>
                     </article>
@@ -332,7 +336,8 @@ hello from inside</code></pre>
                         <h3>Not CPython</h3>
                         <p>
                             Though CPSL can run Python code, it does not carry
-                            the actual Python tooling. No pip install.
+                            the actual Python tooling. No
+                            <code>pip install</code>.
                         </p>
                     </article>
                 </div>
@@ -364,12 +369,12 @@ cd cpsl
                 </div>
                 <div class="contribute-copy">
                     <p>
-                        CPSL got open-sourced on May 4, 2026. It's used in
-                        production in some Fundamental Research Labs products
-                        already. It's an extremely powerful piece of tech but
-                        not yet perfectly modular, all build target not clearly
-                        exposed, etc. It's the right time to join as a
-                        contributor and help us design the perfect isolated and
+                        CPSL was open-sourced on May 4, 2026. It's already used
+                        in production in some Fundamental Research Labs
+                        products. It's an extremely powerful piece of tech, but
+                        it is not yet perfectly modular; not all build targets
+                        are clearly exposed, etc. It's the right time to join as a
+                        contributor and help us design the perfect isolated,
                         versatile operating system for AI agents.
                     </p>
                 </div>
