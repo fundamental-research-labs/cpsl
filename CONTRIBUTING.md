@@ -4,8 +4,9 @@ Thanks for working on CPSL. Keep changes focused, update docs when behavior chan
 
 ## Prerequisites
 
-- Rust and Cargo
-- `python3`, `perl`, and `bc` for `./bench-python-luau.sh`
+- Rust and Cargo for local builds
+- `python3` 3.7+ for `./bench-python-luau.sh`
+- Optional: Docker, used by `./bench-python-luau.sh` as a fallback when local benchmark prerequisites are missing
 - Platform native build tools required by Rust crates on your OS
 - Optional: PDFium for PDF-related tests, via `core/scripts/download-pdfium.sh`
 
