@@ -109,18 +109,20 @@ Agents and humans can interact with CPSL using Bash, Python, or Lua/Luau. A Luau
 
 ## Python-on-Luau
 
-Python code can run faster when transpiled into Luau, even including transpilation time.
-
-[`bench-python-luau.sh`](bench-python-luau.sh) compares CPSL Python mode against `python3`, checks output equality, and reports startup, Python-to-Luau transpilation, Luau execution, and CPython `runpy` script time separately.
-
-On one local Darwin arm64 run with Python 3.9.6 on May 6, 2026:
-
-- 12/12 smoke tests matched CPython output.
-- Luau VM execution was faster in 11/12 cases.
-- Transpilation plus Luau execution was still faster in 9/12 cases.
-- `math_heavy.py` was slower.
-
-This is not a universal Python benchmark. It is a useful proof point.
+| Test | CPSL total ms | CPython total ms |
+|------|---------------|------------------|
+| `comprehensive` | 16.87 | 24.73 |
+| `control_flow` | 14.59 | 21.52 |
+| `dict_ops` | 15.74 | 22.03 |
+| `fibonacci` | 14.70 | 24.45 |
+| `functional` | 15.60 | 22.12 |
+| `hello` | 15.74 | 22.05 |
+| `imports` | 16.17 | 23.12 |
+| `list_ops` | 16.84 | 22.06 |
+| `math_heavy` | 22.87 | 25.09 |
+| `patterns` | 17.90 | 22.41 |
+| `sorting` | 28.18 | 23.75 |
+| `string_ops` | 18.63 | 23.19 |
 
 ```sh
 ./bench-python-luau.sh
