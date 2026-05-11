@@ -166,6 +166,18 @@ CPSL was open-sourced on May 4, 2026. It's already used in production in some [F
 
 It's the right time to join as a contributor and help us design the perfect isolated, versatile operating system for AI agents.
 
+## Roadmap
+
+CPSL is early and hackable. The near-term roadmap focuses on making the runtime easier to install, target, reuse, and demonstrate with real agent workflows.
+
+| Area | Next milestone | Tracking |
+|------|----------------|----------|
+| SDK targets | Build manifest-aware SDKs for iOS, macOS, Windows, Android, and Linux, starting with generated C headers. SDK artifacts should be built on demand by `cpsl` from manifest features, not published as version-tag artifacts. | [#9](https://github.com/fundamental-research-labs/cpsl/issues/9) |
+| Detached sessions | Add Docker-shaped `cpsl run -d` and `cpsl --exec` entry points for long-lived CPSL sessions while leaving the implementation architecture open. | [#10](https://github.com/fundamental-research-labs/cpsl/issues/10) |
+| CLI release artifacts | Publish `cpsl` CLI binaries for macOS, Windows, and Linux when tagging a version. | [#11](https://github.com/fundamental-research-labs/cpsl/issues/11) |
+| CPSL Hub | Design the push and pull workflow for pre-built capsules, including metadata, compatibility checks, and provenance. | [#12](https://github.com/fundamental-research-labs/cpsl/issues/12) |
+| Agent sandbox demo | Add a reproducible demo of an agent using a CPSL capsule with explicit files, modules, network rules, and output artifacts. | [#13](https://github.com/fundamental-research-labs/cpsl/issues/13) |
+
 ## Repository Layout
 
 - `cli/` - command-line entry point
