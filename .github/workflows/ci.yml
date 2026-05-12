@@ -37,8 +37,8 @@ jobs:
         with:
           shared-key: compile
 
-      - name: Compile workspace
-        run: cargo build --workspace --all-features
+      - name: Compile CLI
+        run: ./build-cli.sh
 
   source-policy:
     name: Source policy
