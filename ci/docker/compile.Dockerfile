@@ -1,8 +1,10 @@
 FROM ubuntu:24.04
 
 ENV CARGO_TERM_COLOR=always
+ENV CARGO_HOME=/root/.cargo
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/root/.cargo/bin:$PATH
+ENV RUSTUP_HOME=/root/.rustup
+ENV PATH=$CARGO_HOME/bin:$PATH
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
