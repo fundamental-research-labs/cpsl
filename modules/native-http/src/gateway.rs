@@ -89,7 +89,6 @@ fn extract_domain(url: &str) -> Result<String, HttpError> {
 }
 
 /// Builder for constructing an `HttpGateway` with the desired configuration.
-#[derive(Default)]
 pub struct HttpGatewayBuilder {
     backend: Option<Box<dyn HttpBackend>>,
     prompt: Option<Arc<dyn DomainPrompt>>,
@@ -97,6 +96,19 @@ pub struct HttpGatewayBuilder {
     denied_domains: Vec<String>,
     credentials: Vec<(String, Vec<(String, String)>)>,
     limits: Limits,
+}
+
+impl Default for HttpGatewayBuilder {
+    fn default() -> Self {
+        Self {
+            backend: None,
+            prompt: None,
+            allowed_domains: Vec::new(),
+            denied_domains: Vec::new(),
+            credentials: Vec::new(),
+            limits: Limits::default(),
+        }
+    }
 }
 
 impl HttpGatewayBuilder {

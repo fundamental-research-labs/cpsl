@@ -1,7 +1,4 @@
 use native_http::{Headers, HttpGateway, Method, Request};
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::thread;
 
 fn get(url: &str) -> Request {
     Request {
@@ -30,18 +27,6 @@ fn gateway_allowing(domains: &[&str]) -> HttpGateway {
         builder = builder.allow_domain(*d);
     }
     builder.build()
-}
-
-fn local_response_url(response: &'static str) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0; 1024];
-        let _ = stream.read(&mut request);
-        stream.write_all(response.as_bytes()).unwrap();
-    });
-    url
 }
 
 #[test]
@@ -75,12 +60,12 @@ fn real_http_status_codes() {
 
 #[test]
 fn real_http_response_headers() {
-    let url = local_response_url(
-        "HTTP/1.1 200 OK\r\nX-Test: hello\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-    );
-    let gw = gateway_allowing(&["127.0.0.1"]);
-    let resp = gw.request(get(&url)).unwrap();
-    assert!(resp.ok(), "status was {}", resp.status);
+    let gw = gateway_allowing(&["httpbin.org"]);
+    let resp = gw
+        .request(get("https://httpbin.org/response-headers?X-Test=hello"))
+        .unwrap();
+    assert!(resp.ok());
+    // httpbin returns custom headers
     let header_val = resp.headers.get("X-Test").or(resp.headers.get("x-test"));
     assert_eq!(header_val, Some("hello"));
 }

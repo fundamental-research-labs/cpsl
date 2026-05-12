@@ -5,7 +5,9 @@
 //! returns the bytes.
 
 use crate::{PdfError, PdfOptions};
-use webkit2gtk::{LoadEvent, PrintOperation, PrintOperationExt, WebView, WebViewExt};
+use gtk::prelude::*;
+use webkit2gtk::prelude::*;
+use webkit2gtk::{LoadEvent, PrintOperation, WebView};
 
 pub(crate) fn html_to_pdf(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfError> {
     // Initialize GTK (safe to call multiple times).
@@ -41,8 +43,8 @@ pub(crate) fn html_to_pdf(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfE
     // Configure print settings for headless PDF export.
     let settings = gtk::PrintSettings::new();
     settings.set_printer("Print to File");
-    settings.set("output-file-format", Some("pdf"));
-    settings.set("output-uri", Some(output_uri.as_str()));
+    settings.set("output-file-format", "pdf");
+    settings.set("output-uri", &output_uri);
 
     // Apply page setup.
     let page_setup = gtk::PageSetup::new();

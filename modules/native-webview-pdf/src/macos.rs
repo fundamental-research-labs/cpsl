@@ -275,7 +275,7 @@ extern "C" fn pipeline_poll(ptr: *mut c_void) {
     let loading = pipe
         .webview
         .as_ref()
-        .is_some_and(|wv| unsafe { wv.isLoading() });
+        .map_or(false, |wv| unsafe { wv.isLoading() });
 
     if loading {
         // Not done yet — re-schedule in 10ms.

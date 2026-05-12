@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(value_type_name(&Value::Nil), "nil");
         assert_eq!(value_type_name(&Value::Boolean(true)), "boolean");
         assert_eq!(value_type_name(&Value::Integer(42)), "number");
-        assert_eq!(value_type_name(&Value::Number(3.5)), "number");
+        assert_eq!(value_type_name(&Value::Number(3.14)), "number");
     }
 
     #[test]
