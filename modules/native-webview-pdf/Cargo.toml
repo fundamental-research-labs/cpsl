@@ -42,8 +42,7 @@ windows = { version = "0.61", features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-webkit2gtk = "2.0"
-gtk = "0.18"
+webkit6 = "0.6"
 
 [[test]]
 name = "smoke"

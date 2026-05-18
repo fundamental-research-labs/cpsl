@@ -1,11 +1,13 @@
-//! Linux implementation: WebKitGTK + GtkPrintOperation → PDF.
+//! Linux implementation: WebKitGTK 6 + GtkPrintOperation -> PDF.
 //!
 //! Creates an offscreen WebKitGTK WebView, loads the HTML, waits for load,
 //! then uses PrintOperation to export to a PDF file. Reads the file and
 //! returns the bytes.
 
 use crate::{PdfError, PdfOptions};
-use webkit2gtk::{LoadEvent, PrintOperation, PrintOperationExt, WebView, WebViewExt};
+use webkit6::gtk;
+use webkit6::prelude::*;
+use webkit6::{LoadEvent, PrintOperation, WebView};
 
 pub(crate) fn html_to_pdf(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfError> {
     // Initialize GTK (safe to call multiple times).
@@ -101,7 +103,7 @@ fn spin_gtk(done: impl Fn() -> bool) -> Result<(), PdfError> {
                 "timed out waiting for webview".into(),
             ));
         }
-        gtk::main_iteration_do(false);
+        gtk::glib::MainContext::default().iteration(false);
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     Ok(())
