@@ -12,8 +12,9 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
+        libgtk-4-dev \
         libssl-dev \
-        libwebkit2gtk-4.1-dev \
+        libwebkitgtk-6.0-dev \
         pkg-config \
         zstd \
     && rm -rf /var/lib/apt/lists/*

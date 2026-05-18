@@ -37,6 +37,14 @@ jobs:
         with:
           shared-key: compile
 
+      - name: Install Linux webview build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev
+          rm -rf /var/lib/apt/lists/*
+
       - name: Compile CLI
         run: ./build-cli.sh
 
