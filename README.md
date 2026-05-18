@@ -1,4 +1,4 @@
-# CPSL
+# CPSL 💊
 
 Safe, UNIX-like mini-OS capsules for agents, designed to run across Linux, macOS, Windows, web browsers, iOS, and Android.
 
@@ -16,13 +16,13 @@ cpsl build -> cpsl ls -> cpsl run
 
 CPSL is not Docker, a Linux distribution, a container image, or CPython. It is **UNIX-like enough** for agents, with explicit modules, files, mounts, and network rules.
 
-## Early and Hackable
+## Early and Hackable 🛠️
 
 CPSL is new as an open-source project. It is already used in some [Fundamental Research Labs](https://fundamentalresearchlabs.com) products, but the public project is young: install targets, module boundaries, SDK builds, and demos are actively evolving.
 
 This is a good time to join and contribute. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
-## Quick Start
+## Quick Start ⚡️
 
 Requires Rust and Cargo for now. Installers are coming soon.
 
@@ -74,7 +74,7 @@ For quick experiments, the repo-local CLI can also run an ephemeral scratch sand
 
 The default mode is Bash-compatible, including for `./cpsl run NAME`. `--lua` executes Luau directly. `--python` transpiles Python syntax to Luau; it does not invoke CPython or require Python to be installed.
 
-### Custom Capsule
+### Custom Capsule 📝
 
 A capsule starts as TOML. Give it a name, enable only the modules it needs, and allow specific network domains:
 
@@ -112,7 +112,7 @@ List the built-in modules accepted by manifests:
 ./cpsl modules
 ```
 
-## How Does It Work?
+## How Does It Work? ⚙️
 
 CPSL runs a Luau VM and exposes selected Rust-backed modules inside each capsule.
 
@@ -160,7 +160,7 @@ These local comparison runs use `./bench-python-luau.sh`, which is optional and 
 
 </details>
 
-## Roadmap
+## Roadmap 🚙
 
 | Area | Next milestone | Tracking |
 |------|----------------|----------|
