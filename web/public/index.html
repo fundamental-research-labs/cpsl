@@ -6,19 +6,19 @@
         <meta name="color-scheme" content="light dark" />
         <meta
             name="description"
-            content="CPSL builds mini-OS sandbox capsules for AI agents from TOML manifests: Docker-shaped CLI flow, Luau runtime, Rust modules, and a browser demo."
+            content="CPSL builds safe, UNIX-like mini-OS capsules for agents from TOML manifests: explicit modules, files, mounts, network rules, and a browser demo."
         />
         <meta
             property="og:title"
-            content="CPSL - mini-OS capsules for AI agents"
+            content="CPSL - UNIX-like mini-OS capsules for agents"
         />
         <meta
             property="og:description"
-            content="TOML in, Luau-backed sandbox capsule out. Build it, list it, run it, then try the browser demo."
+            content="Package tools, files, and permissions into a capsule. Build it, list it, run it, then try the browser demo."
         />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary" />
-        <title>CPSL - mini-OS capsules for AI agents</title>
+        <title>CPSL - UNIX-like mini-OS capsules for agents</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -52,16 +52,17 @@
                 <div class="demo-copy">
                     <h1 id="title">CPSL</h1>
                     <p class="lede lede-small">
-                        Safe mini-OS "capsules" for agents that can run
-                        everywhere: Linux, macOS, Windows, web browsers, iOS,
-                        Android...)
+                        Safe, UNIX-like mini-OS capsules for agents, designed
+                        to run across Linux, macOS, Windows, web browsers, iOS,
+                        and Android.
                     </p>
                     <p class="lede lede-small">
-                        Package tools, files, and permissions. Build. Run.
+                        Package tools, files, and permissions into a capsule.
+                        Build it. Run it.
                     </p>
                     <p class="lede lede-small">
-                        Agents can communicate with CPSL using Bash, Python, or
-                        Lua,<br />and so can you. 👇
+                        Run capsules through Bash-compatible commands,
+                        Python-style scripts, or Luau code. 👇
                     </p>
                 </div>
 
@@ -201,10 +202,10 @@
                     <div class="section-heading">
                         <h2 id="manifest-title">Describe, build, run.</h2>
                         <p>
-                            A capsule starts as TOML. Name your sandbox, pick
-                            modules, and pin network domains. Then use the CPSL
-                            CLI to build and run. File mounts and allowed
-                            domains can be edited while the capsule is running.
+                            A capsule starts as TOML. Give it a name, enable
+                            only the modules it needs, and allow specific
+                            network domains. Then use the CPSL CLI to build and
+                            run.
                         </p>
                     </div>
 
@@ -214,7 +215,7 @@
                     >
                         <figcaption>cpsl-web.toml</figcaption>
                         <pre class="manifest-example"><code><span class="toml-section">[sandbox]</span>
-<span class="toml-key">name</span> = <span class="toml-string">"browser-agent"</span>
+<span class="toml-key">name</span> = <span class="toml-string">"cpsl-web"</span>
 
 <span class="toml-section">[modules]</span>
 <span class="toml-key">fs</span> = <span class="toml-bool">true</span>
@@ -234,22 +235,24 @@
                         <h3>Build</h3>
                         <pre
                             class="command-example"
-                        ><code><span class="cmd">$ cpsl build -t browser-agent -f cpsl-web.toml</span>
-<span class="out">built browser-agent</span></code></pre>
+                        ><code><span class="cmd">$ cpsl build -f cpsl-web.toml</span>
+<span class="out">built cpsl-web</span></code></pre>
                     </article>
                     <article class="command-card">
                         <h3>List</h3>
                         <pre class="command-example"><code><span class="cmd">$ cpsl ls</span>
 <span class="out">NAME           MODULES         SIZE    BUILT
-browser-agent  fs, http, json  7.4 MB  2026-05-06</span></code></pre>
+cpsl-web       fs, http, json  7.4 MB  2026-05-17</span></code></pre>
                     </article>
                     <article class="command-card">
                         <h3>Run</h3>
                         <pre
                             class="command-example"
-                        ><code><span class="cmd">$ cpsl run browser-agent --python -- \
-  'print("hello from inside")'</span>
-<span class="out">hello from inside</span></code></pre>
+                        ><code><span class="cmd">$ cpsl run cpsl-web -- \
+  'json decode "{\"hello\":\"world\"}"'</span>
+<span class="out">{
+  "hello": "world"
+}</span></code></pre>
                     </article>
                 </aside>
             </section>
@@ -257,7 +260,10 @@ browser-agent  fs, http, json  7.4 MB  2026-05-06</span></code></pre>
             <section class="how-section" id="how" aria-labelledby="how-title">
                 <div class="section-heading">
                     <h2 id="how-title">How does it work?</h2>
-                    <p>CPSL is a Luau VM that exposes Rust crate assemblies.</p>
+                    <p>
+                        CPSL runs a Luau VM and exposes selected Rust-backed
+                        modules inside each capsule.
+                    </p>
                 </div>
                 <div class="info-grid">
                     <article class="info-card">
@@ -277,10 +283,10 @@ browser-agent  fs, http, json  7.4 MB  2026-05-06</span></code></pre>
                     <article class="info-card">
                         <h3>🧩 Composable</h3>
                         <p>
-                            File system, networking, JSON, compression, custom
+                            Filesystem, networking, JSON, compression, custom
                             modules...<br />
-                            If you just need JSON and HTTP with one allowed
-                            domain, then stick to the bare minimum.
+                            If you only need JSON and HTTP for one domain, keep
+                            the manifest that small.
                         </p>
                     </article>
                     <article class="info-card">
@@ -323,7 +329,7 @@ browser-agent  fs, http, json  7.4 MB  2026-05-06</span></code></pre>
                             It looks and feels like Unix: programs, everything
                             is a file, the FS tree is rooted at /, and there is
                             a sh/bash-compatible shell, etc. What's important is
-                            that it's Unix-like enough for agents.
+                            that it's UNIX-like enough for agents.
                         </p>
                     </article>
                     <article class="info-card">
@@ -356,7 +362,8 @@ browser-agent  fs, http, json  7.4 MB  2026-05-06</span></code></pre>
                 <pre><code>git clone https://github.com/fundamental-research-labs/cpsl
 cd cpsl
 ./build-cli.sh
-./cpsl -i</code></pre>
+./cpsl build -f manifests/json-only.toml
+./cpsl run json-only -- 'json decode "{\"hello\":\"world\"}"'</code></pre>
             </section>
 
             <section
@@ -371,16 +378,16 @@ cd cpsl
                 </div>
                 <div class="contribute-copy">
                     <p>
-                        CPSL was open-sourced on May 4, 2026. It's already used
-                        in production in some
+                        CPSL was open-sourced on May 17, 2026. It's already used
+                        in some
                         <a href="https://fundamentalresearchlabs.com"
                             >Fundamental Research Labs</a
                         >
-                        products. It's an extremely powerful piece of tech, but
-                        it is not yet perfectly modular; not all build targets
-                        are clearly exposed, etc. It's the right time to join as
-                        a contributor and help us design the perfect isolated,
-                        versatile operating system for AI agents.
+                        products, but the public project is young: install
+                        targets, module boundaries, SDK builds, and demos are
+                        actively evolving. It's the right time to join as a
+                        contributor and help shape CPSL for real agent
+                        workflows.
                     </p>
                 </div>
             </section>
