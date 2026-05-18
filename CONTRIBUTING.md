@@ -41,20 +41,13 @@ Build the local CLI and verify it starts:
 ./cpsl --help
 ```
 
-Run quick smoke commands:
-
-```sh
-./cpsl -- 'echo hello from CPSL'
-./cpsl --python -- 'print("hello from python mode")'
-./cpsl --lua -- 'print("hello from luau")'
-```
-
 ## Running Capsules
 
 Build a manifest into a named capsule and run code inside it:
 
 ```sh
 ./cpsl build -f manifests/json-only.toml
+./cpsl ls
 ./cpsl run json-only --lua -- 'print(json.encode({hello = "world"}))'
 ```
 
@@ -63,6 +56,16 @@ Useful flags:
 - `-v, --volume host:virtual[:ro]` mounts a host path.
 - `--allow-domain example.com` allows HTTP for a domain when the HTTP module is present.
 - `--deny-domain example.com` denies HTTP for a domain.
+
+## Scratch-Mode Smoke Checks
+
+These commands exercise the repo-local CLI directly in an ephemeral scratch sandbox. They do not require a manifest-built capsule:
+
+```sh
+./cpsl -- 'echo hello from CPSL'
+./cpsl --python -- 'print("hello from python mode")'
+./cpsl --lua -- 'print("hello from luau")'
+```
 
 ## Tests and Checks
 
@@ -106,7 +109,7 @@ This benchmark compares CPSL Python mode with local `python3`. It requires Pytho
 
 ## Where Changes Usually Go
 
-- CLI behavior, manifest parsing, and sandbox commands: `cli/`
+- CLI behavior, manifest parsing, and capsule commands: `cli/`
 - Runtime behavior, transpilers, module registration, and built-in modules: `core/`
 - Native support crates used by modules: `modules/`
 - Shell and Python compatibility runtimes: `runtime/`
