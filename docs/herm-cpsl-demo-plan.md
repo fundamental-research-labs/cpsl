@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 3 CPSL bash session eval complete; Phase 4 Herm CLI/backend mode pending.
+Status: Phase 4 Herm CLI/backend mode complete; Phase 5 Herm CPSL worker pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -383,7 +383,7 @@ Phase checklist:
 - [x] Phase 1: Contract Freeze
 - [x] Phase 2: CPSL FFI Skeleton
 - [x] Phase 3: CPSL Bash Session Eval
-- [ ] Phase 4: Herm CLI And Backend Mode
+- [x] Phase 4: Herm CLI And Backend Mode
 - [ ] Phase 5: Herm CPSL Worker
 - [ ] Phase 6: Herm Tool Routing And Prompt Pruning
 - [ ] Phase 7: Network Policy
@@ -458,12 +458,12 @@ Commit: `cli: add cpsl backend flags`.
 
 Acceptance:
 
-- [ ] `--cpsl`, `--allow-domain`, and `--deny-domain` parse correctly
-- [ ] invalid CPSL library values fail with exactly
+- [x] `--cpsl`, `--allow-domain`, and `--deny-domain` parse correctly
+- [x] invalid CPSL library values fail with exactly
   `You need to provide a CPSL sandbox library.`
-- [ ] CPSL mode does not call Docker check, image pull, image build, container
+- [x] CPSL mode does not call Docker check, image pull, image build, container
   start, container retry, or `devenv`
-- [ ] non-CPSL behavior remains unchanged
+- [x] non-CPSL behavior remains unchanged
 
 ### Phase 5: Herm CPSL Worker
 
