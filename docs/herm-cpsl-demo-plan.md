@@ -267,20 +267,32 @@ the first demo.
 
 ## Execution Phases
 
+Phase checklist:
+
+- [ ] Phase 0: Planning And Repo Setup
+- [ ] Phase 1: Contract Freeze
+- [ ] Phase 2: CPSL FFI Skeleton
+- [ ] Phase 3: CPSL Bash Session Eval
+- [ ] Phase 4: Herm CLI And Backend Mode
+- [ ] Phase 5: Herm CPSL Worker
+- [ ] Phase 6: Herm Tool Routing And Prompt Pruning
+- [ ] Phase 7: Network Policy
+- [ ] Phase 8: End-To-End Demo Smoke
+
 ### Phase 0: Planning And Repo Setup
 
 Owner: CPSL superproject.
 
 Commit contents:
 
-- expanded execution plan
-- Herm submodule pointer at `herm/`
-- Herm submodule branch prepared as `aduermael/cpsl-integration`
+- [ ] expanded execution plan
+- [ ] Herm submodule pointer at `herm/`
+- [ ] Herm submodule branch prepared as `aduermael/cpsl-integration`
 
 Acceptance:
 
-- reviewers can inspect CPSL and Herm side by side
-- no implementation code has been changed yet
+- [ ] reviewers can inspect CPSL and Herm side by side
+- [ ] no implementation code has been changed yet
 
 ### Phase 1: Contract Freeze
 
@@ -290,11 +302,11 @@ Commit: `docs: specify CPSL FFI contract for Herm`.
 
 Acceptance:
 
-- C ABI signatures are frozen for the demo
-- session config JSON and eval request/response JSON are frozen
-- string ownership and panic/error behavior are documented
-- timeout behavior is documented as worker-enforced
-- network policy is documented as static allow/deny for the demo
+- [ ] C ABI signatures are frozen for the demo
+- [ ] session config JSON and eval request/response JSON are frozen
+- [ ] string ownership and panic/error behavior are documented
+- [ ] timeout behavior is documented as worker-enforced
+- [ ] network policy is documented as static allow/deny for the demo
 
 ### Phase 2: CPSL FFI Skeleton
 
@@ -304,11 +316,11 @@ Commit: `ffi: add cpsl-ffi cdylib crate`.
 
 Acceptance:
 
-- `ffi` is a workspace member
-- `cargo build -p cpsl-ffi --release` produces the platform dynamic library
-- `cpsl_abi_version`, metadata, string allocation/free, and last-error calls
+- [ ] `ffi` is a workspace member
+- [ ] `cargo build -p cpsl-ffi --release` produces the platform dynamic library
+- [ ] `cpsl_abi_version`, metadata, string allocation/free, and last-error calls
   work from a tiny loader/probe test
-- no Herm code is required to validate the library skeleton
+- [ ] no Herm code is required to validate the library skeleton
 
 ### Phase 3: CPSL Bash Session Eval
 
@@ -318,13 +330,13 @@ Commit: `ffi: add bash eval sessions with workdir mounts`.
 
 Acceptance:
 
-- session config mounts a host temp directory as `/workdir`
-- initial cwd is `/workdir`
-- `pwd`, `ls`, `cat`, `grep`, `echo > file`, JSON, CSV, and Markdown file
+- [ ] session config mounts a host temp directory as `/workdir`
+- [ ] initial cwd is `/workdir`
+- [ ] `pwd`, `ls`, `cat`, `grep`, `echo > file`, JSON, CSV, and Markdown file
   workflows work through `cpsl_eval`
-- unsupported development commands return clear CPSL feedback
-- nonzero shell exits return `ok=true` and nonzero `exit_code`
-- no command can escape mounted paths
+- [ ] unsupported development commands return clear CPSL feedback
+- [ ] nonzero shell exits return `ok=true` and nonzero `exit_code`
+- [ ] no command can escape mounted paths
 
 ### Phase 4: Herm CLI And Backend Mode
 
@@ -334,12 +346,12 @@ Commit: `cli: add cpsl backend flags`.
 
 Acceptance:
 
-- `--cpsl`, `--allow-domain`, and `--deny-domain` parse correctly
-- invalid CPSL library values fail with exactly
+- [ ] `--cpsl`, `--allow-domain`, and `--deny-domain` parse correctly
+- [ ] invalid CPSL library values fail with exactly
   `You need to provide a CPSL sandbox library.`
-- CPSL mode does not call Docker check, image pull, image build, container
+- [ ] CPSL mode does not call Docker check, image pull, image build, container
   start, container retry, or `devenv`
-- non-CPSL behavior remains unchanged
+- [ ] non-CPSL behavior remains unchanged
 
 ### Phase 5: Herm CPSL Worker
 
@@ -349,11 +361,11 @@ Commit: `cpsl: add worker process and protocol`.
 
 Acceptance:
 
-- worker loads the CPSL library by direct path
-- worker validates ABI version and metadata
-- worker creates one CPSL session for the Herm process
-- worker handles JSONL eval requests and returns structured eval responses
-- Herm kills the worker on timeout or crash and does not fall back to Docker or
+- [ ] worker loads the CPSL library by direct path
+- [ ] worker validates ABI version and metadata
+- [ ] worker creates one CPSL session for the Herm process
+- [ ] worker handles JSONL eval requests and returns structured eval responses
+- [ ] Herm kills the worker on timeout or crash and does not fall back to Docker or
   host execution
 
 ### Phase 6: Herm Tool Routing And Prompt Pruning
@@ -364,12 +376,12 @@ Commit: `cpsl: route bash through CPSL`.
 
 Acceptance:
 
-- Herm's bash tool calls use the CPSL worker in CPSL mode
-- CPSL mode prompt does not claim Docker or a container exists
-- bash tool description says commands run in CPSL at `/workdir`
-- `devenv`, container file tools, `/shell`, and host `git` are unavailable in
+- [ ] Herm's bash tool calls use the CPSL worker in CPSL mode
+- [ ] CPSL mode prompt does not claim Docker or a container exists
+- [ ] bash tool description says commands run in CPSL at `/workdir`
+- [ ] `devenv`, container file tools, `/shell`, and host `git` are unavailable in
   the first CPSL demo
-- sub-agents, if enabled, receive the same CPSL-safe tool set and prompt
+- [ ] sub-agents, if enabled, receive the same CPSL-safe tool set and prompt
 
 ### Phase 7: Network Policy
 
@@ -377,16 +389,16 @@ Owner: CPSL and Herm.
 
 Commits:
 
-- CPSL: `ffi: accept network policy in session config`
-- Herm: `cpsl: pass network policy to worker`
+- [ ] CPSL: `ffi: accept network policy in session config`
+- [ ] Herm: `cpsl: pass network policy to worker`
 
 Acceptance:
 
-- network access is denied by default
-- repeated `--allow-domain` values are passed to CPSL
-- repeated `--deny-domain` values are passed to CPSL
-- explicit deny wins over allow
-- no credential or host callback path is required for the first demo
+- [ ] network access is denied by default
+- [ ] repeated `--allow-domain` values are passed to CPSL
+- [ ] repeated `--deny-domain` values are passed to CPSL
+- [ ] explicit deny wins over allow
+- [ ] no credential or host callback path is required for the first demo
 
 ### Phase 8: End-To-End Demo Smoke
 
@@ -394,20 +406,20 @@ Owner: CPSL superproject and Herm submodule.
 
 Commits:
 
-- Herm: `test: add cpsl smoke path`
-- CPSL superproject: `chore: pin Herm CPSL integration submodule`
+- [ ] Herm: `test: add cpsl smoke path`
+- [ ] CPSL superproject: `chore: pin Herm CPSL integration submodule`
 
 Acceptance:
 
-- with Docker unavailable, `herm --cpsl /abs/path/to/libcpsl.so -p ...`
+- [ ] with Docker unavailable, `herm --cpsl /abs/path/to/libcpsl.so -p ...`
   starts and completes
-- Herm bash execution runs inside CPSL
-- the current folder is visible as `/workdir`
-- a task can inspect files and create or edit Markdown, JSON, CSV, or report
+- [ ] Herm bash execution runs inside CPSL
+- [ ] the current folder is visible as `/workdir`
+- [ ] a task can inspect files and create or edit Markdown, JSON, CSV, or report
   files in `/workdir`
-- unsupported development commands produce clear CPSL feedback
-- network access is denied by default and can be allowed with `--allow-domain`
-- no manifest build, hub download, or automatic CPSL library resolution is
+- [ ] unsupported development commands produce clear CPSL feedback
+- [ ] network access is denied by default and can be allowed with `--allow-domain`
+- [ ] no manifest build, hub download, or automatic CPSL library resolution is
   required
 
 ## Future Distribution
