@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: execution plan for review before implementation.
+Status: Phase 0 complete; Phase 1 contract freeze pending before implementation.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -269,7 +269,7 @@ the first demo.
 
 Phase checklist:
 
-- [ ] Phase 0: Planning And Repo Setup
+- [x] Phase 0: Planning And Repo Setup
 - [ ] Phase 1: Contract Freeze
 - [ ] Phase 2: CPSL FFI Skeleton
 - [ ] Phase 3: CPSL Bash Session Eval
@@ -285,14 +285,14 @@ Owner: CPSL superproject.
 
 Commit contents:
 
-- [ ] expanded execution plan
-- [ ] Herm submodule pointer at `herm/`
-- [ ] Herm submodule branch prepared as `aduermael/cpsl-integration`
+- [x] expanded execution plan
+- [x] Herm submodule pointer at `herm/`
+- [x] Herm submodule branch prepared as `aduermael/cpsl-integration`
 
 Acceptance:
 
-- [ ] reviewers can inspect CPSL and Herm side by side
-- [ ] no implementation code has been changed yet
+- [x] reviewers can inspect CPSL and Herm side by side
+- [x] no implementation code has been changed yet
 
 ### Phase 1: Contract Freeze
 
