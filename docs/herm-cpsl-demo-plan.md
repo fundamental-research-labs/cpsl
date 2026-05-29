@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 1 contract freeze complete; Phase 2 CPSL FFI skeleton pending.
+Status: Phase 2 CPSL FFI skeleton complete; Phase 3 CPSL bash session eval pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -381,7 +381,7 @@ Phase checklist:
 
 - [x] Phase 0: Planning And Repo Setup
 - [x] Phase 1: Contract Freeze
-- [ ] Phase 2: CPSL FFI Skeleton
+- [x] Phase 2: CPSL FFI Skeleton
 - [ ] Phase 3: CPSL Bash Session Eval
 - [ ] Phase 4: Herm CLI And Backend Mode
 - [ ] Phase 5: Herm CPSL Worker
@@ -428,11 +428,11 @@ Commit: `ffi: add cpsl-ffi cdylib crate`.
 
 Acceptance:
 
-- [ ] `ffi` is a workspace member
-- [ ] `cargo build -p cpsl-ffi --release` produces the platform dynamic library
-- [ ] `cpsl_abi_version`, metadata, string allocation/free, and last-error calls
+- [x] `ffi` is a workspace member
+- [x] `cargo build -p cpsl-ffi --release` produces the platform dynamic library
+- [x] `cpsl_abi_version`, metadata, string allocation/free, and last-error calls
   work from a tiny loader/probe test
-- [ ] no Herm code is required to validate the library skeleton
+- [x] no Herm code is required to validate the library skeleton
 
 ### Phase 3: CPSL Bash Session Eval
 

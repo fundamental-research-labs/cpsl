@@ -718,6 +718,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpsl-ffi"
+version = "0.1.0"
+dependencies = [
+ "libloading 0.8.9",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "cpsl-web"
 version = "0.1.0"
 dependencies = [

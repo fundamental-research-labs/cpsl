@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "core",
+    "ffi",
     "cli",
     "modules/native-http",
     "modules/native-webview-pdf",
