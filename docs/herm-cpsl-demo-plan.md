@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 4 Herm CLI/backend mode complete; Phase 5 Herm CPSL worker pending.
+Status: Phase 5 Herm CPSL worker complete; Phase 6 Herm tool routing and prompt pruning pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -384,7 +384,7 @@ Phase checklist:
 - [x] Phase 2: CPSL FFI Skeleton
 - [x] Phase 3: CPSL Bash Session Eval
 - [x] Phase 4: Herm CLI And Backend Mode
-- [ ] Phase 5: Herm CPSL Worker
+- [x] Phase 5: Herm CPSL Worker
 - [ ] Phase 6: Herm Tool Routing And Prompt Pruning
 - [ ] Phase 7: Network Policy
 - [ ] Phase 8: End-To-End Demo Smoke
@@ -473,11 +473,11 @@ Commit: `cpsl: add worker process and protocol`.
 
 Acceptance:
 
-- [ ] worker loads the CPSL library by direct path
-- [ ] worker validates ABI version and metadata
-- [ ] worker creates one CPSL session for the Herm process
-- [ ] worker handles JSONL eval requests and returns structured eval responses
-- [ ] Herm kills the worker on timeout or crash and does not fall back to Docker or
+- [x] worker loads the CPSL library by direct path
+- [x] worker validates ABI version and metadata
+- [x] worker creates one CPSL session for the Herm process
+- [x] worker handles JSONL eval requests and returns structured eval responses
+- [x] Herm kills the worker on timeout or crash and does not fall back to Docker or
   host execution
 
 ### Phase 6: Herm Tool Routing And Prompt Pruning
