@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 2 CPSL FFI skeleton complete; Phase 3 CPSL bash session eval pending.
+Status: Phase 3 CPSL bash session eval complete; Phase 4 Herm CLI/backend mode pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -382,7 +382,7 @@ Phase checklist:
 - [x] Phase 0: Planning And Repo Setup
 - [x] Phase 1: Contract Freeze
 - [x] Phase 2: CPSL FFI Skeleton
-- [ ] Phase 3: CPSL Bash Session Eval
+- [x] Phase 3: CPSL Bash Session Eval
 - [ ] Phase 4: Herm CLI And Backend Mode
 - [ ] Phase 5: Herm CPSL Worker
 - [ ] Phase 6: Herm Tool Routing And Prompt Pruning
@@ -442,13 +442,13 @@ Commit: `ffi: add bash eval sessions with workdir mounts`.
 
 Acceptance:
 
-- [ ] session config mounts a host temp directory as `/workdir`
-- [ ] initial cwd is `/workdir`
-- [ ] `pwd`, `ls`, `cat`, `grep`, `echo > file`, JSON, CSV, and Markdown file
+- [x] session config mounts a host temp directory as `/workdir`
+- [x] initial cwd is `/workdir`
+- [x] `pwd`, `ls`, `cat`, `grep`, `echo > file`, JSON, CSV, and Markdown file
   workflows work through `cpsl_eval`
-- [ ] unsupported development commands return clear CPSL feedback
-- [ ] nonzero shell exits return `ok=true` and nonzero `exit_code`
-- [ ] no command can escape mounted paths
+- [x] unsupported development commands return clear CPSL feedback
+- [x] nonzero shell exits return `ok=true` and nonzero `exit_code`
+- [x] no command can escape mounted paths
 
 ### Phase 4: Herm CLI And Backend Mode
 

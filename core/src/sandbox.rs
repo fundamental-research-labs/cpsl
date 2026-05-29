@@ -99,6 +99,23 @@ impl Sandbox {
         Ok(output)
     }
 
+    /// Execute Luau code and return captured stdout-style output.
+    ///
+    /// `exec()` preserves the historical test-oriented output shape without a
+    /// trailing print newline. FFI callers need process-like stdout, so this
+    /// method restores the final newline when the last write came from print().
+    pub fn exec_stdout(&self, code: &str) -> Result<String, ExecError> {
+        let mut output = self.exec(code)?;
+        let ended_with_print_newline = match self.needs_newline.lock() {
+            Ok(needs_newline) => *needs_newline,
+            Err(poisoned) => *poisoned.into_inner(),
+        };
+        if ended_with_print_newline && !output.is_empty() {
+            output.push('\n');
+        }
+        Ok(output)
+    }
+
     /// Load the pyrt (Python runtime) module into the sandbox.
     /// After this, transpiled Python→Luau code can `require("pyrt")`.
     pub fn load_pyrt(&self, pyrt_source: &str) -> Result<(), SandboxError> {
@@ -350,6 +367,7 @@ pub type PendingReads = Arc<Mutex<Vec<PendingRead>>>;
 
 pub struct SandboxBuilder {
     mounts: Option<MountTable>,
+    auto_tmp: bool,
     #[cfg(feature = "mod-http")]
     http_gateway: Option<Arc<HttpGateway>>,
     #[cfg(cpsl_experimental_sfae)]
@@ -369,6 +387,7 @@ impl Default for SandboxBuilder {
     fn default() -> Self {
         Self {
             mounts: None,
+            auto_tmp: true,
             #[cfg(feature = "mod-http")]
             http_gateway: None,
             #[cfg(cpsl_experimental_sfae)]
@@ -389,6 +408,11 @@ impl Default for SandboxBuilder {
 impl SandboxBuilder {
     pub fn mounts(mut self, mounts: MountTable) -> Self {
         self.mounts = Some(mounts);
+        self
+    }
+
+    pub fn auto_tmp(mut self, enabled: bool) -> Self {
+        self.auto_tmp = enabled;
         self
     }
 
@@ -475,7 +499,7 @@ impl SandboxBuilder {
         let synthetic_files = Arc::new(build_synthetic_files(&host_info));
 
         // Auto-create a writable /tmp directory if no user mount covers it
-        let tmpdir = if mount_table.mount_key_for("/tmp").is_none() {
+        let tmpdir = if self.auto_tmp && mount_table.mount_key_for("/tmp").is_none() {
             use std::sync::atomic::{AtomicU64, Ordering};
             static COUNTER: AtomicU64 = AtomicU64::new(0);
             let id = COUNTER.fetch_add(1, Ordering::Relaxed);

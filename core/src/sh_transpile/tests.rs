@@ -736,7 +736,7 @@ fn test_e2e_exit_code_fail() {
 #[test]
 fn test_heredoc_cat() {
     let result = transpile("cat <<EOF\nhello world\nEOF");
-    assert!(result.contains("sh.cat("), "got: {}", result);
+    assert!(result.contains("sh.cat_input("), "got: {}", result);
     assert!(result.contains("hello world"), "got: {}", result);
 }
 

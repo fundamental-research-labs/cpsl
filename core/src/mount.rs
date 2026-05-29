@@ -81,16 +81,26 @@ impl MountTable {
         };
 
         let host_path = PathBuf::from(format!("{}{}", drive_prefix, host_tail));
+        self.add_mount(host_path, virtual_str, permission)
+    }
+
+    /// Add a mount without stringly parsing a `host:virtual` spec.
+    pub fn add_mount(
+        &mut self,
+        host_path: PathBuf,
+        virtual_path: &str,
+        permission: MountPermission,
+    ) -> Result<(), MountError> {
         if !host_path.exists() {
             return Err(MountError::HostPathNotFound(host_path));
         }
 
-        if !virtual_str.starts_with('/') {
-            return Err(MountError::VirtualPathNotAbsolute(virtual_str.to_string()));
+        if !virtual_path.starts_with('/') {
+            return Err(MountError::VirtualPathNotAbsolute(virtual_path.to_string()));
         }
 
         let host_path = host_path.canonicalize()?;
-        let virtual_path = normalize_virtual(virtual_str);
+        let virtual_path = normalize_virtual(virtual_path);
 
         self.mounts.insert(
             virtual_path,

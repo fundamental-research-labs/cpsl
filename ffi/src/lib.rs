@@ -1,5 +1,6 @@
-//! Phase 2 C ABI skeleton for loading CPSL as a sandbox library.
+//! C ABI for loading CPSL as a sandbox library.
 
+use cpsl_core::{MountPermission, MountTable, Sandbox};
 use serde::Deserialize;
 use serde_json::json;
 use std::ffi::{c_char, CStr, CString};
@@ -10,6 +11,7 @@ use std::sync::{Mutex, OnceLock};
 
 const CPSL_ABI_VERSION: u32 = 1;
 const WORKDIR: &str = "/workdir";
+const SHRT_SOURCE: &str = include_str!("../../runtime/shrt.luau");
 
 static LAST_ERROR: OnceLock<Mutex<CString>> = OnceLock::new();
 
@@ -21,11 +23,11 @@ pub struct cpsl_session_t {
 
 struct Session {
     _config: ValidatedSessionConfig,
-    cwd: String,
+    sandbox: Sandbox,
 }
 
 struct ValidatedSessionConfig {
-    _host: PathBuf,
+    host: PathBuf,
     initial_cwd: String,
     _allow_domains: Vec<String>,
     _deny_domains: Vec<String>,
@@ -93,8 +95,9 @@ pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_sess
     ffi_result(|| {
         let config_json = c_str_arg(config_json, "config_json")?;
         let config = validate_session_config(&config_json)?;
+        let sandbox = create_shell_sandbox(&config)?;
         let session = Box::new(Session {
-            cwd: config.initial_cwd.clone(),
+            sandbox,
             _config: config,
         });
         Ok(Box::into_raw(session) as *mut cpsl_session_t)
@@ -129,17 +132,12 @@ pub extern "C" fn cpsl_eval(
         let session = unsafe { &*(session as *const Session) };
 
         let response = if request.language == "bash" {
-            let message = format!(
-                "bash eval is not implemented in the CPSL FFI skeleton ({} byte input, {} ms timeout)",
-                request.input.len(),
-                request.timeout_ms
-            );
-            eval_error_json("runtime_error", &message, &session.cwd)
+            eval_bash(session, &request)
         } else {
             eval_error_json(
                 "unsupported_language",
-                "Only bash is supported by the CPSL FFI skeleton",
-                &session.cwd,
+                "Only bash is supported by this CPSL session",
+                &shell_cwd(session),
             )
         };
 
@@ -213,11 +211,102 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     }
 
     Ok(ValidatedSessionConfig {
-        _host: host,
+        host,
         initial_cwd: config.initial_cwd,
         _allow_domains: config.http.allow_domains,
         _deny_domains: config.http.deny_domains,
     })
+}
+
+fn create_shell_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, String> {
+    let mut mounts = MountTable::new();
+    mounts
+        .add_mount(config.host.clone(), WORKDIR, MountPermission::ReadWrite)
+        .map_err(|error| format!("failed to configure workdir mount: {error}"))?;
+
+    let sandbox = Sandbox::builder()
+        .mounts(mounts)
+        .auto_tmp(false)
+        .build()
+        .map_err(|error| format!("failed to create CPSL sandbox: {error}"))?;
+    sandbox
+        .setup_shell_runtime(SHRT_SOURCE)
+        .map_err(|error| format!("failed to load CPSL shell runtime: {error}"))?;
+    sandbox
+        .exec(&format!(
+            "local sh = require(\"shrt\"); sh.set_root(\"{}\"); sh.cd(\"{}\")",
+            escape_luau_string(WORKDIR),
+            escape_luau_string(&config.initial_cwd)
+        ))
+        .map_err(|error| format!("failed to initialize CPSL shell: {error}"))?;
+    Ok(sandbox)
+}
+
+fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {
+    let _timeout_ms = request.timeout_ms;
+    let transpiled = match cpsl_core::sh_transpile::transpile_sh(&request.input) {
+        Ok(transpiled) => transpiled,
+        Err(error) => {
+            return eval_error_json("invalid_request", &error, &shell_cwd(session));
+        }
+    };
+
+    match session.sandbox.exec_stdout(&transpiled.luau_source) {
+        Ok(stdout) => eval_success_json(
+            stdout,
+            shell_exit_code(session),
+            transpiled.warnings,
+            &shell_cwd(session),
+        ),
+        Err(error) => match shell_exit_code_from_error(&error.message) {
+            Some(exit_code) => eval_success_json(
+                String::new(),
+                exit_code,
+                transpiled.warnings,
+                &shell_cwd(session),
+            ),
+            None => eval_error_json("runtime_error", &error.to_string(), &shell_cwd(session)),
+        },
+    }
+}
+
+fn eval_success_json(
+    stdout: String,
+    exit_code: i64,
+    warnings: Vec<String>,
+    cwd: &str,
+) -> serde_json::Value {
+    json!({
+        "ok": true,
+        "stdout": stdout,
+        "stderr": "",
+        "exit_code": exit_code,
+        "error": null,
+        "warnings": warnings,
+        "cwd": cwd
+    })
+}
+
+fn shell_exit_code(session: &Session) -> i64 {
+    session
+        .sandbox
+        .exec("local sh = require(\"shrt\"); return sh.last_exit_code")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(1)
+}
+
+fn shell_cwd(session: &Session) -> String {
+    session
+        .sandbox
+        .exec("local sh = require(\"shrt\"); return sh.cwd")
+        .unwrap_or_else(|_| WORKDIR.to_string())
+}
+
+fn shell_exit_code_from_error(message: &str) -> Option<i64> {
+    message
+        .strip_prefix("exit:")
+        .and_then(|code| code.parse::<i64>().ok())
 }
 
 fn validate_host_path(host: &str) -> Result<PathBuf, String> {
@@ -255,6 +344,14 @@ fn validate_initial_cwd(path: &str) -> Result<(), String> {
     } else {
         Err("session initial_cwd must stay under /workdir".to_string())
     }
+}
+
+fn escape_luau_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 fn eval_error_json(code: &str, message: &str, cwd: &str) -> serde_json::Value {
@@ -318,6 +415,9 @@ fn empty_c_string() -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::{c_char, CStr, CString};
+    use std::fs;
+    use std::path::Path;
     use tempfile::TempDir;
 
     #[test]
@@ -328,6 +428,7 @@ mod tests {
         let validated = validate_session_config(&config.to_string()).unwrap();
 
         assert_eq!(validated.initial_cwd, WORKDIR);
+        assert_eq!(validated.host, dir.path().canonicalize().unwrap());
     }
 
     #[test]
@@ -355,6 +456,186 @@ mod tests {
         assert!(validate_session_config(&relative_host.to_string()).is_err());
     }
 
+    #[test]
+    fn evaluates_bash_file_and_data_workflows() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("notes.txt"), "alpha\nbeta\n").unwrap();
+        fs::write(dir.path().join("data.json"), r#"{"name":"Ada","count":2}"#).unwrap();
+        fs::write(dir.path().join("data.csv"), "name,count\nAda,2\n").unwrap();
+
+        let session = new_session(dir.path());
+
+        let pwd = eval(session, "pwd");
+        assert_success(&pwd, 0);
+        assert_eq!(pwd["stdout"], "/workdir\n");
+        assert_eq!(pwd["cwd"], WORKDIR);
+
+        let ls = eval(session, "ls");
+        assert_success(&ls, 0);
+        assert!(ls["stdout"].as_str().unwrap().contains("notes.txt"));
+
+        let cat = eval(session, "cat notes.txt");
+        assert_success(&cat, 0);
+        assert_eq!(cat["stdout"], "alpha\nbeta\n");
+
+        let grep = eval(session, "grep beta notes.txt");
+        assert_success(&grep, 0);
+        assert_eq!(grep["stdout"], "beta\n");
+
+        let redirected = eval(
+            session,
+            "echo '# Report' > report.md\necho 'total,2' >> report.md",
+        );
+        assert_success(&redirected, 0);
+        assert_eq!(redirected["stdout"], "");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("report.md")).unwrap(),
+            "# Report\ntotal,2\n"
+        );
+
+        let json = eval(session, r#"json decode "$(cat data.json)""#);
+        assert_success(&json, 0);
+        assert!(json["stdout"].as_str().unwrap().contains("Ada"));
+
+        let csv = eval(session, "csv parseFile /workdir/data.csv");
+        assert_success(&csv, 0);
+        assert!(csv["stdout"].as_str().unwrap().contains("Ada"));
+
+        let markdown = eval(session, "cat report.md | grep Report");
+        assert_success(&markdown, 0);
+        assert_eq!(markdown["stdout"], "# Report\n");
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn reports_nonzero_shell_exits_without_ffi_failure() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("notes.txt"), "alpha\nbeta\n").unwrap();
+        let session = new_session(dir.path());
+
+        let false_result = eval(session, "false");
+        assert_success(&false_result, 1);
+        assert_eq!(false_result["stdout"], "");
+        assert!(false_result["error"].is_null());
+
+        let grep = eval(session, "grep missing notes.txt");
+        assert_success(&grep, 1);
+        assert_eq!(grep["stdout"], "");
+
+        let exited = eval(session, "exit 7");
+        assert_success(&exited, 7);
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn unsupported_development_commands_return_shell_feedback() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session(dir.path());
+
+        let npm = eval(session, "npm install left-pad");
+        assert_success(&npm, 1);
+        assert!(npm["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("no package management in sandbox"));
+
+        let git = eval(session, "git status");
+        assert_success(&git, 1);
+        assert!(git["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("not available in CPSL sandbox"));
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn mounted_workdir_cannot_be_escaped() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session(dir.path());
+
+        for command in [
+            "cat ../secret",
+            "cat /workdir/../secret",
+            "cat /etc/hostname",
+        ] {
+            let response = eval(session, command);
+            assert_success(&response, 1);
+            assert!(
+                response["stdout"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Path traversal denied"),
+                "command {command:?} returned {response}"
+            );
+            assert_eq!(response["cwd"], WORKDIR);
+        }
+
+        let cd_root = eval(session, "cd /");
+        assert_success(&cd_root, 1);
+        assert!(cd_root["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("Path traversal denied"));
+        assert_eq!(cd_root["cwd"], WORKDIR);
+
+        cpsl_session_free(session);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mounted_workdir_symlinks_cannot_escape() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside secret").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            dir.path().join("link.txt"),
+        )
+        .unwrap();
+
+        let session = new_session(dir.path());
+        let response = eval(session, "cat link.txt");
+
+        assert_success(&response, 1);
+        assert!(!response["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("outside secret"));
+        assert!(response["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("Path traversal denied"));
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn unsupported_language_returns_structured_eval_error() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session(dir.path());
+        let request = CString::new(
+            json!({
+                "language": "python",
+                "input": "print('hi')",
+                "timeout_ms": 120000
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let response = unsafe { owned_ffi_string(cpsl_eval(session, request.as_ptr())) };
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "unsupported_language");
+        assert_eq!(response["cwd"], WORKDIR);
+
+        cpsl_session_free(session);
+    }
+
     fn session_config(host: &str) -> serde_json::Value {
         json!({
             "mounts": [
@@ -368,5 +649,54 @@ mod tests {
                 "deny_domains": []
             }
         })
+    }
+
+    fn new_session(host: &Path) -> *mut cpsl_session_t {
+        let host = host.canonicalize().unwrap();
+        let config = CString::new(session_config(host.to_str().unwrap()).to_string()).unwrap();
+        let session = cpsl_session_new(config.as_ptr());
+        assert!(!session.is_null(), "session_new failed: {}", unsafe {
+            borrowed_ffi_string(cpsl_last_error())
+        });
+        session
+    }
+
+    fn eval(session: *mut cpsl_session_t, input: &str) -> serde_json::Value {
+        let request = CString::new(
+            json!({
+                "language": "bash",
+                "input": input,
+                "timeout_ms": 120000
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let response = cpsl_eval(session, request.as_ptr());
+        assert!(!response.is_null(), "cpsl_eval failed: {}", unsafe {
+            borrowed_ffi_string(cpsl_last_error())
+        });
+        let response = unsafe { owned_ffi_string(response) };
+        serde_json::from_str(&response).unwrap()
+    }
+
+    fn assert_success(response: &serde_json::Value, exit_code: i64) {
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["stderr"], "");
+        assert_eq!(response["exit_code"], exit_code);
+        assert!(response["error"].is_null(), "{response}");
+        assert!(response["warnings"].as_array().is_some(), "{response}");
+        assert_eq!(response["cwd"], WORKDIR);
+    }
+
+    unsafe fn borrowed_ffi_string(value: *const c_char) -> String {
+        assert!(!value.is_null());
+        CStr::from_ptr(value).to_str().unwrap().to_owned()
+    }
+
+    unsafe fn owned_ffi_string(value: *mut c_char) -> String {
+        assert!(!value.is_null());
+        let text = CStr::from_ptr(value).to_str().unwrap().to_owned();
+        cpsl_string_free(value);
+        text
     }
 }

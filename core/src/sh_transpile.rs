@@ -350,7 +350,7 @@ impl ShTranspiler {
             }
             "cat" => {
                 if let Some(ref input) = input_expr {
-                    format!("sh.cat({})", input)
+                    format!("sh.cat_input({})", input)
                 } else if arg_exprs.is_empty() {
                     "sh.cat()".to_string()
                 } else {
@@ -588,6 +588,10 @@ impl ShTranspiler {
             "apt" | "apt-get" | "brew" | "pip" | "pip3" | "npm" | "yarn" => {
                 format!("sh.stub_no_pkg(\"{}\")", cmd_name)
             }
+            "git" | "node" | "python" | "python3" | "cargo" | "rustc" | "gcc" | "g++" | "make"
+            | "docker" => {
+                format!("sh.stub_no_dev(\"{}\")", cmd_name)
+            }
             "exit" => {
                 if arg_exprs.is_empty() {
                     "sh.exit(0)".to_string()
@@ -716,7 +720,7 @@ impl ShTranspiler {
                     "base64.encode(_in)".to_string()
                 }
             }
-            "cat" => "sh.cat(_in)".to_string(),
+            "cat" => "sh.cat_input(_in)".to_string(),
             "tee" => {
                 if arg_exprs.is_empty() {
                     "sh.tee(_in)".to_string()

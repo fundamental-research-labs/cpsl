@@ -84,9 +84,11 @@ fn probe_release_library_exports_contract_symbols() {
 
         let response = owned_c_string(eval(session, valid_request.as_ptr()), *string_free);
         let response: Value = serde_json::from_str(&response).unwrap();
-        assert_eq!(response["ok"], false);
-        assert_eq!(response["exit_code"], Value::Null);
-        assert_eq!(response["error"]["code"], "runtime_error");
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["stdout"], "/workdir\n");
+        assert_eq!(response["stderr"], "");
+        assert_eq!(response["exit_code"], 0);
+        assert_eq!(response["error"], Value::Null);
         assert_eq!(response["cwd"], "/workdir");
         assert_eq!(borrowed_c_string(last_error()), "");
 

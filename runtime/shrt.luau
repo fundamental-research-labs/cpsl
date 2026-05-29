@@ -10,6 +10,8 @@ local sh = {}
 sh.last_exit_code = 0
 local cwd = "/"
 sh.cwd = cwd
+local root = "/"
+sh.root = root
 local pipe_depth = 0  -- >0 means we're inside a pipe; suppress printing
 
 -- Environment variables table — mirrors shell env
@@ -87,13 +89,6 @@ local function join_lines(lines)
     return table.concat(lines, "\n")
 end
 
-local function resolve_path(path)
-    if path == nil then return cwd end
-    if string.sub(path, 1, 1) == "/" then return path end
-    if cwd == "/" then return "/" .. path end
-    return cwd .. "/" .. path
-end
-
 local function tostring_val(v)
     if v == nil then return "" end
     return tostring(v)
@@ -102,6 +97,60 @@ end
 -- Forward-declare emit so helpers above its definition close over this local.
 -- Luau's `local function emit` would not be visible to earlier function bodies.
 local emit
+
+local function normalize_path(path)
+    if path == nil or path == "" then path = cwd end
+    local raw = tostring(path)
+    if string.sub(raw, 1, 1) ~= "/" then
+        raw = cwd == "/" and ("/" .. raw) or (cwd .. "/" .. raw)
+    end
+
+    local parts = {}
+    for part in string.gmatch(raw, "[^/]+") do
+        if part == ".." then
+            if #parts > 0 then
+                table.remove(parts)
+            end
+        elseif part ~= "." and part ~= "" then
+            table.insert(parts, part)
+        end
+    end
+
+    if #parts == 0 then return "/" end
+    return "/" .. table.concat(parts, "/")
+end
+
+local function is_under_root(path)
+    return root == "/" or path == root or string.sub(path, 1, #root + 1) == root .. "/"
+end
+
+local function deny_path(path)
+    emit(tostring(path or "") .. ": Path traversal denied")
+    sh.last_exit_code = 1
+    return nil
+end
+
+local function resolve_path(path)
+    local resolved = normalize_path(path)
+    if not is_under_root(resolved) then
+        return deny_path(path)
+    end
+    return resolved
+end
+
+function sh.set_root(path)
+    local next_root = normalize_path(path or "/")
+    if not fs.isdir(next_root) then
+        error("shell root does not exist: " .. next_root, 0)
+    end
+    root = next_root
+    sh.root = root
+    cwd = root
+    sh.cwd = cwd
+    sh.env.HOME = root
+    sh.env.PWD = cwd
+    sh.last_exit_code = 0
+end
 
 -- Wrap a filesystem operation with error handling (shell semantics: print error, set $?=1, continue).
 -- Returns (true, result) on success, (false, error_message) on failure.
@@ -231,6 +280,7 @@ function sh.ls(opts)
     local human = opts.human_readable or opts.h
 
     local resolved = resolve_path(path)
+    if resolved == nil then return "" end
 
     -- Human-readable size formatting (B, K, M, G)
     local function format_size(bytes)
@@ -301,19 +351,19 @@ function sh.cat(...)
     if #args == 0 then return "" end
     local parts = {}
     for _, arg in ipairs(args) do
-        -- If it looks like a path (starts with / or has no newlines and isn't multiline),
-        -- try to read it as a file
-        if type(arg) == "string" and string.find(arg, "\n", 1, true) == nil and string.sub(arg, 1, 1) == "/" then
-            local ok, content = try_io(fs.read, arg)
+        local resolved = resolve_path(arg)
+        if resolved ~= nil then
+            local ok, content = try_io(fs.read, resolved)
             if ok then table.insert(parts, content) end
-        elseif type(arg) == "string" and string.find(arg, "\n", 1, true) == nil and fs.exists(resolve_path(arg)) then
-            local ok, content = try_io(fs.read, resolve_path(arg))
-            if ok then table.insert(parts, content) end
-        else
-            table.insert(parts, tostring_val(arg))
         end
     end
     local result = table.concat(parts, "")
+    emit(result)
+    return result
+end
+
+function sh.cat_input(input)
+    local result = tostring_val(input)
     emit(result)
     return result
 end
@@ -326,10 +376,11 @@ end
 function sh.cd(path)
     local target
     if path == nil then
-        target = "/"
+        target = root
     else
         target = resolve_path(path)
     end
+    if target == nil then return end
     if not fs.isdir(target) then
         print("cd: " .. (path or "") .. ": No such file or directory")
         sh.last_exit_code = 1
@@ -393,7 +444,15 @@ function sh.grep(opts, pattern_arg)
     local input, pattern, ignore_case, invert, count_only, show_line_nums
     if type(opts) == "table" then
         pattern = opts[1] or ""
-        input = opts.input or opts[2] or ""
+        input = opts.input
+        if input == nil and opts[2] ~= nil then
+            local resolved = resolve_path(opts[2])
+            if resolved == nil then return "" end
+            local ok, content = try_io(fs.read, resolved)
+            if not ok then return "" end
+            input = content
+        end
+        input = input or ""
         ignore_case = opts.ignore_case or opts.i
         invert = opts.invert or opts.v
         count_only = opts.count or opts.c
@@ -403,6 +462,15 @@ function sh.grep(opts, pattern_arg)
         pattern = pattern_arg or ""
     end
     if input == nil then return "" end
+    if type(opts) ~= "table" and type(input) == "string" and string.find(input, "\n", 1, true) == nil then
+        local resolved = resolve_path(input)
+        if resolved == nil then return "" end
+        if fs.exists(resolved) and not fs.isdir(resolved) then
+            local ok, content = try_io(fs.read, resolved)
+            if not ok then return "" end
+            input = content
+        end
+    end
     local lines = split_lines(tostring_val(input))
     local matched = {}
     for line_num, line in ipairs(lines) do
@@ -677,12 +745,14 @@ function sh.mkdir(opts)
         path = opts
     end
     local resolved = resolve_path(path)
+    if resolved == nil then return end
     if not check_writable(resolved) then return end
     try_io(fs.mkdir, resolved)
 end
 
 function sh.touch(path)
     local resolved = resolve_path(path)
+    if resolved == nil then return end
     if not fs.exists(resolved) then
         if not check_writable(resolved) then return end
         try_io(fs.write, resolved, "")
@@ -703,6 +773,7 @@ function sh.cp(opts, dst_arg)
     end
     local resolved_src = resolve_path(src)
     local resolved_dst = resolve_path(dst)
+    if resolved_src == nil or resolved_dst == nil then return end
     if not check_writable(resolved_dst) then return end
     try_io(fs.copy, resolved_src, resolved_dst)
 end
@@ -710,6 +781,7 @@ end
 function sh.mv(src, dst)
     local resolved_src = resolve_path(src)
     local resolved_dst = resolve_path(dst)
+    if resolved_src == nil or resolved_dst == nil then return end
     if not check_writable(resolved_dst) then return end
     try_io(fs.rename, resolved_src, resolved_dst)
 end
@@ -717,6 +789,13 @@ end
 function sh.rm(opts, ...)
     -- Accept: sh.rm("/path"), sh.rm(glob_result), sh.rm({r=true, f=true, [1]="/path"})
     local force = false
+    local function remove_resolved(path)
+        local resolved = resolve_path(path)
+        if resolved == nil then return end
+        if not force or fs.exists(resolved) then
+            try_io(fs.remove, resolved)
+        end
+    end
     if type(opts) == "table" and opts[1] ~= nil and type(opts[1]) == "string" then
         -- Could be a flag table {r=true, [1]="/path"} or a glob result {"/a", "/b"}
         -- If it has boolean values, it's a flag table
@@ -734,35 +813,31 @@ function sh.rm(opts, ...)
                 local val = opts[i]
                 if type(val) == "table" then
                     for _, path in ipairs(val) do
-                        if not force or fs.exists(resolve_path(path)) then
-                            try_io(fs.remove, resolve_path(path))
-                        end
+                        remove_resolved(path)
                     end
                 else
-                    if not force or fs.exists(resolve_path(val)) then
-                        try_io(fs.remove, resolve_path(val))
-                    end
+                    remove_resolved(val)
                 end
                 i = i + 1
             end
         else
             -- Glob result: iterate table of paths
             for _, path in ipairs(opts) do
-                try_io(fs.remove, resolve_path(path))
+                remove_resolved(path)
             end
         end
     elseif type(opts) == "string" then
-        try_io(fs.remove, resolve_path(opts))
+        remove_resolved(opts)
     end
     -- Handle varargs for backward compat
     local extra = {...}
     for _, arg in ipairs(extra) do
         if type(arg) == "table" then
             for _, path in ipairs(arg) do
-                try_io(fs.remove, resolve_path(path))
+                remove_resolved(path)
             end
         else
-            try_io(fs.remove, resolve_path(arg))
+            remove_resolved(arg)
         end
     end
 end
@@ -797,6 +872,7 @@ function sh.find(opts, ...)
     end
 
     local resolved = resolve_path(path)
+    if resolved == nil then return "" end
 
     -- Convert shell glob name pattern to Lua pattern
     local function name_matches(name)
@@ -863,6 +939,7 @@ function sh.tree(opts, ...)
         path = cwd
     else
         path = resolve_path(path)
+        if path == nil then return "" end
     end
 
     local tree_opts: {[string]: any} = {path = path}
@@ -876,7 +953,9 @@ end
 function sh.tee(input, file)
     local text = tostring_val(input)
     if file then
-        try_io(fs.write, resolve_path(file), text)
+        local resolved = resolve_path(file)
+        if resolved == nil then return "" end
+        try_io(fs.write, resolved, text)
     end
     emit(text)
     return text
@@ -895,6 +974,7 @@ function sh.redirect_write(path, fn)
     pipe_depth = pipe_depth - 1
     if path == "/dev/null" then return end
     local resolved = resolve_path(path)
+    if resolved == nil then return end
     if not check_writable(resolved) then return end
     local text = tostring_val(result)
     if text ~= "" then text = text .. "\n" end
@@ -910,6 +990,7 @@ function sh.redirect_append(path, fn)
     pipe_depth = pipe_depth - 1
     if path == "/dev/null" then return end
     local resolved = resolve_path(path)
+    if resolved == nil then return end
     if not check_writable(resolved) then return end
     local text = tostring_val(result)
     if text ~= "" then text = text .. "\n" end
@@ -948,14 +1029,24 @@ function sh.test(...)
     if #args == 2 then
         local flag = args[1]
         local val = args[2]
-        if flag == "-f" then result = fs.isfile(resolve_path(val))
-        elseif flag == "-d" then result = fs.isdir(resolve_path(val))
-        elseif flag == "-e" then result = fs.exists(resolve_path(val))
-        elseif flag == "-r" then result = fs.exists(resolve_path(val))
-        elseif flag == "-w" then result = fs.exists(resolve_path(val))
+        if flag == "-f" then
+            local p = resolve_path(val)
+            result = p ~= nil and fs.isfile(p)
+        elseif flag == "-d" then
+            local p = resolve_path(val)
+            result = p ~= nil and fs.isdir(p)
+        elseif flag == "-e" then
+            local p = resolve_path(val)
+            result = p ~= nil and fs.exists(p)
+        elseif flag == "-r" then
+            local p = resolve_path(val)
+            result = p ~= nil and fs.exists(p)
+        elseif flag == "-w" then
+            local p = resolve_path(val)
+            result = p ~= nil and fs.exists(p)
         elseif flag == "-s" then
             local p = resolve_path(val)
-            if fs.isfile(p) then
+            if p ~= nil and fs.isfile(p) then
                 local ok, content = try_io(fs.read, p)
                 result = ok and #content > 0
             end
@@ -1053,6 +1144,7 @@ function sh.glob(pattern)
         -- Recursive glob: find base dir before **, list recursively, filter
         local base = string.match(pattern, "^(.-)/.*%*%*") or "."
         local resolved = resolve_path(base)
+        if resolved == nil then return {} end
         local all = list_recursive(resolved)
         local lua_pat = glob_to_lua_pattern(pattern)
         local matched = {}
@@ -1068,6 +1160,7 @@ function sh.glob(pattern)
     local dir = string.match(pattern, "^(.*)/") or "."
     local pat = string.match(pattern, "([^/]+)$") or "*"
     local resolved = resolve_path(dir)
+    if resolved == nil then return {} end
     local ok, entries = pcall(fs.list, resolved)
     if not ok then return {} end
 
@@ -1340,6 +1433,11 @@ end
 
 function sh.stub_no_pkg(name)
     print(name .. ": no package management in sandbox")
+    sh.last_exit_code = 1
+end
+
+function sh.stub_no_dev(name)
+    print(name .. ": not available in CPSL sandbox (no host shell or development environment)")
     sh.last_exit_code = 1
 end
 

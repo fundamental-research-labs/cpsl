@@ -9,6 +9,7 @@ name = "cpsl"
 crate-type = ["cdylib"]
 
 [dependencies]
+cpsl-core = { path = "../core", default-features = false, features = ["mod-fs", "mod-json", "mod-csv"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

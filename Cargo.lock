@@ -721,6 +721,7 @@ dependencies = [
 name = "cpsl-ffi"
 version = "0.1.0"
 dependencies = [
+ "cpsl-core",
  "libloading 0.8.9",
  "serde",
  "serde_json",
