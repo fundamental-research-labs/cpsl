@@ -1,0 +1,3 @@
+[submodule "herm"]
+	path = herm
+	url = git@github.com:aduermael/herm.git

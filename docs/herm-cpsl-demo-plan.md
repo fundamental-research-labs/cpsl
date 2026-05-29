@@ -1,10 +1,13 @@
 # Herm + CPSL Demo Plan
 
-Status: planning document for the first public demo.
+Status: execution plan for review before implementation.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
 runtime mounted on the current folder.
+
+Herm has been prepared as a submodule at `herm/`. Work in that submodule should
+happen on `aduermael/cpsl-integration`, created from `origin/main`.
 
 ## Demo Positioning
 
@@ -23,6 +26,21 @@ descriptions must make it clear that agents should not assume package
 installation, native compilers, Node, npm, pip, apt, brew, long-running
 services, daemons, Docker, or host shell access.
 
+## Consensus Decision
+
+The first implementation should not start from the original fastest-path list.
+Three review passes found the plan directionally right but under-specified in
+places that would create avoidable coupling between CPSL FFI design, Herm
+backend routing, Docker startup assumptions, and prompt wording.
+
+Implementation should start only after the ABI, worker protocol, tool surface,
+and network-policy behavior below are accepted.
+
+The demo network path should use static allow/deny policy passed into CPSL.
+Herm-owned host callbacks remain a future extension unless the FFI contract is
+explicitly expanded before implementation. This keeps the first dynamic library
+small and still demonstrates deny-by-default networking plus `--allow-domain`.
+
 ## Herm CLI Contract
 
 For the demo, add one CPSL-specific flag:
@@ -35,12 +53,16 @@ herm --cpsl C:\path\to\cpsl.dll
 
 Only direct dynamic library paths are supported in the first demo.
 
-If the value passed to `--cpsl` is not a platform CPSL sandbox library, Herm
-should fail early with a simple message:
+If the value passed to `--cpsl` is missing, is not a file, does not have the
+platform library extension, fails to load, or does not expose the required CPSL
+ABI, Herm should fail early with this user-facing message:
 
 ```text
 You need to provide a CPSL sandbox library.
 ```
+
+Detailed loader diagnostics may be written to debug logs, but the CLI-facing
+message should stay simple for the demo path.
 
 This intentionally avoids manifest detection, automatic builds, hub downloads,
 or bundle resolution in the demo path.
@@ -52,8 +74,9 @@ Use backend-neutral network flags:
 --deny-domain api.example.com
 ```
 
-For the demo these flags only affect CPSL mode. Later they can also apply to
-container networking when Herm has tighter container network control.
+The flags should be repeatable. For the demo they only affect CPSL mode. Later
+they can also apply to container networking when Herm has tighter container
+network control.
 
 ## Backend Rule
 
@@ -61,21 +84,26 @@ container networking when Herm has tighter container network control.
 
 When `--cpsl` is present:
 
-- Herm does not start a container.
+- Herm does not check Docker.
+- Herm does not start, pull, build, restart, or retry a container.
 - Herm mounts the current host folder into CPSL as `/workdir`.
 - Herm routes the bash tool into CPSL.
-- Herm uses a CPSL-specific system prompt.
+- Herm uses CPSL-specific system prompt and bash tool text.
 - Herm disables container-specific setup, dev environment detection, package
-  installation, and auto-build behavior.
+  installation, auto-build behavior, and the `devenv` tool.
+- Herm does not expose container file tools unless they are reimplemented
+  against CPSL.
+- Herm does not expose host `git` in the first demo, because the CPSL prompt
+  says there is no host access.
 - Herm must not fall back to host or container execution after a CPSL error,
-  denial, or unsupported command.
+  denial, unsupported command, timeout, or crash.
 
-## CPSL Library Shape
+## CPSL FFI Contract
 
 Add a dedicated native FFI crate in CPSL instead of turning `cpsl-core` into a
 dynamic library.
 
-Likely files:
+Files:
 
 - `ffi/Cargo.toml`
 - `ffi/src/lib.rs`
@@ -89,15 +117,90 @@ The crate should build:
 
 The first FFI should stay small:
 
-- ABI version query
-- backend metadata query
-- session create/free
-- eval request
-- string free
-- last error
+```c
+#define CPSL_ABI_VERSION 1
+
+typedef struct cpsl_session cpsl_session_t;
+
+uint32_t cpsl_abi_version(void);
+char *cpsl_backend_metadata_json(void);
+cpsl_session_t *cpsl_session_new(const char *config_json);
+void cpsl_session_free(cpsl_session_t *session);
+char *cpsl_eval(cpsl_session_t *session, const char *request_json);
+void cpsl_string_free(char *value);
+const char *cpsl_last_error(void);
+```
+
+All returned `char *` values except `cpsl_last_error` are owned by the caller
+and must be freed with `cpsl_string_free`. `cpsl_last_error` returns a borrowed
+pointer that remains valid until the next CPSL FFI call on the same process.
+FFI functions must catch panics and report failure through null returns plus
+`cpsl_last_error`.
+
+Backend metadata response:
+
+```json
+{
+  "name": "cpsl",
+  "abi_version": 1,
+  "version": "0.1.0",
+  "languages": ["bash"],
+  "capabilities": {
+    "mounts": true,
+    "network_policy": true
+  }
+}
+```
+
+Session config:
+
+```json
+{
+  "mounts": [
+    {"host": "<current host folder>", "virtual": "/workdir", "mode": "rw"}
+  ],
+  "initial_cwd": "/workdir",
+  "language": "bash",
+  "http": {
+    "mode": "policy",
+    "allow_domains": [],
+    "deny_domains": []
+  }
+}
+```
+
+Eval request:
+
+```json
+{
+  "language": "bash",
+  "input": "pwd",
+  "timeout_ms": 120000
+}
+```
+
+Eval response:
+
+```json
+{
+  "ok": true,
+  "stdout": "/workdir\n",
+  "stderr": "",
+  "exit_code": 0,
+  "error": null,
+  "warnings": [],
+  "cwd": "/workdir"
+}
+```
+
+`ok=false` means the request could not be evaluated by CPSL itself. A shell
+command that runs and exits nonzero should return `ok=true` with a nonzero
+`exit_code`, so Herm can format it like its current bash tool results.
 
 The dynamic library should embed CPSL shell runtime assets with `include_str!`
-so Herm does not need to locate CPSL runtime files.
+so Herm does not need to locate CPSL runtime files. The initial shell cwd must
+be `/workdir`; this can be implemented by initializing the shell runtime and
+then setting the shell cwd during session creation.
 
 ## Herm Integration Shape
 
@@ -108,25 +211,31 @@ Preferred implementation:
 
 1. Herm starts a small worker process for CPSL mode.
 2. The worker loads the CPSL dynamic library with `dlopen` or `LoadLibraryW`.
-3. Herm communicates with the worker over a local protocol.
+3. Herm communicates with the worker over a JSONL stdin/stdout protocol.
 4. Herm can terminate the worker on timeout or crash without taking down the
    main Herm process.
 
-The worker configures CPSL with:
+Worker startup inputs:
+
+- CPSL library path
+- current host folder
+- allow-domain list
+- deny-domain list
+
+Worker protocol:
 
 ```json
-{
-  "mounts": [
-    {"host": "<current host folder>", "virtual": "/workdir", "mode": "rw"}
-  ],
-  "initial_cwd": "/workdir",
-  "language": "bash",
-  "http": "host_callback"
-}
+{"id":1,"op":"eval","language":"bash","input":"ls -la","timeout_ms":120000}
+{"id":1,"ok":true,"stdout":"...","stderr":"","exit_code":0,"error":null,"warnings":[],"cwd":"/workdir"}
 ```
 
-HTTP should route through Herm policy callbacks so Herm owns allow/deny
-decisions and future credential policy.
+If the worker cannot load or validate the library, Herm should surface only:
+
+```text
+You need to provide a CPSL sandbox library.
+```
+
+The worker may include richer details in stderr for debug mode.
 
 ## Prompt Contract
 
@@ -146,23 +255,160 @@ allow/deny domain rules. If a command is unavailable, adapt within CPSL instead
 of trying to bypass the sandbox.
 ```
 
+Herm must also replace tool descriptions that currently say "dev container" or
+"Docker" when CPSL mode is active. The first demo should expose CPSL `bash`
+and the sub-agent tool only if sub-agents inherit the same CPSL-safe tool set.
+Provider-side web search can remain available when the selected model supports
+it, because it is not host shell or container execution.
+
 The CPSL library should eventually expose compiled module metadata so Herm can
-include the exact available capabilities in the prompt.
+include exact available capabilities in the prompt. That is not required for
+the first demo.
 
-## Fastest Demo Phases
+## Execution Phases
 
-1. Add `cpsl-ffi` dynamic library target with shell eval and `/workdir` mount
-   support.
-2. Add Herm `--cpsl` flag that accepts only a direct library path.
-3. Make non-library `--cpsl` values fail with "You need to provide a CPSL
-   sandbox library."
-4. Run CPSL mode without containers.
-5. Route Herm bash tool calls into CPSL.
-6. Add backend-neutral `--allow-domain` and `--deny-domain`, wired only to CPSL
-   for now.
-7. Add CPSL-specific prompt text.
-8. Record a demo showing Herm editing and creating files in `/workdir` without
-   Docker.
+### Phase 0: Planning And Repo Setup
+
+Owner: CPSL superproject.
+
+Commit contents:
+
+- expanded execution plan
+- Herm submodule pointer at `herm/`
+- Herm submodule branch prepared as `aduermael/cpsl-integration`
+
+Acceptance:
+
+- reviewers can inspect CPSL and Herm side by side
+- no implementation code has been changed yet
+
+### Phase 1: Contract Freeze
+
+Owner: CPSL docs, with Herm implementation assumptions captured.
+
+Commit: `docs: specify CPSL FFI contract for Herm`.
+
+Acceptance:
+
+- C ABI signatures are frozen for the demo
+- session config JSON and eval request/response JSON are frozen
+- string ownership and panic/error behavior are documented
+- timeout behavior is documented as worker-enforced
+- network policy is documented as static allow/deny for the demo
+
+### Phase 2: CPSL FFI Skeleton
+
+Owner: CPSL branch `aduermael/lib-build`.
+
+Commit: `ffi: add cpsl-ffi cdylib crate`.
+
+Acceptance:
+
+- `ffi` is a workspace member
+- `cargo build -p cpsl-ffi --release` produces the platform dynamic library
+- `cpsl_abi_version`, metadata, string allocation/free, and last-error calls
+  work from a tiny loader/probe test
+- no Herm code is required to validate the library skeleton
+
+### Phase 3: CPSL Bash Session Eval
+
+Owner: CPSL branch `aduermael/lib-build`.
+
+Commit: `ffi: add bash eval sessions with workdir mounts`.
+
+Acceptance:
+
+- session config mounts a host temp directory as `/workdir`
+- initial cwd is `/workdir`
+- `pwd`, `ls`, `cat`, `grep`, `echo > file`, JSON, CSV, and Markdown file
+  workflows work through `cpsl_eval`
+- unsupported development commands return clear CPSL feedback
+- nonzero shell exits return `ok=true` and nonzero `exit_code`
+- no command can escape mounted paths
+
+### Phase 4: Herm CLI And Backend Mode
+
+Owner: Herm submodule branch `aduermael/cpsl-integration`.
+
+Commit: `cli: add cpsl backend flags`.
+
+Acceptance:
+
+- `--cpsl`, `--allow-domain`, and `--deny-domain` parse correctly
+- invalid CPSL library values fail with exactly
+  `You need to provide a CPSL sandbox library.`
+- CPSL mode does not call Docker check, image pull, image build, container
+  start, container retry, or `devenv`
+- non-CPSL behavior remains unchanged
+
+### Phase 5: Herm CPSL Worker
+
+Owner: Herm submodule branch `aduermael/cpsl-integration`.
+
+Commit: `cpsl: add worker process and protocol`.
+
+Acceptance:
+
+- worker loads the CPSL library by direct path
+- worker validates ABI version and metadata
+- worker creates one CPSL session for the Herm process
+- worker handles JSONL eval requests and returns structured eval responses
+- Herm kills the worker on timeout or crash and does not fall back to Docker or
+  host execution
+
+### Phase 6: Herm Tool Routing And Prompt Pruning
+
+Owner: Herm submodule branch `aduermael/cpsl-integration`.
+
+Commit: `cpsl: route bash through CPSL`.
+
+Acceptance:
+
+- Herm's bash tool calls use the CPSL worker in CPSL mode
+- CPSL mode prompt does not claim Docker or a container exists
+- bash tool description says commands run in CPSL at `/workdir`
+- `devenv`, container file tools, `/shell`, and host `git` are unavailable in
+  the first CPSL demo
+- sub-agents, if enabled, receive the same CPSL-safe tool set and prompt
+
+### Phase 7: Network Policy
+
+Owner: CPSL and Herm.
+
+Commits:
+
+- CPSL: `ffi: accept network policy in session config`
+- Herm: `cpsl: pass network policy to worker`
+
+Acceptance:
+
+- network access is denied by default
+- repeated `--allow-domain` values are passed to CPSL
+- repeated `--deny-domain` values are passed to CPSL
+- explicit deny wins over allow
+- no credential or host callback path is required for the first demo
+
+### Phase 8: End-To-End Demo Smoke
+
+Owner: CPSL superproject and Herm submodule.
+
+Commits:
+
+- Herm: `test: add cpsl smoke path`
+- CPSL superproject: `chore: pin Herm CPSL integration submodule`
+
+Acceptance:
+
+- with Docker unavailable, `herm --cpsl /abs/path/to/libcpsl.so -p ...`
+  starts and completes
+- Herm bash execution runs inside CPSL
+- the current folder is visible as `/workdir`
+- a task can inspect files and create or edit Markdown, JSON, CSV, or report
+  files in `/workdir`
+- unsupported development commands produce clear CPSL feedback
+- network access is denied by default and can be allowed with `--allow-domain`
+- no manifest build, hub download, or automatic CPSL library resolution is
+  required
 
 ## Future Distribution
 
@@ -172,15 +418,3 @@ Later, CPSL Hub can expose verified CPSL images and checksums so Herm can verify
 that a selected CPSL image is legitimate. Office-focused Herm distributions may
 also bundle a verified CPSL image and make CPSL the default backend for that
 edition, while coding-focused Herm distributions keep containers as the default.
-
-## Demo Success Criteria
-
-- `herm --cpsl ./libcpsl.dylib` starts without a container.
-- Herm bash execution runs inside CPSL.
-- The current folder is visible as `/workdir`.
-- A task can inspect files and create or edit Markdown, JSON, CSV, or report
-  files in `/workdir`.
-- Unsupported development commands produce clear CPSL feedback.
-- Network access is denied by default and can be allowed with `--allow-domain`.
-- No manifest build, hub download, or automatic CPSL library resolution is
-  required for the first demo.
