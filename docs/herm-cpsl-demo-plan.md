@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 0 complete; Phase 1 contract freeze pending before implementation.
+Status: Phase 1 contract freeze complete; Phase 2 CPSL FFI skeleton pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -118,6 +118,8 @@ The crate should build:
 The first FFI should stay small:
 
 ```c
+#include <stdint.h>
+
 #define CPSL_ABI_VERSION 1
 
 typedef struct cpsl_session cpsl_session_t;
@@ -131,11 +133,31 @@ void cpsl_string_free(char *value);
 const char *cpsl_last_error(void);
 ```
 
-All returned `char *` values except `cpsl_last_error` are owned by the caller
-and must be freed with `cpsl_string_free`. `cpsl_last_error` returns a borrowed
-pointer that remains valid until the next CPSL FFI call on the same process.
-FFI functions must catch panics and report failure through null returns plus
-`cpsl_last_error`.
+The ABI exports these exact unmangled C symbols with the platform C calling
+convention. `cpsl_session_t` is opaque, and no Rust types cross the boundary.
+
+All strings crossing the boundary are NUL-terminated UTF-8. Embedded NUL bytes
+are unsupported. Input strings are borrowed for the duration of the call only;
+CPSL must copy anything retained after return. All returned `char *` values
+except `cpsl_last_error` are owned by the caller and must be freed with
+`cpsl_string_free`.
+
+`cpsl_session_new(NULL)`, `cpsl_eval(NULL, ...)`, and
+`cpsl_eval(..., NULL)` return `NULL` and set `cpsl_last_error`.
+`cpsl_string_free(NULL)` and `cpsl_session_free(NULL)` are no-ops. Passing any
+other non-CPSL pointer to CPSL free functions is undefined behavior.
+
+`cpsl_last_error` returns a borrowed NUL-terminated UTF-8 pointer. An empty
+string means no current error. The pointer remains valid until the next
+non-`cpsl_last_error` FFI call on the same process. The first demo treats a
+session as single-thread owned by its worker process.
+
+No panic or Rust unwind may cross the C boundary. `cpsl_abi_version`,
+`cpsl_session_free`, `cpsl_string_free`, and `cpsl_last_error` must be
+infallible from the caller's perspective. A `NULL` return from
+`cpsl_backend_metadata_json`, `cpsl_session_new`, or `cpsl_eval` is an
+FFI/contract failure and must be paired with `cpsl_last_error`. A JSON eval
+response with `ok=false` is a CPSL evaluation result, not an ABI failure.
 
 Backend metadata response:
 
@@ -169,6 +191,30 @@ Session config:
 }
 ```
 
+For the first demo, the config supports exactly one writable mount: the current
+host folder mounted at virtual path `/workdir`. The host path must be absolute
+and canonical. The virtual path must be absolute. `mode` must be `"rw"`.
+`language` must be `"bash"`. `initial_cwd` must be `/workdir` or a descendant
+of `/workdir`; the demo starts at exactly `/workdir`.
+
+Malformed JSON, missing required fields, unsupported field values, relative
+host or virtual paths, unsupported mount modes, and an `initial_cwd` outside the
+mounted virtual tree make `cpsl_session_new` return `NULL` with
+`cpsl_last_error`.
+
+All eval-time path resolution is confined to mounted virtual paths. Relative
+paths, absolute paths, `..` traversal, symlinks, and `cd` changes must not
+escape the mounted workspace or reveal host paths outside the configured mount.
+
+Network policy is static for the life of the session and is fixed during
+`cpsl_session_new`. The first demo supports only `"mode": "policy"` with
+domain allow/deny lists. There is no host callback, credential forwarding, or
+runtime policy mutation path. With an empty allow list, outbound network access
+is denied by default. Deny entries always win over allow entries. Domain entries
+are lowercase DNS hostnames with no wildcard syntax; matching is exact host or
+subdomain suffix, so `example.com` matches `example.com` and `api.example.com`
+but not `badexample.com`.
+
 Eval request:
 
 ```json
@@ -193,14 +239,53 @@ Eval response:
 }
 ```
 
-`ok=false` means the request could not be evaluated by CPSL itself. A shell
-command that runs and exits nonzero should return `ok=true` with a nonzero
-`exit_code`, so Herm can format it like its current bash tool results.
+Eval responses always use the same top-level fields. On successful evaluation
+or shell completion, `ok` is `true`, `exit_code` is the shell exit code, and
+`error` is `null`. A shell command that runs and exits nonzero still returns
+`ok=true` with a nonzero `exit_code`, so Herm can format it like its current
+bash tool results.
+
+`ok=false` means the request could not be evaluated by CPSL itself. For
+`ok=false`, `exit_code` is `null`, `error` is an object with stable `code` and
+human-readable `message` fields, `warnings` is an array of strings, and `cwd`
+is the last known virtual cwd or `/workdir` if no better value is available.
+`stdout` and `stderr` are strings and may contain partial output.
+
+Example eval failure:
+
+```json
+{
+  "ok": false,
+  "stdout": "",
+  "stderr": "",
+  "exit_code": null,
+  "error": {
+    "code": "sandbox_denied",
+    "message": "Network access is denied by policy"
+  },
+  "warnings": [],
+  "cwd": "/workdir"
+}
+```
+
+Stable demo error codes are `invalid_request`, `unsupported_language`,
+`sandbox_denied`, `timeout`, and `runtime_error`. Malformed `request_json`,
+missing required fields, or wrong JSON field types make `cpsl_eval` return
+`NULL` with `cpsl_last_error`; valid requests that CPSL cannot evaluate return
+structured JSON with `ok=false`.
 
 The dynamic library should embed CPSL shell runtime assets with `include_str!`
 so Herm does not need to locate CPSL runtime files. The initial shell cwd must
 be `/workdir`; this can be implemented by initializing the shell runtime and
 then setting the shell cwd during session creation.
+
+Herm validates a CPSL library by resolving every required symbol by exact name,
+requiring `cpsl_abi_version() == CPSL_ABI_VERSION`, parsing metadata JSON, and
+requiring `name == "cpsl"`, `abi_version == 1`, `languages` containing
+`"bash"`, and the demo capabilities `mounts` and `network_policy` set to
+`true`. The loader uses the direct library path only, creates one session for
+the Herm process, frees returned strings with `cpsl_string_free`, frees the
+session before unload, and makes no calls after unload.
 
 ## Herm Integration Shape
 
@@ -212,8 +297,10 @@ Preferred implementation:
 1. Herm starts a small worker process for CPSL mode.
 2. The worker loads the CPSL dynamic library with `dlopen` or `LoadLibraryW`.
 3. Herm communicates with the worker over a JSONL stdin/stdout protocol.
-4. Herm can terminate the worker on timeout or crash without taking down the
-   main Herm process.
+4. The worker boundary owns per-request timeout enforcement. The worker returns
+   a timeout response when it can regain control; Herm keeps an outer watchdog
+   so it can terminate a crashed or wedged worker without taking down the main
+   process.
 
 Worker startup inputs:
 
@@ -228,6 +315,29 @@ Worker protocol:
 {"id":1,"op":"eval","language":"bash","input":"ls -la","timeout_ms":120000}
 {"id":1,"ok":true,"stdout":"...","stderr":"","exit_code":0,"error":null,"warnings":[],"cwd":"/workdir"}
 ```
+
+The worker protocol is newline-delimited JSON over stdin/stdout. Worker stdout
+must contain only protocol messages. Worker stderr is diagnostic-only and is not
+parsed as protocol. The first demo supports only `op: "eval"` and one in-flight
+request at a time. Each response must repeat the request `id`.
+
+Worker responses use the same result shape as `cpsl_eval`, with the `id` field
+added. On worker or CPSL failure:
+
+```json
+{"id":1,"ok":false,"stdout":"","stderr":"","exit_code":null,"error":{"code":"timeout","message":"Command timed out after 120000 ms"},"warnings":[],"cwd":"/workdir"}
+```
+
+The worker enforces `timeout_ms` for each eval. The eval request still includes
+`timeout_ms` so CPSL can cooperate with cancellation and produce consistent
+diagnostics, but Herm must not depend on in-library timeout handling as the only
+guard. Herm may kill and replace a crashed or wedged worker, but timeout
+handling is not a fallback path.
+
+After a bad request, CPSL denial, unsupported operation, unsupported language,
+timeout, worker crash, malformed response, or EOF, Herm surfaces the
+CPSL/worker error and does not retry through host execution, Docker, or direct
+in-process CPSL execution.
 
 If the worker cannot load or validate the library, Herm should surface only:
 
@@ -270,7 +380,7 @@ the first demo.
 Phase checklist:
 
 - [x] Phase 0: Planning And Repo Setup
-- [ ] Phase 1: Contract Freeze
+- [x] Phase 1: Contract Freeze
 - [ ] Phase 2: CPSL FFI Skeleton
 - [ ] Phase 3: CPSL Bash Session Eval
 - [ ] Phase 4: Herm CLI And Backend Mode
@@ -302,11 +412,13 @@ Commit: `docs: specify CPSL FFI contract for Herm`.
 
 Acceptance:
 
-- [ ] C ABI signatures are frozen for the demo
-- [ ] session config JSON and eval request/response JSON are frozen
-- [ ] string ownership and panic/error behavior are documented
-- [ ] timeout behavior is documented as worker-enforced
-- [ ] network policy is documented as static allow/deny for the demo
+- [x] C ABI signatures are frozen for the demo
+- [x] session config JSON and eval request/response JSON are frozen
+- [x] string ownership and panic/error behavior are documented
+- [x] timeout behavior is documented as worker-enforced
+- [x] network policy is documented as static allow/deny for the demo
+- [x] mount confinement and path escape behavior are documented
+- [x] worker JSONL protocol and no-fallback behavior are documented
 
 ### Phase 2: CPSL FFI Skeleton
 
