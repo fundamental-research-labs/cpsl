@@ -388,6 +388,7 @@ Phase checklist:
 - [x] Phase 6: Herm Tool Routing And Prompt Pruning
 - [x] Phase 7: Network Policy
 - [ ] Phase 8: End-To-End Demo Smoke
+- [ ] Phase 9: CPSL Demo Polish Follow-Ups
 
 ### Phase 0: Planning And Repo Setup
 
@@ -533,6 +534,33 @@ Acceptance:
 - [ ] network access is denied by default and can be allowed with `--allow-domain`
 - [ ] no manifest build, hub download, or automatic CPSL library resolution is
   required
+
+### Phase 9: CPSL Demo Polish Follow-Ups
+
+Owner: Herm submodule, with CPSL prompt samples supplied later.
+
+Do not block Phase 8 on this. These are post-smoke improvements observed during
+manual demo testing.
+
+Commits:
+
+- [ ] Herm: `cpsl: polish CPSL mode status and prompts`
+- [ ] Herm: `cpsl: add CPSL shell mode`
+
+Acceptance:
+
+- [ ] CPSL mode never displays container-oriented status text such as
+  `vdev (container: 0.4)`.
+- [ ] CPSL mode displays a backend-appropriate status label that makes clear the
+  session is running with CPSL, not a Docker/container backend.
+- [ ] CPSL system prompt wording is revised using dedicated CPSL prompt samples
+  before wider demo use.
+- [ ] `/shell` is available in CPSL mode and routes commands to the same CPSL
+  sandbox mounted at `/workdir`.
+- [ ] Explore `/shell --lua` or `/shell --luau` for direct Luau interaction if
+  the CPSL worker/FFI contract is expanded to support Luau eval safely.
+- [ ] Any CPSL shell mode must preserve the no-fallback rule: failures must not
+  escape to host shell or container execution.
 
 ## Future Distribution
 
