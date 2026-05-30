@@ -584,11 +584,12 @@ Acceptance:
 Update: the worker/FFI contract now exposes native Luau eval alongside Bash
 compatibility, so Herm can prefer Luau for agent execution and support
 `/shell --lua` / `/shell --luau` for direct line-oriented Luau interaction.
-Follow-up: Herm's default model-facing tool surface exposes the native `luau`
-tool only, and `/shell` opens Luau by default. Bash remains supported as an
-explicit compatibility path for `/shell --bash` and internal worker calls, but
-the rendered agent prompt presents the backend as a local sandbox with a Luau
-interface rather than naming CPSL.
+Follow-up: Herm's default model-facing tool surface exposes
+`local_sandbox_exec` for native Luau and `local_sandbox_exec_bash` for explicit
+Bash-compatible input, with native Luau listed first. `/shell` opens Luau by
+default, while Bash remains supported through `/shell --bash` and internal
+worker calls. The rendered agent prompt presents the backend as a local sandbox
+with a Luau interface rather than naming CPSL.
 
 ## Future Distribution
 
