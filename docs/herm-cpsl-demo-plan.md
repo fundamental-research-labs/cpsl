@@ -537,7 +537,8 @@ Acceptance:
 
 ### Phase 9: CPSL Demo Polish Follow-Ups
 
-Owner: Herm submodule, with CPSL prompt samples supplied later.
+Owner: Herm submodule, using `AGENT-SYSTEM-PROMPT-GUIDE.md` as the CPSL prompt
+source of truth.
 
 Do not block Phase 8 on this. These are post-smoke improvements observed during
 manual demo testing.
@@ -545,6 +546,7 @@ manual demo testing.
 Commits:
 
 - [ ] Herm: `cpsl: polish CPSL mode status and prompts`
+- [ ] Herm: `cpsl: refactor prompt templates by backend`
 - [ ] Herm: `cpsl: add CPSL shell mode`
 
 Acceptance:
@@ -553,8 +555,27 @@ Acceptance:
   `vdev (container: 0.4)`.
 - [ ] CPSL mode displays a backend-appropriate status label that makes clear the
   session is running with CPSL, not a Docker/container backend.
-- [ ] CPSL system prompt wording is revised using dedicated CPSL prompt samples
-  before wider demo use.
+- [ ] CPSL system prompt wording is revised against
+  `AGENT-SYSTEM-PROMPT-GUIDE.md` before wider demo use.
+- [ ] `AGENT-SYSTEM-PROMPT-GUIDE.md` is updated during Herm integration if
+  implementation reveals unclear guidance, missing sections, or prompt wording
+  gaps.
+- [ ] Herm prompt assembly is refactored around backend prompt profiles instead
+  of scattered `IsCPSL` branches in shared templates.
+- [ ] Prompt templates are organized by backend directory:
+  - `herm/prompts/common/` for behavior that is true regardless of backend
+  - `herm/prompts/container/` for Docker/container-specific runtime guidance
+  - `herm/prompts/cpsl/` for local sandbox guidance derived from
+    `AGENT-SYSTEM-PROMPT-GUIDE.md`
+- [ ] Final main-agent and sub-agent system prompts are assembled from the
+  selected backend profile plus the available tool surface, with the backend
+  selected once in code instead of repeatedly inside shared templates.
+- [ ] CPSL-rendered prompts and tool descriptions mention only the CPSL-safe
+  execution surface exposed by Herm, omit Docker/container/devenv claims, and
+  preserve the no-host-fallback rule.
+- [ ] Existing CPSL tool-description override precedent
+  (`herm/prompts/tools_cpsl/`) is either retained or folded into the same
+  backend-profile assembly mechanism.
 - [ ] `/shell` is available in CPSL mode and routes commands to the same CPSL
   sandbox mounted at `/workdir`.
 - [ ] Explore `/shell --lua` or `/shell --luau` for direct Luau interaction if
