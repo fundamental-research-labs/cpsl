@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 7 Network Policy complete; Phase 8 End-To-End Demo Smoke pending.
+Status: Phase 8 End-To-End Demo Smoke complete; Phase 9 CPSL Demo Polish Follow-Ups pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -387,7 +387,7 @@ Phase checklist:
 - [x] Phase 5: Herm CPSL Worker
 - [x] Phase 6: Herm Tool Routing And Prompt Pruning
 - [x] Phase 7: Network Policy
-- [ ] Phase 8: End-To-End Demo Smoke
+- [x] Phase 8: End-To-End Demo Smoke
 - [ ] Phase 9: CPSL Demo Polish Follow-Ups
 
 ### Phase 0: Planning And Repo Setup
@@ -519,20 +519,20 @@ Owner: CPSL superproject and Herm submodule.
 
 Commits:
 
-- [ ] Herm: `test: add cpsl smoke path`
-- [ ] CPSL superproject: `chore: pin Herm CPSL integration submodule`
+- [x] Herm: `test: add cpsl smoke path`
+- [x] CPSL superproject: `chore: pin Herm CPSL integration submodule`
 
 Acceptance:
 
-- [ ] with Docker unavailable, `herm --cpsl /abs/path/to/libcpsl.so -p ...`
+- [x] with Docker unavailable, `herm --cpsl /abs/path/to/libcpsl.so -p ...`
   starts and completes
-- [ ] Herm bash execution runs inside CPSL
-- [ ] the current folder is visible as `/workdir`
-- [ ] a task can inspect files and create or edit Markdown, JSON, CSV, or report
+- [x] Herm bash execution runs inside CPSL
+- [x] the current folder is visible as `/workdir`
+- [x] a task can inspect files and create or edit Markdown, JSON, CSV, or report
   files in `/workdir`
-- [ ] unsupported development commands produce clear CPSL feedback
-- [ ] network access is denied by default and can be allowed with `--allow-domain`
-- [ ] no manifest build, hub download, or automatic CPSL library resolution is
+- [x] unsupported development commands produce clear CPSL feedback
+- [x] network access is denied by default and can be allowed with `--allow-domain`
+- [x] no manifest build, hub download, or automatic CPSL library resolution is
   required
 
 ### Phase 9: CPSL Demo Polish Follow-Ups
