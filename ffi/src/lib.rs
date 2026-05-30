@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 const CPSL_ABI_VERSION: u32 = 1;
 const WORKDIR: &str = "/workdir";
+const LANGUAGE_LUAU: &str = "luau";
+const LANGUAGE_BASH: &str = "bash";
 const SHRT_SOURCE: &str = include_str!("../../runtime/shrt.luau");
 
 static LAST_ERROR: OnceLock<Mutex<CString>> = OnceLock::new();
@@ -81,7 +83,7 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
             "name": "cpsl",
             "abi_version": CPSL_ABI_VERSION,
             "version": env!("CARGO_PKG_VERSION"),
-            "languages": ["bash"],
+            "languages": [LANGUAGE_LUAU, LANGUAGE_BASH],
             "capabilities": {
                 "mounts": true,
                 "network_policy": true
@@ -96,7 +98,7 @@ pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_sess
     ffi_result(|| {
         let config_json = c_str_arg(config_json, "config_json")?;
         let config = validate_session_config(&config_json)?;
-        let sandbox = create_shell_sandbox(&config)?;
+        let sandbox = create_runtime_sandbox(&config)?;
         let session = Box::new(Session {
             sandbox,
             _config: config,
@@ -132,14 +134,14 @@ pub extern "C" fn cpsl_eval(
             .map_err(|error| format!("invalid eval request: {error}"))?;
         let session = unsafe { &*(session as *const Session) };
 
-        let response = if request.language == "bash" {
-            eval_bash(session, &request)
-        } else {
-            eval_error_json(
+        let response = match request.language.as_str() {
+            LANGUAGE_LUAU => eval_luau(session, &request),
+            LANGUAGE_BASH => eval_bash(session, &request),
+            _ => eval_error_json(
                 "unsupported_language",
-                "Only bash is supported by this CPSL session",
+                "Supported CPSL languages are luau and bash",
                 &shell_cwd(session),
-            )
+            ),
         };
 
         owned_c_string(response.to_string())
@@ -187,8 +189,8 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     let config: SessionConfig = serde_json::from_str(config_json)
         .map_err(|error| format!("invalid session config: {error}"))?;
 
-    if config.language != "bash" {
-        return Err("session language must be bash".to_string());
+    if config.language != LANGUAGE_LUAU && config.language != LANGUAGE_BASH {
+        return Err("session language must be luau or bash".to_string());
     }
 
     if config.mounts.len() != 1 {
@@ -221,7 +223,7 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     })
 }
 
-fn create_shell_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, String> {
+fn create_runtime_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, String> {
     let mut mounts = MountTable::new();
     mounts
         .add_mount(config.host.clone(), WORKDIR, MountPermission::ReadWrite)
@@ -282,6 +284,14 @@ fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {
             ),
             None => eval_exec_error_json(&error.message, &shell_cwd(session)),
         },
+    }
+}
+
+fn eval_luau(session: &Session, request: &EvalRequest) -> serde_json::Value {
+    let _timeout_ms = request.timeout_ms;
+    match session.sandbox.exec_stdout(&request.input) {
+        Ok(stdout) => eval_success_json(stdout, 0, Vec::new(), &shell_cwd(session)),
+        Err(error) => eval_exec_error_json(&error.message, &shell_cwd(session)),
     }
 }
 
@@ -511,6 +521,16 @@ mod tests {
     }
 
     #[test]
+    fn metadata_advertises_native_luau_and_bash() {
+        let metadata = unsafe { owned_ffi_string(cpsl_backend_metadata_json()) };
+        let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+        let languages = metadata["languages"].as_array().unwrap();
+
+        assert!(languages.iter().any(|language| language == LANGUAGE_LUAU));
+        assert!(languages.iter().any(|language| language == LANGUAGE_BASH));
+    }
+
+    #[test]
     fn validates_network_policy_domains() {
         let dir = TempDir::new().unwrap();
         let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
@@ -541,6 +561,10 @@ mod tests {
         let mut wrong_language = session_config(host);
         wrong_language["language"] = json!("python");
         assert!(validate_session_config(&wrong_language.to_string()).is_err());
+
+        let mut luau_language = session_config(host);
+        luau_language["language"] = json!(LANGUAGE_LUAU);
+        assert!(validate_session_config(&luau_language.to_string()).is_ok());
 
         let mut outside_cwd = session_config(host);
         outside_cwd["initial_cwd"] = json!("/tmp");
@@ -649,6 +673,40 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_native_luau_file_and_data_workflows() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("notes.txt"), "alpha\nbeta\n").unwrap();
+        fs::write(dir.path().join("data.json"), r#"{"name":"Ada","count":2}"#).unwrap();
+
+        let session = new_session_with_language(dir.path(), LANGUAGE_LUAU);
+        let response = eval_luau(
+            session,
+            r#"
+                local text = fs.read("/workdir/notes.txt")
+                local data = json.decode(fs.read("/workdir/data.json"))
+                fs.write("/workdir/report.txt", string.upper(text) .. data.name)
+                print(text)
+                print(data.name)
+            "#,
+        );
+
+        assert_success(&response, 0);
+        let stdout = response["stdout"].as_str().unwrap();
+        assert!(stdout.contains("alpha\nbeta"), "{stdout}");
+        assert!(stdout.contains("Ada"), "{stdout}");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("report.txt")).unwrap(),
+            "ALPHA\nBETA\nAda"
+        );
+
+        let bash = eval_bash(session, "cat report.txt");
+        assert_success(&bash, 0);
+        assert_eq!(bash["stdout"], "ALPHA\nBETA\nAda\n");
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
     fn reports_nonzero_shell_exits_without_ffi_failure() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("notes.txt"), "alpha\nbeta\n").unwrap();
@@ -713,6 +771,22 @@ mod tests {
         let session = new_session(dir.path());
 
         let response = eval(session, "http get https://example.com/");
+
+        assert_eval_error(&response, "sandbox_denied");
+        assert_eq!(
+            response["error"]["message"],
+            "Network access is denied by policy"
+        );
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn native_luau_network_denial_is_structured() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session_with_language(dir.path(), LANGUAGE_LUAU);
+
+        let response = eval_luau(session, r#"return http.get("https://example.com/")"#);
 
         assert_eval_error(&response, "sandbox_denied");
         assert_eq!(
@@ -838,7 +912,11 @@ mod tests {
     }
 
     fn new_session(host: &Path) -> *mut cpsl_session_t {
-        new_session_with_policy(host, &[], &[])
+        new_session_with_language(host, LANGUAGE_BASH)
+    }
+
+    fn new_session_with_language(host: &Path, language: &str) -> *mut cpsl_session_t {
+        new_session_with_policy_and_language(host, language, &[], &[])
     }
 
     fn new_session_with_policy(
@@ -846,8 +924,18 @@ mod tests {
         allow_domains: &[&str],
         deny_domains: &[&str],
     ) -> *mut cpsl_session_t {
+        new_session_with_policy_and_language(host, LANGUAGE_BASH, allow_domains, deny_domains)
+    }
+
+    fn new_session_with_policy_and_language(
+        host: &Path,
+        language: &str,
+        allow_domains: &[&str],
+        deny_domains: &[&str],
+    ) -> *mut cpsl_session_t {
         let host = host.canonicalize().unwrap();
         let mut config = session_config(host.to_str().unwrap());
+        config["language"] = json!(language);
         config["http"]["allow_domains"] = json!(allow_domains);
         config["http"]["deny_domains"] = json!(deny_domains);
         let config = CString::new(config.to_string()).unwrap();
@@ -859,9 +947,21 @@ mod tests {
     }
 
     fn eval(session: *mut cpsl_session_t, input: &str) -> serde_json::Value {
+        eval_bash(session, input)
+    }
+
+    fn eval_bash(session: *mut cpsl_session_t, input: &str) -> serde_json::Value {
+        eval_lang(session, LANGUAGE_BASH, input)
+    }
+
+    fn eval_luau(session: *mut cpsl_session_t, input: &str) -> serde_json::Value {
+        eval_lang(session, LANGUAGE_LUAU, input)
+    }
+
+    fn eval_lang(session: *mut cpsl_session_t, language: &str, input: &str) -> serde_json::Value {
         let request = CString::new(
             json!({
-                "language": "bash",
+                "language": language,
                 "input": input,
                 "timeout_ms": 120000
             })

@@ -90,13 +90,19 @@ The interface only changes the input syntax.
 
 | Agent tool | Interface | Model-facing meaning |
 | --- | --- | --- |
-| `local_sandbox_exec` | Luau | Execute native Luau in the sandbox. Preferred for new code. |
+| `local_sandbox_exec` | Luau | Execute native Luau in the sandbox. This is CPSL's priority interface. |
 | `local_sandbox_exec_bash` | Bash-like shell input | Use shell syntax for the same sandbox. Compatibility interface, not a host shell. |
 | `local_sandbox_exec_python` | Python-like input | Use Python syntax for the same sandbox. Compatibility interface, not CPython. |
 
 Do not describe unavailable tools or unrelated host-application tools in a
 CPSL guide unless that document is explicitly scoped to a particular host
 application.
+
+Luau is CPSL's native runtime language. Every CPSL integration should expose a
+native Luau execution tool unless it has a temporary host-specific blocker that
+is explicitly documented. Bash and Python compatibility layers are frontends
+into the same sandbox; they do not replace native Luau as the priority
+interface.
 
 Do not write rendered prompt text like "if available" for Bash or Python. The
 host should assemble the final prompt from the actual interface list:
@@ -105,11 +111,11 @@ host should assemble the final prompt from the actual interface list:
 - If `local_sandbox_exec_bash` is exposed, describe it directly as available.
 - If `local_sandbox_exec_python` is exposed, describe it directly as available.
 
-Some early or host-specific integrations may expose only
-`local_sandbox_exec_bash`. In that case, do not tell the model to prefer native
-Luau or call `local_sandbox_exec`; describe Bash-compatible input as the exposed
-CPSL interface, keep the "not a host shell" boundary explicit, and defer native
-Luau guidance until that interface is actually available.
+Some legacy or incomplete host-specific integrations may temporarily expose only
+`local_sandbox_exec_bash`. Treat that as a limitation to remove, not the
+recommended design. In that case, do not tell the rendered model to call an
+unavailable Luau tool, but document that CPSL is still natively Luau and keep
+the "not a host shell" boundary explicit.
 
 For Bash-only integrations, Bash-like syntax is only the entry format. The
 model should still treat CPSL modules and `help`-listed shell builtins as the
@@ -134,7 +140,7 @@ paths and permits write operations for the current mode.
 `local_sandbox_exec` is the most important CPSL tool. Its description should
 make three facts impossible to miss:
 
-- The runtime is Luau.
+- The runtime is native Luau, CPSL's priority interface language.
 - The agent must use `help()` and each sandbox tool's help function before
   guessing APIs.
 - CPSL is not a general host shell or package-managed Python environment.
@@ -153,7 +159,9 @@ Calling convention: For functions with 2+ parameters, prefer table-form calls
 such as `fn({name = value})` when supported. Table-form calls are more readable
 and avoid ordering errors.
 
-Use this native Luau interface for new code. Use Bash or Python compatibility
+Use this native Luau interface for new code. For repeated or multi-step
+automation, write reusable `.luau` scripts in a mounted project/script path and
+execute the script logic through native Luau. Use Bash or Python compatibility
 interfaces only for existing snippets, user-requested syntax, or simple
 compatibility tasks.
 ```
@@ -529,8 +537,10 @@ Before shipping a prompt/tool integration, verify:
   in model-facing text, not internal library names.
 - The rendered prompt mentions only the execution interfaces actually exposed
   by the agent.
-- The native Luau interface is clearly preferred for new code when it is
-  exposed.
+- The native Luau interface is exposed for CPSL integrations unless a documented
+  temporary blocker exists.
+- The native Luau interface is clearly preferred for new code and repeated
+  automation.
 - Bash and Python, if exposed, are described as compatibility language
   interfaces into the same sandbox, not separate toolsets.
 - The prompt does not describe Bash as a host shell or Python as CPython.
@@ -577,8 +587,8 @@ Avoid:
   application runtime.
 - Omitting verification steps after generated artifacts.
 
-The best CPSL prompt makes the model consistent: use native Luau first when it
-is exposed, discover the live sandbox toolset with `help()` or Bash-compatible
+The best CPSL prompt makes the model consistent: expose and use native Luau
+first, discover the live sandbox toolset with `help()` or Bash-compatible
 `help` as appropriate, inspect tool-specific help before calling APIs, respect
 mounted paths, reuse Luau scripts when efficient, adapt within the sandbox, and
 verify outputs before reporting completion.

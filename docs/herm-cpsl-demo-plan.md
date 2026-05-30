@@ -581,9 +581,9 @@ Acceptance:
 - [x] Any CPSL shell mode must preserve the no-fallback rule: failures must not
   escape to host shell or container execution.
 
-Note: `/shell --lua` and `/shell --luau` remain intentionally unsupported in
-the Phase 9 implementation because the accepted worker/FFI contract still
-exposes only Bash-compatible eval.
+Update: the worker/FFI contract now exposes native Luau eval alongside Bash
+compatibility, so Herm can prefer Luau for agent execution and support
+`/shell --lua` / `/shell --luau` for direct line-oriented Luau interaction.
 
 ## Future Distribution
 

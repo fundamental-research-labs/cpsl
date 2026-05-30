@@ -48,6 +48,11 @@ fn probe_release_library_exports_contract_symbols() {
             .as_array()
             .unwrap()
             .iter()
+            .any(|language| language == "luau"));
+        assert!(metadata["languages"]
+            .as_array()
+            .unwrap()
+            .iter()
             .any(|language| language == "bash"));
         assert_eq!(metadata["capabilities"]["mounts"], true);
         assert_eq!(metadata["capabilities"]["network_policy"], true);
@@ -91,6 +96,22 @@ fn probe_release_library_exports_contract_symbols() {
         assert_eq!(response["error"], Value::Null);
         assert_eq!(response["cwd"], "/workdir");
         assert_eq!(borrowed_c_string(last_error()), "");
+
+        let luau_request = CString::new(
+            serde_json::json!({
+                "language": "luau",
+                "input": "print('luau ok')",
+                "timeout_ms": 120000
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let response = owned_c_string(eval(session, luau_request.as_ptr()), *string_free);
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["stdout"], "luau ok\n");
+        assert_eq!(response["exit_code"], 0);
+        assert_eq!(response["error"], Value::Null);
 
         let denied_request = CString::new(
             serde_json::json!({
@@ -183,7 +204,7 @@ fn session_config_with_policy(
             {"host": host, "virtual": "/workdir", "mode": "rw"}
         ],
         "initial_cwd": "/workdir",
-        "language": "bash",
+        "language": "luau",
         "http": {
             "mode": "policy",
             "allow_domains": allow_domains,
