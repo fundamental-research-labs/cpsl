@@ -25,7 +25,7 @@ const HTTP_OPTS_FIELDS: &[FieldDoc] = &[
 
 pub(crate) static HTTP_DOC: ModuleDoc = ModuleDoc {
     name: "http",
-    summary: "HTTP requests (policy-gated, credentials auto-injected)",
+    summary: "HTTP requests (policy-gated)",
     functions: &[
         FnDoc {
             name: "get",

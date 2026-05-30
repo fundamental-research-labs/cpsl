@@ -66,14 +66,15 @@ impl DomainPolicy {
         }
     }
 
-    /// Check whether a domain is allowed. Supports wildcards:
-    /// - `*` matches any domain
-    /// - `*.example.com` matches all subdomains of example.com
+    /// Check whether a domain is allowed. Entries match the exact host or a
+    /// subdomain suffix, so `example.com` matches `api.example.com` but not
+    /// `badexample.com`.
     ///
-    /// For unknown domains, invokes the prompt callback (if configured)
-    /// and caches the result. If no prompt is configured, unknown domains are denied.
+    /// For unknown domains, invokes the prompt callback (if configured) and
+    /// caches the result. If no prompt is configured, unknown domains are
+    /// denied.
     pub fn check(&self, domain: &str) -> DomainVerdict {
-        // Deny list checked first (deny overrides allow, including wildcards).
+        // Deny list checked first so explicit deny entries override allow entries.
         // On poisoned lock, default to deny (safe fallback).
         let dominated_by_deny = self
             .denied
@@ -118,18 +119,12 @@ impl DomainPolicy {
     }
 
     pub fn allow(&self, domain: &str) {
-        if let Ok(mut set) = self.denied.write() {
-            set.remove(domain);
-        }
         if let Ok(mut set) = self.allowed.write() {
             set.insert(domain.to_owned());
         }
     }
 
     pub fn deny(&self, domain: &str) {
-        if let Ok(mut set) = self.allowed.write() {
-            set.remove(domain);
-        }
         if let Ok(mut set) = self.denied.write() {
             set.insert(domain.to_owned());
         }
@@ -181,24 +176,23 @@ impl DomainPolicy {
 }
 
 /// Check if a domain matches any entry in the set.
-/// Supports exact match, `*` (all domains), and `*.suffix` (subdomain wildcard).
+/// Supports exact host and subdomain suffix matches only.
 fn matches_any(domain: &str, set: &HashSet<String>) -> bool {
-    if set.contains(domain) || set.contains("*") {
+    set.iter().any(|entry| domain_matches_entry(domain, entry))
+}
+
+fn domain_matches_entry(domain: &str, entry: &str) -> bool {
+    if entry.is_empty() {
+        return false;
+    }
+    if domain == entry {
         return true;
     }
-    // Check subdomain wildcards: *.example.com matches foo.example.com, bar.baz.example.com
-    for pattern in set {
-        if let Some(suffix) = pattern.strip_prefix("*.") {
-            if domain.ends_with(suffix) && domain.len() > suffix.len() {
-                // Ensure the char before the suffix is a dot (or it IS the full domain after the dot)
-                let prefix_len = domain.len() - suffix.len();
-                if prefix_len > 0 && domain.as_bytes()[prefix_len - 1] == b'.' {
-                    return true;
-                }
-            }
-        }
+    if domain.len() <= entry.len() || !domain.ends_with(entry) {
+        return false;
     }
-    false
+    let boundary = domain.len() - entry.len() - 1;
+    domain.as_bytes().get(boundary) == Some(&b'.')
 }
 
 /// Runtime-mutable per-domain credential (header) store.
@@ -326,16 +320,14 @@ mod tests {
     }
 
     #[test]
-    fn runtime_mutation_allow_overrides_deny() {
+    fn runtime_mutation_allow_does_not_override_deny() {
         let policy = DomainPolicy::new(None);
         policy.deny("example.com");
         assert!(matches!(policy.check("example.com"), DomainVerdict::Denied));
         policy.allow("example.com");
-        assert!(matches!(
-            policy.check("example.com"),
-            DomainVerdict::Allowed
-        ));
-        assert!(!policy.is_denied("example.com"));
+        assert!(matches!(policy.check("example.com"), DomainVerdict::Denied));
+        assert!(policy.is_allowed("example.com"));
+        assert!(policy.is_denied("example.com"));
     }
 
     #[test]
@@ -344,7 +336,8 @@ mod tests {
         policy.allow("example.com");
         policy.deny("example.com");
         assert!(matches!(policy.check("example.com"), DomainVerdict::Denied));
-        assert!(!policy.is_allowed("example.com"));
+        assert!(policy.is_allowed("example.com"));
+        assert!(policy.is_denied("example.com"));
     }
 
     #[test]
@@ -405,26 +398,16 @@ mod tests {
         assert!(!policy.is_allowed("test.com"));
     }
 
-    // -- Wildcard tests --
+    // -- Suffix matching tests --
 
     #[test]
-    fn wildcard_star_allows_everything() {
+    fn allowed_domain_matches_subdomains() {
         let policy = DomainPolicy::new(None);
-        policy.allow("*");
+        policy.allow("example.com");
         assert!(matches!(
-            policy.check("anything.com"),
+            policy.check("example.com"),
             DomainVerdict::Allowed
         ));
-        assert!(matches!(
-            policy.check("foo.bar.baz"),
-            DomainVerdict::Allowed
-        ));
-    }
-
-    #[test]
-    fn wildcard_subdomain_matches() {
-        let policy = DomainPolicy::new(None);
-        policy.allow("*.example.com");
         assert!(matches!(
             policy.check("api.example.com"),
             DomainVerdict::Allowed
@@ -433,34 +416,51 @@ mod tests {
             policy.check("foo.bar.example.com"),
             DomainVerdict::Allowed
         ));
-        // exact domain should NOT match *.example.com
-        assert!(matches!(policy.check("example.com"), DomainVerdict::Denied));
-        // different TLD should NOT match
         assert!(matches!(
-            policy.check("notexample.com"),
+            policy.check("badexample.com"),
             DomainVerdict::Denied
         ));
     }
 
     #[test]
-    fn wildcard_deny_overrides_wildcard_allow() {
+    fn denied_domain_matches_subdomains() {
         let policy = DomainPolicy::new(None);
-        policy.allow("*");
-        policy.deny("evil.com");
-        assert!(matches!(policy.check("evil.com"), DomainVerdict::Denied));
-        assert!(matches!(policy.check("good.com"), DomainVerdict::Allowed));
+        policy.allow("example.com");
+        policy.deny("evil.example.com");
+        assert!(matches!(
+            policy.check("api.evil.example.com"),
+            DomainVerdict::Denied
+        ));
+        assert!(matches!(
+            policy.check("good.example.com"),
+            DomainVerdict::Allowed
+        ));
     }
 
     #[test]
-    fn wildcard_deny_subdomain() {
+    fn parent_deny_overrides_child_allow() {
         let policy = DomainPolicy::new(None);
-        policy.allow("*");
-        policy.deny("*.evil.com");
+        policy.allow("api.example.com");
+        policy.deny("example.com");
         assert!(matches!(
-            policy.check("api.evil.com"),
+            policy.check("api.example.com"),
             DomainVerdict::Denied
         ));
-        assert!(matches!(policy.check("evil.com"), DomainVerdict::Allowed));
+    }
+
+    #[test]
+    fn child_deny_overrides_parent_allow() {
+        let policy = DomainPolicy::new(None);
+        policy.allow("example.com");
+        policy.deny("api.example.com");
+        assert!(matches!(
+            policy.check("api.example.com"),
+            DomainVerdict::Denied
+        ));
+        assert!(matches!(
+            policy.check("docs.example.com"),
+            DomainVerdict::Allowed
+        ));
     }
 
     #[test]

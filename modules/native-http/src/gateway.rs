@@ -249,9 +249,23 @@ mod tests {
     }
 
     #[test]
+    fn allowed_parent_domain_allows_subdomain() {
+        let gw = HttpGateway::builder()
+            .backend(MockBackend::ok("ok"))
+            .allow_domain("example.com")
+            .build();
+
+        let resp = gw
+            .request(get_request("https://api.example.com/path"))
+            .unwrap();
+        assert_eq!(resp.status, 200);
+    }
+
+    #[test]
     fn denied_domain_fails() {
         let gw = HttpGateway::builder()
             .backend(MockBackend::ok("ok"))
+            .allow_domain("evil.com")
             .deny_domain("evil.com")
             .build();
 
@@ -259,6 +273,22 @@ mod tests {
             .request(get_request("https://evil.com/path"))
             .unwrap_err();
         assert!(matches!(err, HttpError::DomainDenied(d) if d == "evil.com"));
+    }
+
+    #[test]
+    fn denied_request_never_calls_backend() {
+        let backend = CapturingBackend::new();
+        let gw = HttpGateway::builder()
+            .backend(Box::new(backend.clone()))
+            .allow_domain("example.com")
+            .deny_domain("blocked.example.com")
+            .build();
+
+        let err = gw
+            .request(get_request("https://api.blocked.example.com/path"))
+            .unwrap_err();
+        assert!(matches!(err, HttpError::DomainDenied(d) if d == "api.blocked.example.com"));
+        assert!(backend.captured.lock().unwrap().is_none());
     }
 
     #[test]

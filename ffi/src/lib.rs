@@ -1,13 +1,14 @@
 //! C ABI for loading CPSL as a sandbox library.
 
-use cpsl_core::{MountPermission, MountTable, Sandbox};
+use cpsl_core::{HttpGateway, MountPermission, MountTable, Sandbox};
 use serde::Deserialize;
 use serde_json::json;
 use std::ffi::{c_char, CStr, CString};
+use std::net::IpAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 use std::ptr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 const CPSL_ABI_VERSION: u32 = 1;
 const WORKDIR: &str = "/workdir";
@@ -29,8 +30,8 @@ struct Session {
 struct ValidatedSessionConfig {
     host: PathBuf,
     initial_cwd: String,
-    _allow_domains: Vec<String>,
-    _deny_domains: Vec<String>,
+    allow_domains: Vec<String>,
+    deny_domains: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -197,6 +198,8 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     if config.http.mode != "policy" {
         return Err("session http mode must be policy".to_string());
     }
+    let allow_domains = validate_domain_list(config.http.allow_domains, "allow_domains")?;
+    let deny_domains = validate_domain_list(config.http.deny_domains, "deny_domains")?;
 
     validate_initial_cwd(&config.initial_cwd)?;
     let mount = &config.mounts[0];
@@ -213,8 +216,8 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     Ok(ValidatedSessionConfig {
         host,
         initial_cwd: config.initial_cwd,
-        _allow_domains: config.http.allow_domains,
-        _deny_domains: config.http.deny_domains,
+        allow_domains,
+        deny_domains,
     })
 }
 
@@ -226,6 +229,7 @@ fn create_shell_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, Stri
 
     let sandbox = Sandbox::builder()
         .mounts(mounts)
+        .http_gateway(Arc::new(create_http_gateway(config)))
         .auto_tmp(false)
         .build()
         .map_err(|error| format!("failed to create CPSL sandbox: {error}"))?;
@@ -240,6 +244,17 @@ fn create_shell_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, Stri
         ))
         .map_err(|error| format!("failed to initialize CPSL shell: {error}"))?;
     Ok(sandbox)
+}
+
+fn create_http_gateway(config: &ValidatedSessionConfig) -> HttpGateway {
+    let mut builder = HttpGateway::builder();
+    for domain in &config.allow_domains {
+        builder = builder.allow_domain(domain.clone());
+    }
+    for domain in &config.deny_domains {
+        builder = builder.deny_domain(domain.clone());
+    }
+    builder.build()
 }
 
 fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {
@@ -265,9 +280,21 @@ fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {
                 transpiled.warnings,
                 &shell_cwd(session),
             ),
-            None => eval_error_json("runtime_error", &error.to_string(), &shell_cwd(session)),
+            None => eval_exec_error_json(&error.message, &shell_cwd(session)),
         },
     }
+}
+
+fn eval_exec_error_json(message: &str, cwd: &str) -> serde_json::Value {
+    if is_network_policy_denial(message) {
+        eval_error_json("sandbox_denied", "Network access is denied by policy", cwd)
+    } else {
+        eval_error_json("runtime_error", message, cwd)
+    }
+}
+
+fn is_network_policy_denial(message: &str) -> bool {
+    message.starts_with("http: access to '") && message.ends_with("' was denied")
 }
 
 fn eval_success_json(
@@ -344,6 +371,56 @@ fn validate_initial_cwd(path: &str) -> Result<(), String> {
     } else {
         Err("session initial_cwd must stay under /workdir".to_string())
     }
+}
+
+fn validate_domain_list(domains: Vec<String>, field: &str) -> Result<Vec<String>, String> {
+    for domain in &domains {
+        validate_policy_domain(domain).map_err(|error| {
+            format!("session http {field} entry {domain:?} is invalid: {error}")
+        })?;
+    }
+    Ok(domains)
+}
+
+fn validate_policy_domain(domain: &str) -> Result<(), &'static str> {
+    if domain.is_empty() {
+        return Err("domain must not be empty");
+    }
+    if domain.len() > 253 {
+        return Err("domain is too long");
+    }
+    if domain != domain.to_ascii_lowercase() {
+        return Err("domain must be lowercase");
+    }
+    if domain.contains('*') {
+        return Err("wildcards are not supported");
+    }
+    if domain.contains("://") || domain.contains('/') || domain.contains(':') {
+        return Err("domain must not include a scheme, port, or path");
+    }
+    if domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
+        return Err("domain labels must be non-empty");
+    }
+    if domain.parse::<IpAddr>().is_ok() {
+        return Err("IP addresses are not supported");
+    }
+
+    for label in domain.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return Err("domain labels must be between 1 and 63 bytes");
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err("domain labels must not start or end with '-'");
+        }
+        if !label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        {
+            return Err("domain labels must contain only lowercase letters, digits, and '-'");
+        }
+    }
+
+    Ok(())
 }
 
 fn escape_luau_string(value: &str) -> String {
@@ -429,6 +506,24 @@ mod tests {
 
         assert_eq!(validated.initial_cwd, WORKDIR);
         assert_eq!(validated.host, dir.path().canonicalize().unwrap());
+        assert_eq!(validated.allow_domains, Vec::<String>::new());
+        assert_eq!(validated.deny_domains, Vec::<String>::new());
+    }
+
+    #[test]
+    fn validates_network_policy_domains() {
+        let dir = TempDir::new().unwrap();
+        let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
+        config["http"]["allow_domains"] = json!(["example.com", "api.example.com"]);
+        config["http"]["deny_domains"] = json!(["blocked.example.com", "blocked.example.com"]);
+
+        let validated = validate_session_config(&config.to_string()).unwrap();
+
+        assert_eq!(validated.allow_domains, ["example.com", "api.example.com"]);
+        assert_eq!(
+            validated.deny_domains,
+            ["blocked.example.com", "blocked.example.com"]
+        );
     }
 
     #[test]
@@ -454,6 +549,51 @@ mod tests {
         let mut relative_host = session_config(host);
         relative_host["mounts"][0]["host"] = json!("relative");
         assert!(validate_session_config(&relative_host.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_network_policy_domains() {
+        let dir = TempDir::new().unwrap();
+        let host = dir.path().canonicalize().unwrap();
+        let host = host.to_str().unwrap();
+
+        for domain in [
+            "",
+            "Example.com",
+            "*.example.com",
+            "https://example.com",
+            "example.com:443",
+            "example.com/path",
+            ".example.com",
+            "example.com.",
+            "bad..example.com",
+            "-example.com",
+            "example-.com",
+            "bad_example.com",
+            "127.0.0.1",
+        ] {
+            let mut config = session_config(host);
+            config["http"]["allow_domains"] = json!([domain]);
+            assert!(
+                validate_session_config(&config.to_string()).is_err(),
+                "domain {domain:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_http_callback_and_credential_fields() {
+        let dir = TempDir::new().unwrap();
+        let host = dir.path().canonicalize().unwrap();
+        let host = host.to_str().unwrap();
+        for field in ["credentials", "callback", "prompt"] {
+            let mut config = session_config(host);
+            config["http"][field] = json!(true);
+            assert!(
+                validate_session_config(&config.to_string()).is_err(),
+                "http field {field:?} should be rejected"
+            );
+        }
     }
 
     #[test]
@@ -548,6 +688,52 @@ mod tests {
             .unwrap()
             .contains("not available in CPSL sandbox"));
 
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn http_module_is_loaded_for_policy_mode() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session(dir.path());
+
+        let response = eval(session, "http help");
+
+        assert_success(&response, 0);
+        assert!(response["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("HTTP requests"));
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn network_access_is_denied_by_default() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session(dir.path());
+
+        let response = eval(session, "http get https://example.com/");
+
+        assert_eval_error(&response, "sandbox_denied");
+        assert_eq!(
+            response["error"]["message"],
+            "Network access is denied by policy"
+        );
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn network_deny_wins_over_allow() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session_with_policy(dir.path(), &["example.com"], &["api.example.com"]);
+        let response = eval(session, "http get https://api.example.com/");
+        assert_eval_error(&response, "sandbox_denied");
+        cpsl_session_free(session);
+
+        let session = new_session_with_policy(dir.path(), &["api.example.com"], &["example.com"]);
+        let response = eval(session, "http get https://api.example.com/");
+        assert_eval_error(&response, "sandbox_denied");
         cpsl_session_free(session);
     }
 
@@ -652,8 +838,19 @@ mod tests {
     }
 
     fn new_session(host: &Path) -> *mut cpsl_session_t {
+        new_session_with_policy(host, &[], &[])
+    }
+
+    fn new_session_with_policy(
+        host: &Path,
+        allow_domains: &[&str],
+        deny_domains: &[&str],
+    ) -> *mut cpsl_session_t {
         let host = host.canonicalize().unwrap();
-        let config = CString::new(session_config(host.to_str().unwrap()).to_string()).unwrap();
+        let mut config = session_config(host.to_str().unwrap());
+        config["http"]["allow_domains"] = json!(allow_domains);
+        config["http"]["deny_domains"] = json!(deny_domains);
+        let config = CString::new(config.to_string()).unwrap();
         let session = cpsl_session_new(config.as_ptr());
         assert!(!session.is_null(), "session_new failed: {}", unsafe {
             borrowed_ffi_string(cpsl_last_error())
@@ -677,6 +874,15 @@ mod tests {
         });
         let response = unsafe { owned_ffi_string(response) };
         serde_json::from_str(&response).unwrap()
+    }
+
+    fn assert_eval_error(response: &serde_json::Value, code: &str) {
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["stderr"], "");
+        assert!(response["exit_code"].is_null(), "{response}");
+        assert_eq!(response["error"]["code"], code, "{response}");
+        assert!(response["warnings"].as_array().is_some(), "{response}");
+        assert_eq!(response["cwd"], WORKDIR);
     }
 
     fn assert_success(response: &serde_json::Value, exit_code: i64) {

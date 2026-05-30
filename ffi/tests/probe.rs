@@ -92,6 +92,48 @@ fn probe_release_library_exports_contract_symbols() {
         assert_eq!(response["cwd"], "/workdir");
         assert_eq!(borrowed_c_string(last_error()), "");
 
+        let denied_request = CString::new(
+            serde_json::json!({
+                "language": "bash",
+                "input": "http get https://example.com/",
+                "timeout_ms": 120000
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let response = owned_c_string(eval(session, denied_request.as_ptr()), *string_free);
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "sandbox_denied");
+
+        session_free(session);
+
+        let config = CString::new(
+            session_config_with_policy(host, &["example.com"], &["api.example.com"]).to_string(),
+        )
+        .unwrap();
+        let session = session_new(config.as_ptr());
+        assert!(
+            !session.is_null(),
+            "session_new failed: {}",
+            borrowed_c_string(last_error())
+        );
+        let denied_subdomain_request = CString::new(
+            serde_json::json!({
+                "language": "bash",
+                "input": "http get https://api.example.com/",
+                "timeout_ms": 120000
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let response = owned_c_string(
+            eval(session, denied_subdomain_request.as_ptr()),
+            *string_free,
+        );
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "sandbox_denied");
         session_free(session);
     }
 }
@@ -128,6 +170,14 @@ unsafe fn owned_c_string(value: *mut c_char, string_free: StringFree) -> String 
 }
 
 fn session_config(host: &str) -> serde_json::Value {
+    session_config_with_policy(host, &[], &[])
+}
+
+fn session_config_with_policy(
+    host: &str,
+    allow_domains: &[&str],
+    deny_domains: &[&str],
+) -> serde_json::Value {
     serde_json::json!({
         "mounts": [
             {"host": host, "virtual": "/workdir", "mode": "rw"}
@@ -136,8 +186,8 @@ fn session_config(host: &str) -> serde_json::Value {
         "language": "bash",
         "http": {
             "mode": "policy",
-            "allow_domains": [],
-            "deny_domains": []
+            "allow_domains": allow_domains,
+            "deny_domains": deny_domains
         }
     })
 }

@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 5 Herm CPSL worker complete; Phase 6 Herm tool routing and prompt pruning pending.
+Status: Phase 7 Network Policy complete; Phase 8 End-To-End Demo Smoke pending.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -385,8 +385,8 @@ Phase checklist:
 - [x] Phase 3: CPSL Bash Session Eval
 - [x] Phase 4: Herm CLI And Backend Mode
 - [x] Phase 5: Herm CPSL Worker
-- [ ] Phase 6: Herm Tool Routing And Prompt Pruning
-- [ ] Phase 7: Network Policy
+- [x] Phase 6: Herm Tool Routing And Prompt Pruning
+- [x] Phase 7: Network Policy
 - [ ] Phase 8: End-To-End Demo Smoke
 
 ### Phase 0: Planning And Repo Setup
@@ -501,16 +501,16 @@ Owner: CPSL and Herm.
 
 Commits:
 
-- [ ] CPSL: `ffi: accept network policy in session config`
-- [ ] Herm: `cpsl: pass network policy to worker`
+- [x] CPSL: `ffi: accept network policy in session config`
+- [x] Herm: `cpsl: pass network policy to worker`
 
 Acceptance:
 
-- [ ] network access is denied by default
-- [ ] repeated `--allow-domain` values are passed to CPSL
-- [ ] repeated `--deny-domain` values are passed to CPSL
-- [ ] explicit deny wins over allow
-- [ ] no credential or host callback path is required for the first demo
+- [x] network access is denied by default
+- [x] repeated `--allow-domain` values are passed to CPSL
+- [x] repeated `--deny-domain` values are passed to CPSL
+- [x] explicit deny wins over allow
+- [x] no credential or host callback path is required for the first demo
 
 ### Phase 8: End-To-End Demo Smoke
 
