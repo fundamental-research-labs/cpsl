@@ -111,6 +111,19 @@ Luau or call `local_sandbox_exec`; describe Bash-compatible input as the exposed
 CPSL interface, keep the "not a host shell" boundary explicit, and defer native
 Luau guidance until that interface is actually available.
 
+For Bash-only integrations, Bash-like syntax is only the entry format. The
+model should still treat CPSL modules and `help`-listed shell builtins as the
+sandbox capability surface.
+
+Bash-compatible discovery:
+
+- Run `help` to list available CPSL shell builtins and loaded modules.
+- Run `<module> help`, for example `fs help`, before using a module.
+- Use `which NAME` or `type NAME` only for checking one CPSL command or module.
+- Do not use host-shell discovery idioms such as `compgen -c`, `command -v`,
+  `type -a`, `which -a`, `ls /bin`, `man`, or package-manager queries to infer
+  CPSL capabilities.
+
 If the host has read/write modes, approval gates, or other permission states,
 document the resulting CPSL read/write behavior in host-specific prompt text.
 Do not imply mutation is possible unless the host actually mounted writable
@@ -174,6 +187,11 @@ This is not a host shell. There is no system package manager, no arbitrary host
 command access, no background services, and no access to files outside mounted
 sandbox paths. Commands are evaluated by the CPSL shell compatibility layer.
 
+Run `help` to list available CPSL shell builtins and loaded modules. Before
+using a sandbox module, run `<module> help`, for example `fs help`. Do not use
+host-shell discovery commands such as `compgen -c`, `command -v`, `ls /bin`,
+`man`, or package-manager probes to infer available CPSL capabilities.
+
 Use this for simple shell-style file, document, data, and automation tasks, or
 when the user explicitly asks for shell syntax. For new scripted logic, prefer
 `local_sandbox_exec` with native Luau and sandbox tool APIs.
@@ -218,12 +236,20 @@ build or otherwise verified.
 Keep the catalog minimal. The prompt should name tools and give a short purpose,
 then direct the agent to inspect live help instead of relying on prose.
 
-A useful sandbox tool prompt pattern is:
+A useful native Luau sandbox tool prompt pattern is:
 
 ```markdown
 Available sandbox tools are listed by `help()`. Before using a tool for the
 first time, call that tool's help function, such as `fs.help()`, to inspect
 exact functions, parameters, return values, and examples.
+```
+
+A useful Bash-compatible sandbox tool prompt pattern is:
+
+```markdown
+Available CPSL shell commands and modules are listed by `help`. Before using a
+module for the first time, run `<module> help`, such as `fs help`, to inspect
+exact functions, flags, return values, and examples.
 ```
 
 If the host has verified sandbox tool metadata, include a concise catalog in the
@@ -238,7 +264,9 @@ Available sandbox tools:
 - `doc` - document reading.
 - `plot` - chart generation.
 
-Call `help()` for the live list and `<tool>.help()` before using a tool.
+Call `help()` for the live list and `<tool>.help()` before using a tool. In a
+Bash-compatible interface, run `help` for the live list and `<tool> help`
+instead.
 ```
 
 Keep credential, authenticated-service, and host-account capabilities out of
@@ -501,11 +529,15 @@ Before shipping a prompt/tool integration, verify:
   in model-facing text, not internal library names.
 - The rendered prompt mentions only the execution interfaces actually exposed
   by the agent.
-- The native Luau interface is clearly preferred for new code.
+- The native Luau interface is clearly preferred for new code when it is
+  exposed.
 - Bash and Python, if exposed, are described as compatibility language
   interfaces into the same sandbox, not separate toolsets.
 - The prompt does not describe Bash as a host shell or Python as CPython.
-- Root `help()` and per-tool help functions are prominent.
+- Root `help()` and per-tool help functions are prominent for native Luau.
+- Bash-compatible prompts explicitly say `help` and `<module> help` are the
+  sandbox discovery path.
+- Bash-compatible prompts prohibit host shell enumeration such as `compgen -c`.
 - The sandbox tool catalog contains only tools available in the target build.
 - Custom sandbox toolsets are reflected accurately.
 - Credential-specific modules and flows are absent unless implemented by the
@@ -532,6 +564,9 @@ Avoid:
 - Describing CPSL as a full host shell.
 - Treating Bash, Python, and Luau as different sandbox toolsets.
 - Making Bash the default for file inspection or structured work.
+- Using host Bash discovery idioms such as `compgen -c`, `command -v`,
+  `type -a`, `which -a`, `ls /bin`, `man`, or package-manager probes to infer
+  CPSL capabilities.
 - Presenting Python as CPython or as a package-managed runtime.
 - Mentioning package-manager installs, system packages, or arbitrary host
   commands as supported capabilities.
@@ -542,7 +577,8 @@ Avoid:
   application runtime.
 - Omitting verification steps after generated artifacts.
 
-The best CPSL prompt makes the model consistent: use native Luau first,
-discover the live sandbox toolset with `help()`, inspect tool-specific help
-before calling APIs, respect mounted paths, reuse Luau scripts when efficient,
-adapt within the sandbox, and verify outputs before reporting completion.
+The best CPSL prompt makes the model consistent: use native Luau first when it
+is exposed, discover the live sandbox toolset with `help()` or Bash-compatible
+`help` as appropriate, inspect tool-specific help before calling APIs, respect
+mounted paths, reuse Luau scripts when efficient, adapt within the sandbox, and
+verify outputs before reporting completion.
