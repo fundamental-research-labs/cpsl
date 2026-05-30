@@ -1,6 +1,6 @@
 # Herm + CPSL Demo Plan
 
-Status: Phase 8 End-To-End Demo Smoke complete; Phase 9 CPSL Demo Polish Follow-Ups pending.
+Status: Phase 9 CPSL Demo Polish Follow-Ups complete.
 
 Goal: demonstrate Herm running without containers by delegating office, file,
 document, and data automation work to CPSL, a lightweight sandboxed Unix-like
@@ -388,7 +388,7 @@ Phase checklist:
 - [x] Phase 6: Herm Tool Routing And Prompt Pruning
 - [x] Phase 7: Network Policy
 - [x] Phase 8: End-To-End Demo Smoke
-- [ ] Phase 9: CPSL Demo Polish Follow-Ups
+- [x] Phase 9: CPSL Demo Polish Follow-Ups
 
 ### Phase 0: Planning And Repo Setup
 
@@ -543,45 +543,47 @@ source of truth.
 Do not block Phase 8 on this. These are post-smoke improvements observed during
 manual demo testing.
 
-Commits:
+Commit:
 
-- [ ] Herm: `cpsl: polish CPSL mode status and prompts`
-- [ ] Herm: `cpsl: refactor prompt templates by backend`
-- [ ] Herm: `cpsl: add CPSL shell mode`
+- [x] Herm: `cpsl: polish CPSL demo mode`
 
 Acceptance:
 
-- [ ] CPSL mode never displays container-oriented status text such as
+- [x] CPSL mode never displays container-oriented status text such as
   `vdev (container: 0.4)`.
-- [ ] CPSL mode displays a backend-appropriate status label that makes clear the
+- [x] CPSL mode displays a backend-appropriate status label that makes clear the
   session is running with CPSL, not a Docker/container backend.
-- [ ] CPSL system prompt wording is revised against
+- [x] CPSL system prompt wording is revised against
   `AGENT-SYSTEM-PROMPT-GUIDE.md` before wider demo use.
-- [ ] `AGENT-SYSTEM-PROMPT-GUIDE.md` is updated during Herm integration if
+- [x] `AGENT-SYSTEM-PROMPT-GUIDE.md` is updated during Herm integration if
   implementation reveals unclear guidance, missing sections, or prompt wording
   gaps.
-- [ ] Herm prompt assembly is refactored around backend prompt profiles instead
+- [x] Herm prompt assembly is refactored around backend prompt profiles instead
   of scattered `IsCPSL` branches in shared templates.
-- [ ] Prompt templates are organized by backend directory:
+- [x] Prompt templates are organized by backend directory:
   - `herm/prompts/common/` for behavior that is true regardless of backend
   - `herm/prompts/container/` for Docker/container-specific runtime guidance
   - `herm/prompts/cpsl/` for local sandbox guidance derived from
     `AGENT-SYSTEM-PROMPT-GUIDE.md`
-- [ ] Final main-agent and sub-agent system prompts are assembled from the
+- [x] Final main-agent and sub-agent system prompts are assembled from the
   selected backend profile plus the available tool surface, with the backend
   selected once in code instead of repeatedly inside shared templates.
-- [ ] CPSL-rendered prompts and tool descriptions mention only the CPSL-safe
+- [x] CPSL-rendered prompts and tool descriptions mention only the CPSL-safe
   execution surface exposed by Herm, omit Docker/container/devenv claims, and
   preserve the no-host-fallback rule.
-- [ ] Existing CPSL tool-description override precedent
+- [x] Existing CPSL tool-description override precedent
   (`herm/prompts/tools_cpsl/`) is either retained or folded into the same
   backend-profile assembly mechanism.
-- [ ] `/shell` is available in CPSL mode and routes commands to the same CPSL
+- [x] `/shell` is available in CPSL mode and routes commands to the same CPSL
   sandbox mounted at `/workdir`.
-- [ ] Explore `/shell --lua` or `/shell --luau` for direct Luau interaction if
+- [x] Explore `/shell --lua` or `/shell --luau` for direct Luau interaction if
   the CPSL worker/FFI contract is expanded to support Luau eval safely.
-- [ ] Any CPSL shell mode must preserve the no-fallback rule: failures must not
+- [x] Any CPSL shell mode must preserve the no-fallback rule: failures must not
   escape to host shell or container execution.
+
+Note: `/shell --lua` and `/shell --luau` remain intentionally unsupported in
+the Phase 9 implementation because the accepted worker/FFI contract still
+exposes only Bash-compatible eval.
 
 ## Future Distribution
 

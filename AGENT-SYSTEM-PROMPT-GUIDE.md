@@ -105,6 +105,12 @@ host should assemble the final prompt from the actual interface list:
 - If `local_sandbox_exec_bash` is exposed, describe it directly as available.
 - If `local_sandbox_exec_python` is exposed, describe it directly as available.
 
+Some early or host-specific integrations may expose only
+`local_sandbox_exec_bash`. In that case, do not tell the model to prefer native
+Luau or call `local_sandbox_exec`; describe Bash-compatible input as the exposed
+CPSL interface, keep the "not a host shell" boundary explicit, and defer native
+Luau guidance until that interface is actually available.
+
 If the host has read/write modes, approval gates, or other permission states,
 document the resulting CPSL read/write behavior in host-specific prompt text.
 Do not imply mutation is possible unless the host actually mounted writable
@@ -515,6 +521,8 @@ Before shipping a prompt/tool integration, verify:
 - Tool failures surface stdout, stderr, exit code, and relevant paths or
   equivalent structured error details.
 - Generated artifacts are verified before completion is reported.
+- Failures, denials, unsupported commands, or timeouts do not suggest falling
+  back to host shell, container, or other out-of-sandbox execution.
 
 ## Misleading Patterns To Avoid
 
