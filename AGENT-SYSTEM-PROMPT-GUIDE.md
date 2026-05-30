@@ -10,10 +10,10 @@ agent which execution interfaces are exposed, which sandbox tools are available
 inside those interfaces, which sandbox paths are mounted, where outputs should
 be written, and how to verify work.
 
-Use **CPSL** in external documentation. In model-facing prompts, "local
-sandbox" or "Luau sandbox" is often clearer unless the tool or product surface
-is explicitly named CPSL. Do not expose legacy or internal library names in
-user-facing prompts, tool descriptions, traces, or documentation.
+Use **CPSL** in integration docs and implementation docs. In rendered
+model-facing prompts and tool descriptions, prefer "local sandbox", "Luau
+sandbox", or concrete tool names unless the product surface itself is named
+CPSL. Do not expose legacy or internal library names in model-facing text.
 
 ## What CPSL Is
 
@@ -104,6 +104,15 @@ is explicitly documented. Bash and Python compatibility layers are frontends
 into the same sandbox; they do not replace native Luau as the priority
 interface.
 
+For integrations that expose native Luau, the model should treat that interface
+as the default for sandbox execution, file/data inspection, and repetitive
+scripting. Bash-compatible input is a compatibility surface, not the native or
+default path.
+
+Do not suggest `lua`, `luau`, `lua -e`, or `luau -e` shell commands unless the
+host explicitly provides those commands. The native Luau entry point is the
+agent tool, not a standalone executable inside the compatibility shell.
+
 Do not write rendered prompt text like "if available" for Bash or Python. The
 host should assemble the final prompt from the actual interface list:
 
@@ -160,10 +169,10 @@ such as `fn({name = value})` when supported. Table-form calls are more readable
 and avoid ordering errors.
 
 Use this native Luau interface for new code. For repeated or multi-step
-automation, write reusable `.luau` scripts in a mounted project/script path and
-execute the script logic through native Luau. Use Bash or Python compatibility
-interfaces only for existing snippets, user-requested syntax, or simple
-compatibility tasks.
+automation, keep reusable `.luau` source in a mounted project/script path and
+pass that source through native Luau when running it. Use Bash or Python
+compatibility interfaces only for existing snippets, user-requested syntax, or
+simple compatibility tasks.
 ```
 
 Include Luau essentials directly in the native tool description:
@@ -413,9 +422,9 @@ paths only for intermediate work.
 Network access is not ambient. Use only the network capabilities exposed by the
 host and follow the documented domain allow/deny policy.
 
-For repetitive sandbox work, consider writing a reusable Luau script to a
-mounted path and calling it again later instead of regenerating the full script
-each time.
+For repetitive sandbox work, consider writing reusable Luau source to a mounted
+path and passing that source to the native Luau tool later instead of
+regenerating the full script each time.
 
 After meaningful work, verify the result by re-reading generated files,
 checking parsed data, or running a small validation snippet. Report any
@@ -443,18 +452,18 @@ the corresponding tool is actually exposed.
 
 ## Reusable Sandbox Scripts
 
-For repetitive tasks, teach the agent that it can write reusable Luau scripts to
-mounted paths and call them later. This is often more efficient than repeatedly
-generating and sending a full Luau program.
+For repetitive tasks, teach the agent that it can write reusable Luau source to
+mounted paths and pass that source to the native Luau tool later. This is often
+more efficient than repeatedly generating a full Luau program.
 
 Use this guidance only when it fits the host application and the mounted
 filesystem is writable:
 
 ```markdown
-For repetitive sandbox work, write a reusable Luau script under the project,
-artifact, or scratch path documented by the host, then call that script again
-later. Prefer this when the same parsing, conversion, reporting, or validation
-logic will run multiple times.
+For repetitive sandbox work, write reusable Luau source under the project,
+artifact, or scratch path documented by the host, then pass that source to the
+native Luau tool later. Prefer this when the same parsing, conversion,
+reporting, or validation logic will run multiple times.
 ```
 
 The host prompt should still tell the agent where scripts may be written and
@@ -541,6 +550,8 @@ Before shipping a prompt/tool integration, verify:
   temporary blocker exists.
 - The native Luau interface is clearly preferred for new code and repeated
   automation.
+- The native Luau interface is the default for sandbox execution and
+  inspection, not only for prompts that explicitly mention Lua.
 - Bash and Python, if exposed, are described as compatibility language
   interfaces into the same sandbox, not separate toolsets.
 - The prompt does not describe Bash as a host shell or Python as CPython.
@@ -574,6 +585,8 @@ Avoid:
 - Describing CPSL as a full host shell.
 - Treating Bash, Python, and Luau as different sandbox toolsets.
 - Making Bash the default for file inspection or structured work.
+- Calling `lua`, `luau`, `lua -e`, or `luau -e` through a compatibility shell
+  when Luau is exposed as an agent tool.
 - Using host Bash discovery idioms such as `compgen -c`, `command -v`,
   `type -a`, `which -a`, `ls /bin`, `man`, or package-manager probes to infer
   CPSL capabilities.
