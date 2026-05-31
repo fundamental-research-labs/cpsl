@@ -8,8 +8,18 @@ publish = false
 name = "cpsl"
 crate-type = ["cdylib"]
 
+[features]
+default = ["herm-minimal"]
+herm-minimal = [
+    "cpsl-core/mod-fs",
+    "cpsl-core/mod-json",
+    "cpsl-core/mod-csv",
+    "cpsl-core/mod-http",
+]
+all = ["cpsl-core/all"]
+
 [dependencies]
-cpsl-core = { path = "../core", default-features = false, features = ["mod-fs", "mod-json", "mod-csv", "mod-http"] }
+cpsl-core = { path = "../core", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
