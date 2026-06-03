@@ -862,6 +862,7 @@ fn test_fs_tree_connectors_correct() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_fs_tree_root_shows_all_mounts() {
     let dir1 = TempDir::new().unwrap();
@@ -911,6 +912,7 @@ fn test_fs_tree_root_shows_all_mounts() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_fs_tree_root_depth_1_shows_top_level_only() {
     let dir = TempDir::new().unwrap();
@@ -935,6 +937,7 @@ fn test_fs_tree_root_depth_1_shows_top_level_only() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_fs_tree_virtual_dirs_shown() {
     // Even with no mounts at a path, virtual dirs like /dev, /proc should appear
@@ -963,6 +966,7 @@ fn test_fs_tree_virtual_dirs_shown() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_shell_tree_command() {
     let dir = TempDir::new().unwrap();
@@ -996,6 +1000,7 @@ fn test_shell_tree_command() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_shell_tree_with_depth_flag() {
     let dir = TempDir::new().unwrap();
@@ -1017,6 +1022,7 @@ fn test_shell_tree_with_depth_flag() {
     );
 }
 
+#[cfg(feature = "mod-grep")]
 #[test]
 fn test_shell_tree_bare_shows_cwd() {
     // Bare `tree` (no args) should show cwd ("/"), not "/."

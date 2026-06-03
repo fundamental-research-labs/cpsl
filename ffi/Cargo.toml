@@ -15,6 +15,7 @@ herm-minimal = [
     "cpsl-core/mod-json",
     "cpsl-core/mod-csv",
     "cpsl-core/mod-http",
+    "cpsl-core/mod-grep",
 ]
 all = ["cpsl-core/all"]
 

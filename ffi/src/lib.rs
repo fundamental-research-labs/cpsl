@@ -703,6 +703,17 @@ mod tests {
         assert_success(&bash, 0);
         assert_eq!(bash["stdout"], "ALPHA\nBETA\nAda\n");
 
+        let grep = eval_luau(
+            session,
+            r#"
+                local matches = fs.grep({pattern="beta", path="/workdir/notes.txt", max_count=1})
+                print(#matches)
+                print(matches[1].line)
+            "#,
+        );
+        assert_success(&grep, 0);
+        assert_eq!(grep["stdout"], "1\nbeta\n");
+
         cpsl_session_free(session);
     }
 

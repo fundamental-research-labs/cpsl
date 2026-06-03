@@ -41,7 +41,7 @@ mod-regex = ["dep:regex"]
 mod-html = ["dep:scraper"]
 mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
-mod-grep = ["dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
+mod-grep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
 pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
 
 [dependencies]

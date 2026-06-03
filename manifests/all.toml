@@ -6,6 +6,7 @@ name = "all-modules"
 
 [modules]
 fs = true
+grep = true
 json = true
 csv = true
 yaml = true

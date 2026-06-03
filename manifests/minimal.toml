@@ -1,4 +1,4 @@
-# Minimal sandbox: filesystem, JSON, and CSV
+# Minimal sandbox: filesystem, search, JSON, and CSV
 # Build: cpsl build -t minimal -f manifests/minimal.toml
 
 [sandbox]
@@ -6,5 +6,6 @@ name = "minimal"
 
 [modules]
 fs = true
+grep = true
 json = true
 csv = true

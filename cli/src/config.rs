@@ -26,6 +26,11 @@ pub static MODULE_REGISTRY: &[ModuleManifest] = &[
         cargo_feature: "mod-fs",
     },
     ModuleManifest {
+        name: "grep",
+        description: "Recursive content search via fs.grep and fs.tree",
+        cargo_feature: "mod-grep",
+    },
+    ModuleManifest {
         name: "json",
         description: "JSON encoding and decoding",
         cargo_feature: "mod-json",
@@ -287,11 +292,12 @@ json = true
 csv = false
 yaml = true
 fs = true
+grep = true
 "#;
         let config = SandboxConfig::from_str(toml, "test".into()).unwrap();
         let features = config.to_cargo_features();
         // BTreeMap is sorted, so features come out in alphabetical order
-        assert_eq!(features, vec!["mod-fs", "mod-json", "mod-yaml"]);
+        assert_eq!(features, vec!["mod-fs", "mod-grep", "mod-json", "mod-yaml"]);
     }
 
     #[test]

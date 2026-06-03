@@ -101,7 +101,7 @@ Save that as `browser-agent.toml`, then build and run it:
 Included manifest examples:
 
 - `manifests/json-only.toml` - filesystem and JSON
-- `manifests/minimal.toml` - filesystem, JSON, and CSV
+- `manifests/minimal.toml` - filesystem, search, JSON, and CSV
 - `manifests/data-science.toml` - structured data, numerical computing, and plotting
 - `manifests/full.toml` - broad CLI-registered module set
 - `manifests/all.toml` - broad CLI-registered module set
