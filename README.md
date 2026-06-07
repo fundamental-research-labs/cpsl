@@ -74,6 +74,12 @@ For quick experiments, the repo-local CLI can also run an ephemeral scratch sand
 
 The default mode is Bash-compatible, including for `./cpsl run NAME`. `--lua` executes Luau directly. `--python` transpiles Python syntax to Luau; it does not invoke CPython or require Python to be installed.
 
+### Herm Local Sandbox Build
+
+To build Herm with a native CPSL local sandbox library, run
+`herm/scripts/build-cpsl-herm.sh`. The complete Linux and macOS flow is
+documented in [`herm/CPSL_BUILD.md`](herm/CPSL_BUILD.md).
+
 ### Custom Capsule 📝
 
 A capsule starts as TOML. Give it a name, enable only the modules it needs, and allow specific network domains:

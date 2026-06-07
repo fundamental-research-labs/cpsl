@@ -68,9 +68,13 @@ Feature flags on `cpsl-cli`, `cpsl-ffi`, and other downstream crates forward to
 Herm's `--cpsl` demo path loads the native dynamic library from `cpsl-ffi`. It
 does not use `cpsl build` or a manifest.
 
+For the end-to-end Linux and macOS Herm build/run flow, use
+[`../herm/scripts/build-cpsl-herm.sh`](../herm/scripts/build-cpsl-herm.sh) and
+see [`../herm/CPSL_BUILD.md`](../herm/CPSL_BUILD.md).
+
 | Profile | Command | Compiled CPSL modules |
 |---------|---------|-----------------------|
-| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http` |
+| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `grep` |
 | All core features | `cargo build -p cpsl-ffi --release --features all` | every `cpsl-core/all` feature listed above |
 
 The output library path is platform-specific:
@@ -97,9 +101,9 @@ first build command:
 cargo build -p cpsl-ffi --release --features all
 ```
 
-Enabling all CPSL features expands the modules available inside
-`local_sandbox_exec` and `local_sandbox_exec_bash`. It does not enable Herm's
-container-mode tools such as `devenv`, host `git`, or package installation.
+Enabling all CPSL features expands the modules available to Herm's CPSL command
+path and `/shell --bash`. It does not enable Herm's container-mode tools such as
+`devenv`, host `git`, or package installation.
 
 The `all` profile pulls native document/PDF dependencies. On Linux that can
 require GTK/WebKit development packages, and PDF-related tests may also need

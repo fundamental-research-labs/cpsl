@@ -8,7 +8,7 @@ mount backed by the configured host directory.
 ## Build Profiles
 
 The default build is the Herm demo profile. It keeps the dynamic library small
-and enables only `fs`, `json`, `csv`, and `http`:
+and enables only `fs`, `json`, `csv`, `http`, and `grep`:
 
 ```sh
 cargo build -p cpsl-ffi --release
@@ -32,4 +32,5 @@ Probe the release library with:
 cargo test -p cpsl-ffi --test probe -- --ignored
 ```
 
-See `docs/feature-flags.md` for the full module list and the Herm run command.
+See `../docs/feature-flags.md` for the full module list and
+`../herm/CPSL_BUILD.md` for the end-to-end Herm build and run flow.
