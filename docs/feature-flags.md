@@ -68,9 +68,9 @@ Feature flags on `cpsl-cli`, `cpsl-ffi`, and other downstream crates forward to
 Herm's `--cpsl` demo path loads the native dynamic library from `cpsl-ffi`. It
 does not use `cpsl build` or a manifest.
 
-For the end-to-end Linux and macOS Herm build/run flow, use
-[`../herm/scripts/build-cpsl-herm.sh`](../herm/scripts/build-cpsl-herm.sh) and
-see [`../herm/CPSL_BUILD.md`](../herm/CPSL_BUILD.md).
+Herm owns the end-to-end Linux and macOS build/run flow. From a Herm checkout,
+run `scripts/build-cpsl-image.sh`; it fetches this CPSL repo as a dependency
+and builds the dynamic library that Herm loads with `--cpsl`.
 
 | Profile | Command | Compiled CPSL modules |
 |---------|---------|-----------------------|
@@ -83,15 +83,13 @@ The output library path is platform-specific:
 - macOS: `target/release/libcpsl.dylib`
 - Windows: `target/release/cpsl.dll`
 
-From the CPSL repo root, the complete minimum-profile flow is:
+From the CPSL repo root, a direct minimum-profile library build is:
 
 ```sh
 cargo build -p cpsl-ffi --release
 CPSL_LIB="$(pwd)/target/release/libcpsl.so"
 
-cd herm
-go build -o herm ./cmd/herm
-./herm --cpsl "$CPSL_LIB"
+herm --cpsl "$CPSL_LIB"
 ```
 
 To run the same Herm build against an all-features CPSL library, change only the

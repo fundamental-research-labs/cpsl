@@ -32,5 +32,5 @@ Probe the release library with:
 cargo test -p cpsl-ffi --test probe -- --ignored
 ```
 
-See `../docs/feature-flags.md` for the full module list and
-`../herm/CPSL_BUILD.md` for the end-to-end Herm build and run flow.
+See `../docs/feature-flags.md` for the full module list. Herm's end-to-end
+build script lives in the Herm repo as `scripts/build-cpsl-image.sh`.

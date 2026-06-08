@@ -76,9 +76,9 @@ The default mode is Bash-compatible, including for `./cpsl run NAME`. `--lua` ex
 
 ### Herm Local Sandbox Build
 
-To build Herm with a native CPSL local sandbox library, run
-`herm/scripts/build-cpsl-herm.sh`. The complete Linux and macOS flow is
-documented in [`herm/CPSL_BUILD.md`](herm/CPSL_BUILD.md).
+Herm owns the end-to-end native local sandbox build flow. From a Herm checkout,
+run `scripts/build-cpsl-image.sh`; it fetches this CPSL repo as a build
+dependency.
 
 ### Custom Capsule 📝
 
