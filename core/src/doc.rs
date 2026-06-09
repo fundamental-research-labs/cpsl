@@ -469,10 +469,51 @@ static DOC_MOD_DOC_VISION: ModuleDoc = ModuleDoc {
 };
 
 #[cfg(feature = "pdfium-render")]
+const DOC_PDF_INFO_DESC: &str =
+    "Get PDF metadata: page count, page sizes, and form field detection.\n    \
+         Always uses local PDFium parsing (never vision).";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_FORM_FIELDS_DESC: &str =
+    "List all form fields in a PDF. Returns a table of {name, type, value, readOnly} per field.\n    \
+         Types: \"text\", \"checkbox\", \"radio\", \"combobox\", \"listbox\", \"signature\", \"pushbutton\", \"unknown\".\n    \
+         Returns an empty table for non-form PDFs.";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_FILL_DESC: &str =
+    "Fill form fields in a PDF and save the result.\n    \
+         Sets field values from a {fieldName = value} table. Strings for text, booleans for checkboxes/radios.\n    \
+         Set flatten=true to bake fields into page content (removes interactive fields).";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_MERGE_DESC: &str = "Merge multiple PDFs into one. Pages are concatenated in order.";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_SPLIT_DESC: &str = "Split a PDF into multiple files by page ranges.\n    \
+         Ranges are 1-indexed strings like \"1-3\", \"4\", \"5-7\".\n    \
+         Output files are named split_1.pdf, split_2.pdf, etc.";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_EDIT_PAGES_DESC: &str =
+    "Delete, rotate, or reorder pages in a PDF.\n    \
+         Operations: {type=\"delete\", pages={1,3}}, {type=\"rotate\", pages={1}, degrees=90}, {type=\"reorder\", order={3,1,2}}.\n    \
+         Page numbers are 1-indexed.";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_ANNOTATE_DESC: &str =
+    "Add an annotation to a PDF page.\n    \
+         Supported types: \"text\" (sticky note), \"freeText\" (text on page), \"highlight\", \"underline\", \"strikeout\", \"square\", \"stamp\".\n    \
+         Coordinates are in PDF points (1 point = 1/72 inch), origin at bottom-left.";
+
+#[cfg(feature = "pdfium-render")]
+const DOC_PDF_WATERMARK_DESC: &str = "Add a text watermark to PDF pages.\n    \
+         Text is centered on each page. Use rotation for diagonal watermarks.\n    \
+         Set pages to a range string like \"1-3\" or omit for all pages.";
+
+#[cfg(feature = "pdfium-render")]
 const DOC_PDF_INFO_FN: FnDoc = FnDoc {
     name: "pdfInfo",
-    description: "Get PDF metadata: page count, page sizes, and form field detection.\n    \
-         Always uses local PDFium parsing (never vision).",
+    description: DOC_PDF_INFO_DESC,
     params: DOC_PDF_INFO_PARAMS,
     returns: ReturnType::Table,
     example: Some(
@@ -481,34 +522,32 @@ const DOC_PDF_INFO_FN: FnDoc = FnDoc {
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_FORM_FIELDS_FN: FnDoc = FnDoc {
+const DOC_PDF_FORM_FIELDS_FN: FnDoc = FnDoc {
     name: "formFields",
-    description:
-        "List all form fields in a PDF. Returns a table of {name, type, value, readOnly} per field.\n    \
-         Types: \"text\", \"checkbox\", \"radio\", \"combobox\", \"listbox\", \"signature\", \"pushbutton\", \"unknown\".\n    \
-         Returns an empty table for non-form PDFs.",
+    description: DOC_PDF_FORM_FIELDS_DESC,
     params: DOC_FORM_FIELDS_PARAMS,
     returns: ReturnType::Table,
-    example: Some(r#"local fields = doc.formFields("/data/form.pdf")
-for _, f in ipairs(fields) do print(f.name, f.type, f.value) end"#),
+    example: Some(
+        r#"local fields = doc.formFields("/data/form.pdf")
+for _, f in ipairs(fields) do print(f.name, f.type, f.value) end"#,
+    ),
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_FILL_FORM_FN: FnDoc = FnDoc {
+const DOC_PDF_FILL_FN: FnDoc = FnDoc {
     name: "fillForm",
-    description:
-        "Fill form fields in a PDF and save the result.\n    \
-         Sets field values from a {fieldName = value} table. Strings for text, booleans for checkboxes/radios.\n    \
-         Set flatten=true to bake fields into page content (removes interactive fields).",
+    description: DOC_PDF_FILL_DESC,
     params: DOC_FILL_FORM_PARAMS,
     returns: ReturnType::Void,
-    example: Some(r#"doc.fillForm({path="/data/form.pdf", fields={name="Alice", agree=true}, output="/out/filled.pdf"})"#),
+    example: Some(
+        r#"doc.fillForm({path="/data/form.pdf", fields={name="Alice", agree=true}, output="/out/filled.pdf"})"#,
+    ),
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_MERGE_PDF_FN: FnDoc = FnDoc {
+const DOC_PDF_MERGE_FN: FnDoc = FnDoc {
     name: "mergePdf",
-    description: "Merge multiple PDFs into one. Pages are concatenated in order.",
+    description: DOC_PDF_MERGE_DESC,
     params: DOC_MERGE_PDF_PARAMS,
     returns: ReturnType::Void,
     example: Some(
@@ -517,11 +556,9 @@ const DOC_MERGE_PDF_FN: FnDoc = FnDoc {
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_SPLIT_PDF_FN: FnDoc = FnDoc {
+const DOC_PDF_SPLIT_FN: FnDoc = FnDoc {
     name: "splitPdf",
-    description: "Split a PDF into multiple files by page ranges.\n    \
-         Ranges are 1-indexed strings like \"1-3\", \"4\", \"5-7\".\n    \
-         Output files are named split_1.pdf, split_2.pdf, etc.",
+    description: DOC_PDF_SPLIT_DESC,
     params: DOC_SPLIT_PDF_PARAMS,
     returns: ReturnType::Table,
     example: Some(
@@ -530,35 +567,31 @@ const DOC_SPLIT_PDF_FN: FnDoc = FnDoc {
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_EDIT_PAGES_FN: FnDoc = FnDoc {
+const DOC_PDF_EDIT_PAGES_FN: FnDoc = FnDoc {
     name: "editPages",
-    description:
-        "Delete, rotate, or reorder pages in a PDF.\n    \
-         Operations: {type=\"delete\", pages={1,3}}, {type=\"rotate\", pages={1}, degrees=90}, {type=\"reorder\", order={3,1,2}}.\n    \
-         Page numbers are 1-indexed.",
+    description: DOC_PDF_EDIT_PAGES_DESC,
     params: DOC_EDIT_PAGES_PARAMS,
     returns: ReturnType::Void,
-    example: Some(r#"doc.editPages({path="/data/doc.pdf", operations={{type="rotate", pages={1}, degrees=90}}, output="/out/edited.pdf"})"#),
+    example: Some(
+        r#"doc.editPages({path="/data/doc.pdf", operations={{type="rotate", pages={1}, degrees=90}}, output="/out/edited.pdf"})"#,
+    ),
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_ADD_ANNOTATION_FN: FnDoc = FnDoc {
+const DOC_PDF_ANNOTATE_FN: FnDoc = FnDoc {
     name: "addAnnotation",
-    description:
-        "Add an annotation to a PDF page.\n    \
-         Supported types: \"text\" (sticky note), \"freeText\" (text on page), \"highlight\", \"underline\", \"strikeout\", \"square\", \"stamp\".\n    \
-         Coordinates are in PDF points (1 point = 1/72 inch), origin at bottom-left.",
+    description: DOC_PDF_ANNOTATE_DESC,
     params: DOC_ADD_ANNOTATION_PARAMS,
     returns: ReturnType::Void,
-    example: Some(r##"doc.addAnnotation({path="/data/doc.pdf", page=1, type="highlight", x=72, y=700, width=200, height=14, color="#FFFF00", output="/out/annotated.pdf"})"##),
+    example: Some(
+        r##"doc.addAnnotation({path="/data/doc.pdf", page=1, type="highlight", x=72, y=700, width=200, height=14, color="#FFFF00", output="/out/annotated.pdf"})"##,
+    ),
 };
 
 #[cfg(feature = "pdfium-render")]
-const DOC_WATERMARK_FN: FnDoc = FnDoc {
+const DOC_PDF_WATERMARK_FN: FnDoc = FnDoc {
     name: "watermark",
-    description: "Add a text watermark to PDF pages.\n    \
-         Text is centered on each page. Use rotation for diagonal watermarks.\n    \
-         Set pages to a range string like \"1-3\" or omit for all pages.",
+    description: DOC_PDF_WATERMARK_DESC,
     params: DOC_WATERMARK_PARAMS,
     returns: ReturnType::Void,
     example: Some(
@@ -597,13 +630,13 @@ pub(crate) static DOC_MOD_DOC_PDFIUM: ModuleDoc = ModuleDoc {
             ),
         },
         DOC_PDF_INFO_FN,
-        DOC_FORM_FIELDS_FN,
-        DOC_FILL_FORM_FN,
-        DOC_MERGE_PDF_FN,
-        DOC_SPLIT_PDF_FN,
-        DOC_EDIT_PAGES_FN,
-        DOC_ADD_ANNOTATION_FN,
-        DOC_WATERMARK_FN,
+        DOC_PDF_FORM_FIELDS_FN,
+        DOC_PDF_FILL_FN,
+        DOC_PDF_MERGE_FN,
+        DOC_PDF_SPLIT_FN,
+        DOC_PDF_EDIT_PAGES_FN,
+        DOC_PDF_ANNOTATE_FN,
+        DOC_PDF_WATERMARK_FN,
         DOC_RENDER_FN,
         DOC_RENDER_FILE_FN,
     ],
@@ -645,13 +678,13 @@ static DOC_MOD_DOC_VISION_PDFIUM: ModuleDoc = ModuleDoc {
             ),
         },
         DOC_PDF_INFO_FN,
-        DOC_FORM_FIELDS_FN,
-        DOC_FILL_FORM_FN,
-        DOC_MERGE_PDF_FN,
-        DOC_SPLIT_PDF_FN,
-        DOC_EDIT_PAGES_FN,
-        DOC_ADD_ANNOTATION_FN,
-        DOC_WATERMARK_FN,
+        DOC_PDF_FORM_FIELDS_FN,
+        DOC_PDF_FILL_FN,
+        DOC_PDF_MERGE_FN,
+        DOC_PDF_SPLIT_FN,
+        DOC_PDF_EDIT_PAGES_FN,
+        DOC_PDF_ANNOTATE_FN,
+        DOC_PDF_WATERMARK_FN,
         DOC_RENDER_FN,
         DOC_RENDER_FILE_FN,
     ],
@@ -943,29 +976,22 @@ pub(crate) fn register_doc_globals(
     )?;
 
     #[cfg(feature = "pdfium-render")]
-    register_doc_pdf_metadata(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
-
-    #[cfg(feature = "pdfium-render")]
-    register_doc_pdf_page_ops(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
-
-    #[cfg(feature = "pdfium-render")]
-    register_doc_pdf_annotations(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
+    register_doc_pdf(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
 
     register_doc_rendering(lua, &doc, mounts.clone())?;
 
-    // Select documentation based on vision callback and PDFium presence
-    #[cfg(feature = "pdfium-render")]
-    let has_pdfium = pdfium_engine.is_some();
-    #[cfg(not(feature = "pdfium-render"))]
-    let has_pdfium = false;
-
-    let mod_doc = match (vision_callback.is_some(), has_pdfium) {
+    // Select documentation based on compiled features and vision callback.
+    // PDF functions stay visible when PDFium is compiled in but not available;
+    // calls then return the same "requires PDFium" runtime error as before.
+    let mod_doc = match vision_callback.is_some() {
         #[cfg(feature = "pdfium-render")]
-        (true, true) => &DOC_MOD_DOC_VISION_PDFIUM,
+        true => &DOC_MOD_DOC_VISION_PDFIUM,
         #[cfg(feature = "pdfium-render")]
-        (false, true) => &DOC_MOD_DOC_PDFIUM,
-        (true, _) => &DOC_MOD_DOC_VISION,
-        (false, _) => &DOC_MOD_DOC,
+        false => &DOC_MOD_DOC_PDFIUM,
+        #[cfg(not(feature = "pdfium-render"))]
+        true => &DOC_MOD_DOC_VISION,
+        #[cfg(not(feature = "pdfium-render"))]
+        false => &DOC_MOD_DOC,
     };
     crate::lua_util::register_help_functions(lua, &doc, mod_doc)?;
 
@@ -1173,6 +1199,82 @@ fn register_doc_readers(
 }
 
 #[cfg(feature = "pdfium-render")]
+fn register_doc_pdf(
+    lua: &Lua,
+    doc: &mlua::Table,
+    mounts: Arc<MountTable>,
+    pdfium_engine: Option<Arc<PdfiumEngine>>,
+) -> Result<(), mlua::Error> {
+    register_doc_pdf_metadata(lua, doc, mounts.clone(), pdfium_engine.clone())?;
+    register_doc_pdf_page_ops(lua, doc, mounts.clone(), pdfium_engine.clone())?;
+    register_doc_pdf_annotations(lua, doc, mounts.clone(), pdfium_engine.clone())?;
+    Ok(())
+}
+
+#[cfg(feature = "pdfium-render")]
+fn parse_pdf_path_arg(
+    fn_name: &str,
+    args: &MultiValue,
+    params: &'static [Param],
+) -> Result<String, mlua::Error> {
+    if args.is_empty() {
+        return Err(arg_error(fn_name, params));
+    }
+    match &args[0] {
+        mlua::Value::String(s) => Ok(s.to_string_lossy().to_string()),
+        mlua::Value::Table(t) => t
+            .get::<String>("path")
+            .or_else(|_| t.get::<String>(1))
+            .map_err(|_| {
+                mlua::Error::external(format!("{fn_name}: table must have 'path' or [1]"))
+            }),
+        _ => Err(mlua::Error::external(format!(
+            "{fn_name}: first arg must be a string or table"
+        ))),
+    }
+}
+
+#[cfg(feature = "pdfium-render")]
+fn require_pdfium_engine<'a>(
+    engine: &'a Option<Arc<PdfiumEngine>>,
+    fn_name: &str,
+) -> Result<&'a PdfiumEngine, mlua::Error> {
+    engine
+        .as_deref()
+        .ok_or_else(|| mlua::Error::external(format!("{fn_name} requires PDFium (not available)")))
+}
+
+#[cfg(feature = "pdfium-render")]
+fn read_mounted_pdf(mounts: &MountTable, path: &str) -> Result<Vec<u8>, mlua::Error> {
+    let host_path = mounts.resolve_read(path).map_err(mlua::Error::external)?;
+    std::fs::read(&host_path).map_err(mlua::Error::external)
+}
+
+#[cfg(feature = "pdfium-render")]
+fn pdf_backend_error(error: String) -> mlua::Error {
+    mlua::Error::external(canonical_pdf_backend_error(error))
+}
+
+#[cfg(feature = "pdfium-render")]
+fn canonical_pdf_backend_error(error: String) -> String {
+    for (legacy, canonical) in [
+        ("pdfInfo:", "doc.pdfInfo:"),
+        ("formFields:", "doc.formFields:"),
+        ("fillForm:", "doc.fillForm:"),
+        ("mergePdf:", "doc.mergePdf:"),
+        ("splitPdf:", "doc.splitPdf:"),
+        ("editPages:", "doc.editPages:"),
+        ("addAnnotation:", "doc.addAnnotation:"),
+        ("watermark:", "doc.watermark:"),
+    ] {
+        if let Some(rest) = error.strip_prefix(legacy) {
+            return format!("{canonical}{rest}");
+        }
+    }
+    error
+}
+
+#[cfg(feature = "pdfium-render")]
 fn register_doc_pdf_metadata(
     lua: &Lua,
     doc: &mlua::Table,
@@ -1187,32 +1289,10 @@ fn register_doc_pdf_metadata(
         doc.set(
             "pdfInfo",
             lua.create_function(move |lua, args: MultiValue| {
-                if args.is_empty() {
-                    return Err(arg_error("doc.pdfInfo", DOC_PDF_INFO_PARAMS));
-                }
-                let path = match &args[0] {
-                    mlua::Value::String(s) => s.to_string_lossy().to_string(),
-                    mlua::Value::Table(t) => t
-                        .get::<String>("path")
-                        .or_else(|_| t.get::<String>(1))
-                        .map_err(|_| {
-                            mlua::Error::external("doc.pdfInfo: table must have 'path' or [1]")
-                        })?,
-                    _ => {
-                        return Err(mlua::Error::external(
-                            "doc.pdfInfo: first arg must be a string or table",
-                        ))
-                    }
-                };
-
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.pdfInfo requires PDFium (not available)")
-                })?;
-
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
-                let info =
-                    crate::doc_reader::pdf_info(engine, &data).map_err(mlua::Error::external)?;
+                let path = parse_pdf_path_arg("doc.pdfInfo", &args, DOC_PDF_INFO_PARAMS)?;
+                let engine = require_pdfium_engine(&pe, "doc.pdfInfo")?;
+                let data = read_mounted_pdf(&m, &path)?;
+                let info = crate::doc_reader::pdf_info(engine, &data).map_err(pdf_backend_error)?;
 
                 let result = lua.create_table()?;
                 result.set("pageCount", info.page_count as i64)?;
@@ -1240,32 +1320,11 @@ fn register_doc_pdf_metadata(
         doc.set(
             "formFields",
             lua.create_function(move |lua, args: MultiValue| {
-                if args.is_empty() {
-                    return Err(arg_error("doc.formFields", DOC_FORM_FIELDS_PARAMS));
-                }
-                let path = match &args[0] {
-                    mlua::Value::String(s) => s.to_string_lossy().to_string(),
-                    mlua::Value::Table(t) => t
-                        .get::<String>("path")
-                        .or_else(|_| t.get::<String>(1))
-                        .map_err(|_| {
-                            mlua::Error::external("doc.formFields: table must have 'path' or [1]")
-                        })?,
-                    _ => {
-                        return Err(mlua::Error::external(
-                            "doc.formFields: first arg must be a string or table",
-                        ))
-                    }
-                };
-
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.formFields requires PDFium (not available)")
-                })?;
-
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
-                let fields = crate::doc_reader::pdf_form_fields(engine, &data)
-                    .map_err(mlua::Error::external)?;
+                let path = parse_pdf_path_arg("doc.formFields", &args, DOC_FORM_FIELDS_PARAMS)?;
+                let engine = require_pdfium_engine(&pe, "doc.formFields")?;
+                let data = read_mounted_pdf(&m, &path)?;
+                let fields =
+                    crate::doc_reader::pdf_form_fields(engine, &data).map_err(pdf_backend_error)?;
 
                 let result = lua.create_table()?;
                 for (i, f) in fields.iter().enumerate() {
@@ -1348,16 +1407,12 @@ fn register_doc_pdf_page_ops(
                     field_values.push((key, str_val));
                 }
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.fillForm requires PDFium (not available)")
-                })?;
-
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+                let engine = require_pdfium_engine(&pe, "doc.fillForm")?;
+                let data = read_mounted_pdf(&m, &path)?;
 
                 let result_bytes =
                     crate::doc_reader::pdf_fill_form(engine, &data, &field_values, flatten)
-                        .map_err(mlua::Error::external)?;
+                        .map_err(pdf_backend_error)?;
 
                 let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
                 std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
@@ -1394,16 +1449,13 @@ fn register_doc_pdf_page_ops(
                     .get::<String>("output")
                     .map_err(|_| mlua::Error::external("doc.mergePdf: missing 'output' field"))?;
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.mergePdf requires PDFium (not available)")
-                })?;
+                let engine = require_pdfium_engine(&pe, "doc.mergePdf")?;
 
                 // Read all PDF files
                 let mut pdf_data: Vec<(String, Vec<u8>)> = Vec::new();
                 for i in 1..=paths_table.len()? {
                     let path: String = paths_table.get::<String>(i)?;
-                    let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                    let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+                    let data = read_mounted_pdf(&m, &path)?;
                     pdf_data.push((path, data));
                 }
 
@@ -1413,7 +1465,7 @@ fn register_doc_pdf_page_ops(
                     .collect();
 
                 let result_bytes =
-                    crate::doc_reader::pdf_merge(engine, &refs).map_err(mlua::Error::external)?;
+                    crate::doc_reader::pdf_merge(engine, &refs).map_err(pdf_backend_error)?;
 
                 let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
                 std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
@@ -1453,9 +1505,7 @@ fn register_doc_pdf_page_ops(
                     mlua::Error::external("doc.splitPdf: missing 'outputDir' field")
                 })?;
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.splitPdf requires PDFium (not available)")
-                })?;
+                let engine = require_pdfium_engine(&pe, "doc.splitPdf")?;
 
                 // Parse ranges
                 let mut ranges: Vec<String> = Vec::new();
@@ -1465,11 +1515,10 @@ fn register_doc_pdf_page_ops(
                 }
 
                 // Read source PDF
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+                let data = read_mounted_pdf(&m, &path)?;
 
                 let parts = crate::doc_reader::pdf_split(engine, &data, &ranges)
-                    .map_err(mlua::Error::external)?;
+                    .map_err(pdf_backend_error)?;
 
                 // Write output files and collect paths
                 let result = lua.create_table()?;
@@ -1497,9 +1546,7 @@ fn register_doc_pdf_page_ops(
     {
         let m = mounts.clone();
         let pe = pdfium_engine.clone();
-        doc.set(
-        "editPages",
-        lua.create_function(move |_, args: MultiValue| {
+        let edit_pages = lua.create_function(move |_, args: MultiValue| {
             use crate::doc_reader::PageOperation;
 
             if args.is_empty() {
@@ -1519,9 +1566,7 @@ fn register_doc_pdf_page_ops(
             let output: String = opts.get::<String>("output")
                 .map_err(|_| mlua::Error::external("doc.editPages: missing 'output' field"))?;
 
-            let engine = pe.as_ref().ok_or_else(|| {
-                mlua::Error::external("doc.editPages requires PDFium (not available)")
-            })?;
+            let engine = require_pdfium_engine(&pe, "doc.editPages")?;
 
             // Parse operations from Lua table
             let mut operations: Vec<PageOperation> = Vec::new();
@@ -1598,18 +1643,17 @@ fn register_doc_pdf_page_ops(
             }
 
             // Read source PDF
-            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            let data = read_mounted_pdf(&m, &path)?;
 
             let result_bytes = crate::doc_reader::pdf_edit_pages(engine, &data, &operations)
-                .map_err(mlua::Error::external)?;
+                .map_err(pdf_backend_error)?;
 
             let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
             std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
 
             Ok(())
-        })?,
-    )?;
+        })?;
+        doc.set("editPages", edit_pages)?;
     }
 
     Ok(())
@@ -1627,9 +1671,7 @@ fn register_doc_pdf_annotations(
     {
         let m = mounts.clone();
         let pe = pdfium_engine.clone();
-        doc.set(
-        "addAnnotation",
-        lua.create_function(move |_, args: MultiValue| {
+        let add_annotation = lua.create_function(move |_, args: MultiValue| {
             use crate::doc_reader::{AnnotationParams, AnnotationType};
 
             if args.is_empty() {
@@ -1683,12 +1725,8 @@ fn register_doc_pdf_annotations(
 
             let contents = opts.get::<String>("contents").ok();
 
-            let engine = pe.as_ref().ok_or_else(|| {
-                mlua::Error::external("doc.addAnnotation requires PDFium (not available)")
-            })?;
-
-            let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-            let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+            let engine = require_pdfium_engine(&pe, "doc.addAnnotation")?;
+            let data = read_mounted_pdf(&m, &path)?;
 
             let params = AnnotationParams {
                 page: (page - 1) as u16,
@@ -1702,14 +1740,14 @@ fn register_doc_pdf_annotations(
             };
 
             let result_bytes = crate::doc_reader::pdf_add_annotation(engine, &data, &params)
-                .map_err(mlua::Error::external)?;
+                .map_err(pdf_backend_error)?;
 
             let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
             std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
 
             Ok(())
-        })?,
-    )?;
+        })?;
+        doc.set("addAnnotation", add_annotation)?;
     }
 
     // doc.watermark({path, text, fontSize?, color?, rotation?, pages?, output}) -> void
@@ -1759,13 +1797,10 @@ fn register_doc_pdf_annotations(
                     Ok(s) => {
                         // We need to know total pages to validate ranges.
                         // Load the PDF to get page count first.
-                        let engine = pe.as_ref().ok_or_else(|| {
-                            mlua::Error::external("doc.watermark requires PDFium (not available)")
-                        })?;
-                        let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                        let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+                        let engine = require_pdfium_engine(&pe, "doc.watermark")?;
+                        let data = read_mounted_pdf(&m, &path)?;
                         let info = crate::doc_reader::pdf_info(engine, &data)
-                            .map_err(mlua::Error::external)?;
+                            .map_err(pdf_backend_error)?;
                         let indices =
                             crate::doc_reader::parse_page_range_public(&s, info.page_count as u16)
                                 .map_err(mlua::Error::external)?;
@@ -1776,12 +1811,8 @@ fn register_doc_pdf_annotations(
                     Err(_) => None,
                 };
 
-                let engine = pe.as_ref().ok_or_else(|| {
-                    mlua::Error::external("doc.watermark requires PDFium (not available)")
-                })?;
-
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let data = std::fs::read(&host_path).map_err(mlua::Error::external)?;
+                let engine = require_pdfium_engine(&pe, "doc.watermark")?;
+                let data = read_mounted_pdf(&m, &path)?;
 
                 let params = WatermarkParams {
                     text,
@@ -1792,7 +1823,7 @@ fn register_doc_pdf_annotations(
                 };
 
                 let result_bytes = crate::doc_reader::pdf_watermark(engine, &data, &params)
-                    .map_err(mlua::Error::external)?;
+                    .map_err(pdf_backend_error)?;
 
                 let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
                 std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;

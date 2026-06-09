@@ -1,5 +1,7 @@
 //! C ABI for loading CPSL as a sandbox library.
 
+#[cfg(feature = "pdfium-render")]
+use cpsl_core::PdfiumEngine;
 use cpsl_core::{HttpGateway, MountPermission, MountTable, Sandbox};
 use serde::Deserialize;
 use serde_json::json;
@@ -14,6 +16,10 @@ const CPSL_ABI_VERSION: u32 = 1;
 const WORKDIR: &str = "/workdir";
 const LANGUAGE_LUAU: &str = "luau";
 const LANGUAGE_BASH: &str = "bash";
+#[cfg(feature = "pdfium-render")]
+const CPSL_LIBRARY_DIR_ENV: &str = "CPSL_LIBRARY_DIR";
+#[cfg(feature = "pdfium-render")]
+const CPSL_REQUIRE_STAGED_PDFIUM_ENV: &str = "CPSL_REQUIRE_STAGED_PDFIUM";
 const SHRT_SOURCE: &str = include_str!("../../runtime/shrt.luau");
 
 static LAST_ERROR: OnceLock<Mutex<CString>> = OnceLock::new();
@@ -229,10 +235,18 @@ fn create_runtime_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, St
         .add_mount(config.host.clone(), WORKDIR, MountPermission::ReadWrite)
         .map_err(|error| format!("failed to configure workdir mount: {error}"))?;
 
-    let sandbox = Sandbox::builder()
+    let builder = Sandbox::builder()
         .mounts(mounts)
         .http_gateway(Arc::new(create_http_gateway(config)))
-        .auto_tmp(false)
+        .auto_tmp(false);
+    #[cfg(feature = "pdfium-render")]
+    let builder = if let Some(engine) = discover_pdfium_engine() {
+        builder.pdfium_engine(Arc::new(engine))
+    } else {
+        builder
+    };
+
+    let sandbox = builder
         .build()
         .map_err(|error| format!("failed to create CPSL sandbox: {error}"))?;
     sandbox
@@ -257,6 +271,62 @@ fn create_http_gateway(config: &ValidatedSessionConfig) -> HttpGateway {
         builder = builder.deny_domain(domain.clone());
     }
     builder.build()
+}
+
+#[cfg(feature = "pdfium-render")]
+fn discover_pdfium_engine() -> Option<PdfiumEngine> {
+    if std::env::var_os(CPSL_REQUIRE_STAGED_PDFIUM_ENV).is_some() {
+        return std::env::var_os(CPSL_LIBRARY_DIR_ENV)
+            .and_then(|path| discover_pdfium_from_base(&PathBuf::from(path)));
+    }
+
+    if std::env::var_os("PDFIUM_DYNAMIC_LIB_PATH").is_some() {
+        if let Ok(engine) = PdfiumEngine::discover(None) {
+            return Some(engine);
+        }
+    }
+
+    for base in pdfium_base_dirs() {
+        if let Some(engine) = discover_pdfium_from_base(&base) {
+            return Some(engine);
+        }
+    }
+
+    PdfiumEngine::discover(None).ok()
+}
+
+#[cfg(feature = "pdfium-render")]
+fn pdfium_base_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(path) = std::env::var_os(CPSL_LIBRARY_DIR_ENV) {
+        push_unique_path(&mut dirs, PathBuf::from(path));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            push_unique_path(&mut dirs, parent.to_path_buf());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        push_unique_path(&mut dirs, cwd);
+    }
+    dirs
+}
+
+#[cfg(feature = "pdfium-render")]
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
+#[cfg(feature = "pdfium-render")]
+fn discover_pdfium_from_base(base: &Path) -> Option<PdfiumEngine> {
+    let lib_dir = base.join("libs").join("pdfium").join("lib");
+    if lib_dir.is_dir() {
+        PdfiumEngine::from_path(lib_dir).ok()
+    } else {
+        None
+    }
 }
 
 fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {
@@ -528,6 +598,21 @@ mod tests {
 
         assert!(languages.iter().any(|language| language == LANGUAGE_LUAU));
         assert!(languages.iter().any(|language| language == LANGUAGE_BASH));
+    }
+
+    #[cfg(feature = "pdfium-render")]
+    #[test]
+    fn runtime_sandbox_creation_does_not_require_pdfium_library() {
+        let dir = TempDir::new().unwrap();
+        let config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
+        let validated = validate_session_config(&config.to_string()).unwrap();
+
+        let sandbox = create_runtime_sandbox(&validated).unwrap();
+
+        assert_eq!(
+            sandbox.exec("return type(doc.pdfInfo)").unwrap(),
+            "function"
+        );
     }
 
     #[test]

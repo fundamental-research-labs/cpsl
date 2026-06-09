@@ -1383,7 +1383,29 @@ mod pdfium_tests {
         );
     }
 
-    // ── doc.pdfInfo ──────────────────────────────────────────────
+    // ── Flat PDF helpers ─────────────────────────────────────────
+
+    #[test]
+    fn pdf_helpers_are_flat_without_pdf_namespace() {
+        let sb = sandbox_with_pdfium();
+        let result = sb
+            .exec(
+                r#"
+	if rawget(doc, "pdf") ~= nil then
+	    return "unexpected doc.pdf namespace"
+	end
+	local names = {"pdfInfo", "formFields", "fillForm", "mergePdf", "splitPdf", "editPages", "addAnnotation", "watermark"}
+	for _, name in ipairs(names) do
+	    if type(doc[name]) ~= "function" then
+	        return "missing doc." .. name
+	    end
+	end
+	return "ok"
+"#,
+            )
+            .unwrap();
+        assert_eq!(result, "ok");
+    }
 
     #[test]
     fn pdf_info_simple() {
@@ -1446,11 +1468,43 @@ return (ps.width > 0 and ps.height > 0) and "ok" or "bad"
     fn pdf_info_help_visible() {
         let sb = sandbox_with_pdfium();
         let result = sb.exec("return doc.help()").unwrap();
-        assert!(
-            result.contains("pdfInfo"),
-            "help should mention pdfInfo: {}",
-            result
-        );
+        for function_name in [
+            "doc.pdfInfo",
+            "doc.formFields",
+            "doc.fillForm",
+            "doc.mergePdf",
+            "doc.splitPdf",
+            "doc.editPages",
+            "doc.addAnnotation",
+            "doc.watermark",
+        ] {
+            assert!(
+                result.contains(function_name),
+                "doc.help should mention {function_name}: {result}"
+            );
+        }
+    }
+
+    #[test]
+    fn pdf_flat_functions_are_callable_with_flat_errors() {
+        let sb = sandbox_with_pdfium();
+        let result = sb
+            .exec(
+                r#"
+local info = doc.pdfInfo("/pdf/simple_text.pdf")
+local fields = doc.formFields("/pdf/simple_text.pdf")
+local ok, err = pcall(doc.mergePdf, {paths={}, output="/out/merged.pdf"})
+local has_canonical_error = string.find(tostring(err), "doc.mergePdf") ~= nil
+return table.concat({
+    tostring(info.pageCount),
+    tostring(#fields),
+    tostring(ok),
+    tostring(has_canonical_error),
+}, "|")
+"#,
+            )
+            .unwrap();
+        assert_eq!(result, "1|0|false|true");
     }
 
     // ── Mode override: structural bypasses callback ──────────────
@@ -2135,18 +2189,18 @@ doc.editPages({
         let sb = sandbox_with_pdfium();
         let result = sb.exec("return doc.help()").unwrap();
         assert!(
-            result.contains("mergePdf"),
-            "help should mention mergePdf: {}",
+            result.contains("doc.mergePdf"),
+            "help should mention doc.mergePdf: {}",
             result
         );
         assert!(
-            result.contains("splitPdf"),
-            "help should mention splitPdf: {}",
+            result.contains("doc.splitPdf"),
+            "help should mention doc.splitPdf: {}",
             result
         );
         assert!(
-            result.contains("editPages"),
-            "help should mention editPages: {}",
+            result.contains("doc.editPages"),
+            "help should mention doc.editPages: {}",
             result
         );
     }
@@ -2564,13 +2618,13 @@ doc.watermark({
         let sb = sandbox_with_pdfium();
         let result = sb.exec("return doc.help()").unwrap();
         assert!(
-            result.contains("addAnnotation"),
-            "help should mention addAnnotation: {}",
+            result.contains("doc.addAnnotation"),
+            "help should mention doc.addAnnotation: {}",
             result
         );
         assert!(
-            result.contains("watermark"),
-            "help should mention watermark: {}",
+            result.contains("doc.watermark"),
+            "help should mention doc.watermark: {}",
             result
         );
     }
