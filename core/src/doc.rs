@@ -19,6 +19,9 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "pdfium-render")]
+mod pdf_utils;
+
 /// Maximum number of concurrent vision API calls during readAsync batch resolution.
 /// Prevents overwhelming the LLM API with too many parallel requests.
 const MAX_CONCURRENT_READS: usize = 8;
@@ -102,7 +105,6 @@ const DOC_READ_OPTS_FIELDS_BASE: &[FieldDoc] = &[
     FieldDoc { name: "query", typ: "string", required: false, description: "Custom extraction prompt for vision-powered formats (images, PDFs). Default: generic extraction." },
 ];
 
-/// Extra field shown when vision callback is registered.
 const DOC_READ_OPTS_FIELDS_WITH_MODE: &[FieldDoc] = &[
     FieldDoc { name: "sheet", typ: "number", required: false, description: "Sheet number for spreadsheets (1-indexed)" },
     FieldDoc { name: "query", typ: "string", required: false, description: "Custom extraction prompt for vision-powered formats (images, PDFs). Default: generic extraction." },
@@ -707,38 +709,6 @@ const DOC_RENDER_FILE_FN: FnDoc = FnDoc {
     returns: ReturnType::Void,
     example: Some(r#"doc.renderFile({source="/workspace/report.md", target="/artifacts/report.pdf"})"#),
 };
-
-/// Parse a hex color string like "#RRGGBB" or "#RRGGBBAA" into (r, g, b, a).
-#[cfg(feature = "pdfium-render")]
-fn parse_hex_color(s: &str) -> Result<(u8, u8, u8, u8), String> {
-    let s = s.strip_prefix('#').unwrap_or(s);
-    match s.len() {
-        6 => {
-            let r =
-                u8::from_str_radix(&s[0..2], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            let g =
-                u8::from_str_radix(&s[2..4], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            let b =
-                u8::from_str_radix(&s[4..6], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            Ok((r, g, b, 255))
-        }
-        8 => {
-            let r =
-                u8::from_str_radix(&s[0..2], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            let g =
-                u8::from_str_radix(&s[2..4], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            let b =
-                u8::from_str_radix(&s[4..6], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            let a =
-                u8::from_str_radix(&s[6..8], 16).map_err(|_| format!("invalid color: #{}", s))?;
-            Ok((r, g, b, a))
-        }
-        _ => Err(format!(
-            "invalid color format '{}' (expected #RRGGBB or #RRGGBBAA)",
-            s
-        )),
-    }
-}
 
 /// Extract page geometry from a Lua options table, falling back to defaults.
 fn parse_page_options(opts: Option<&mlua::Table>) -> PageOptions {
@@ -1719,7 +1689,7 @@ fn register_doc_pdf_annotations(
             };
 
             // Parse optional color from hex string
-            let color = opts.get::<String>("color").ok().map(|s| parse_hex_color(&s))
+            let color = opts.get::<String>("color").ok().map(|s| pdf_utils::parse_hex_color(&s))
                 .transpose()
                 .map_err(mlua::Error::external)?;
 
@@ -1787,7 +1757,7 @@ fn register_doc_pdf_annotations(
 
                 // Parse optional color, default to semi-transparent black
                 let color = match opts.get::<String>("color") {
-                    Ok(s) => parse_hex_color(&s).map_err(mlua::Error::external)?,
+                    Ok(s) => pdf_utils::parse_hex_color(&s).map_err(mlua::Error::external)?,
                     Err(_) => (0, 0, 0, 64), // #00000040
                 };
 
