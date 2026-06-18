@@ -5,9 +5,16 @@ use native_http::HttpGateway;
 use std::sync::Arc;
 
 fn sandbox_with_http(allowed_domains: &[&str]) -> Sandbox {
+    sandbox_with_http_policy(allowed_domains, &[])
+}
+
+fn sandbox_with_http_policy(allowed_domains: &[&str], denied_domains: &[&str]) -> Sandbox {
     let mut builder = HttpGateway::builder();
     for d in allowed_domains {
         builder = builder.allow_domain(*d);
+    }
+    for d in denied_domains {
+        builder = builder.deny_domain(*d);
     }
     let gw = Arc::new(builder.build());
     Sandbox::builder().http_gateway(gw).build().unwrap()
@@ -165,7 +172,36 @@ fn http_help_returns_help() {
     assert!(result.contains("http — HTTP requests"), "got: {}", result);
     assert!(result.contains("http.get"), "got: {}", result);
     assert!(result.contains("http.post"), "got: {}", result);
+    assert!(result.contains("http.policy"), "got: {}", result);
     assert!(result.contains("http.help()"), "got: {}", result);
+}
+
+#[test]
+fn http_policy_reports_current_domain_policy() {
+    let sb = sandbox_with_http_policy(&["example.com", "*"], &["blocked.example.com"]);
+    let result = sb
+        .exec(
+            r#"
+        local policy = http.policy()
+        return table.concat(policy.allowed_domains, ",")
+            .. "|"
+            .. table.concat(policy.denied_domains, ",")
+            .. "|"
+            .. tostring(policy.unrestricted)
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "*,example.com|blocked.example.com|true");
+}
+
+#[test]
+fn http_wildcard_allow_still_honors_denies() {
+    let sb = sandbox_with_http_policy(&["*"], &["httpbin.org"]);
+    let err = sb
+        .exec(r#"return http.get("https://httpbin.org/get")"#)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("denied"), "error: {}", err);
 }
 
 #[test]

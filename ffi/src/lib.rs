@@ -466,6 +466,9 @@ fn validate_policy_domain(domain: &str) -> Result<(), &'static str> {
     if domain.is_empty() {
         return Err("domain must not be empty");
     }
+    if domain == "*" {
+        return Ok(());
+    }
     if domain.len() > 253 {
         return Err("domain is too long");
     }
@@ -473,7 +476,7 @@ fn validate_policy_domain(domain: &str) -> Result<(), &'static str> {
         return Err("domain must be lowercase");
     }
     if domain.contains('*') {
-        return Err("wildcards are not supported");
+        return Err("wildcards are only supported as \"*\"");
     }
     if domain.contains("://") || domain.contains('/') || domain.contains(':') {
         return Err("domain must not include a scheme, port, or path");
@@ -619,12 +622,15 @@ mod tests {
     fn validates_network_policy_domains() {
         let dir = TempDir::new().unwrap();
         let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
-        config["http"]["allow_domains"] = json!(["example.com", "api.example.com"]);
+        config["http"]["allow_domains"] = json!(["example.com", "api.example.com", "*"]);
         config["http"]["deny_domains"] = json!(["blocked.example.com", "blocked.example.com"]);
 
         let validated = validate_session_config(&config.to_string()).unwrap();
 
-        assert_eq!(validated.allow_domains, ["example.com", "api.example.com"]);
+        assert_eq!(
+            validated.allow_domains,
+            ["example.com", "api.example.com", "*"]
+        );
         assert_eq!(
             validated.deny_domains,
             ["blocked.example.com", "blocked.example.com"]

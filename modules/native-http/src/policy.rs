@@ -185,6 +185,9 @@ fn domain_matches_entry(domain: &str, entry: &str) -> bool {
     if entry.is_empty() {
         return false;
     }
+    if entry == "*" {
+        return true;
+    }
     if domain == entry {
         return true;
     }
@@ -419,6 +422,35 @@ mod tests {
         assert!(matches!(
             policy.check("badexample.com"),
             DomainVerdict::Denied
+        ));
+    }
+
+    #[test]
+    fn wildcard_allow_matches_any_domain() {
+        let policy = DomainPolicy::new(None);
+        policy.allow("*");
+        assert!(matches!(
+            policy.check("example.com"),
+            DomainVerdict::Allowed
+        ));
+        assert!(matches!(
+            policy.check("api.other.test"),
+            DomainVerdict::Allowed
+        ));
+    }
+
+    #[test]
+    fn deny_overrides_wildcard_allow() {
+        let policy = DomainPolicy::new(None);
+        policy.allow("*");
+        policy.deny("blocked.example.com");
+        assert!(matches!(
+            policy.check("api.blocked.example.com"),
+            DomainVerdict::Denied
+        ));
+        assert!(matches!(
+            policy.check("api.example.com"),
+            DomainVerdict::Allowed
         ));
     }
 

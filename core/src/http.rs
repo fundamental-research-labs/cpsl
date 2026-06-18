@@ -172,6 +172,13 @@ pub(crate) static HTTP_DOC: ModuleDoc = ModuleDoc {
                 r#"http.request({method="PATCH", url="https://api.example.com/items/1", body=json.encode({name="updated"}), headers={["Content-Type"]="application/json"}})"#,
             ),
         },
+        FnDoc {
+            name: "policy",
+            description: "Return the current HTTP domain policy as {allowed_domains, denied_domains, unrestricted}.",
+            params: &[],
+            returns: ReturnType::Table,
+            example: Some(r#"local policy = http.policy()"#),
+        },
     ],
 };
 
@@ -285,6 +292,32 @@ pub(crate) fn register_http_globals(
                 };
                 let method = parse_method(&method_str).map_err(mlua::Error::external)?;
                 do_request(lua, &gw, method, url, opts)
+            })?,
+        )?;
+    }
+
+    {
+        let gw = gateway.clone();
+        http.set(
+            "policy",
+            lua.create_function(move |lua, ()| {
+                let policy = lua.create_table()?;
+                let allowed = lua.create_table()?;
+                let allowed_domains = gw.allowed_domains();
+                for (idx, domain) in allowed_domains.iter().enumerate() {
+                    allowed.set(idx + 1, domain.as_str())?;
+                }
+                let denied = lua.create_table()?;
+                for (idx, domain) in gw.denied_domains().iter().enumerate() {
+                    denied.set(idx + 1, domain.as_str())?;
+                }
+                policy.set("allowed_domains", allowed)?;
+                policy.set("denied_domains", denied)?;
+                policy.set(
+                    "unrestricted",
+                    allowed_domains.iter().any(|domain| domain == "*"),
+                )?;
+                Ok(policy)
             })?,
         )?;
     }
