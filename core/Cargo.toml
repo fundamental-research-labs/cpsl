@@ -13,7 +13,7 @@ all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
        "mod-random", "mod-fuzzy", "mod-phone", "mod-email", "mod-country",
        "mod-datetime", "mod-image", "mod-base64", "mod-fin", "mod-yfinance", "mod-edgar",
        "mod-crypto", "mod-regex", "mod-html", "mod-url", "mod-qr", "mod-grep",
-       "pdfium-render"]
+       "mod-fff", "pdfium-render"]
 
 mod-base64 = []                                     # no extra deps — pure computation
 mod-fs = ["dep:rand"]                               # rand for /dev/urandom
@@ -42,6 +42,7 @@ mod-html = ["dep:scraper"]
 mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
 mod-grep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
+mod-fff = ["mod-fs", "dep:fff-grep", "dep:ignore", "dep:memchr"]
 pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
 
 [dependencies]
@@ -145,6 +146,10 @@ grep-searcher = { version = "0.1", optional = true }
 grep-matcher = { version = "0.1", optional = true }
 ignore = { version = "0.4", optional = true }
 globset = { version = "0.4", optional = true }
+
+# mod-fff
+fff-grep = { version = "0.9.6", optional = true }
+memchr = { version = "2", optional = true }
 
 [[test]]
 name = "pdf_pipeline"

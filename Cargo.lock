@@ -670,6 +670,7 @@ dependencies = [
  "csv",
  "email_address",
  "faer",
+ "fff-grep",
  "flate2",
  "globset",
  "grep-matcher",
@@ -684,6 +685,7 @@ dependencies = [
  "isocountry",
  "jsonwebtoken",
  "md-5",
+ "memchr",
  "mlua",
  "native-http",
  "native-webview-pdf",
@@ -1290,6 +1292,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "fff-grep"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ac5720676a3e1cb901683073c0bcc0a8f04e1bfe6bea391e1f14b9f95dbdef2"
+dependencies = [
+ "bstr",
+ "memchr",
 ]
 
 [[package]]

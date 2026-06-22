@@ -90,6 +90,7 @@ pub(super) fn is_passthrough_module(name: &str) -> bool {
             | "image"
             | "base64"
             | "fin"
+            | "fff"
             | "yfinance"
             | "edgar"
             | "crypto"

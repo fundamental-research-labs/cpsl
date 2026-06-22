@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = ["all"]
 all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
-       "mod-http", "mod-compress", "mod-doc", "mod-plot", "mod-numpy", "mod-grep"]
+       "mod-http", "mod-compress", "mod-doc", "mod-plot", "mod-numpy", "mod-grep", "mod-fff"]
 
 mod-fs = ["cpsl-core/mod-fs"]
 mod-json = ["cpsl-core/mod-json"]
@@ -19,6 +19,7 @@ mod-doc = ["cpsl-core/mod-doc"]
 mod-plot = ["cpsl-core/mod-plot"]
 mod-numpy = ["cpsl-core/mod-numpy"]
 mod-grep = ["cpsl-core/mod-grep"]
+mod-fff = ["cpsl-core/mod-fff"]
 
 [dependencies]
 cpsl-core = { path = "../core", default-features = false }

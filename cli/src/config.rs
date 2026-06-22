@@ -31,6 +31,11 @@ pub static MODULE_REGISTRY: &[ModuleManifest] = &[
         cargo_feature: "mod-grep",
     },
     ModuleManifest {
+        name: "fff",
+        description: "Fast literal content search via fff.grep",
+        cargo_feature: "mod-fff",
+    },
+    ModuleManifest {
         name: "json",
         description: "JSON encoding and decoding",
         cargo_feature: "mod-json",
