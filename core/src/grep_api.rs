@@ -41,10 +41,10 @@ pub(crate) enum GrepError {
     InvalidGlob(String),
     #[cfg(feature = "mod-ripgrep")]
     InvalidPattern(String),
-    #[cfg(feature = "mod-fff")]
+    #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
     Usage(String),
     Mount(MountError),
-    #[cfg(feature = "mod-fff")]
+    #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
     Search(String),
 }
 
@@ -58,20 +58,13 @@ impl GrepError {
             GrepError::InvalidPattern(message) => {
                 mlua::Error::external(format!("{fn_name}: invalid pattern: {message}"))
             }
-            #[cfg(feature = "mod-fff")]
+            #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
             GrepError::Usage(message) => mlua::Error::external(format!("{fn_name}: {message}")),
             GrepError::Mount(error) => mlua::Error::external(error),
-            #[cfg(feature = "mod-fff")]
+            #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
             GrepError::Search(message) => mlua::Error::external(format!("{fn_name}: {message}")),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GrepRequestOptions {
-    FsGrep,
-    #[cfg(feature = "mod-fff")]
-    FffAlias,
 }
 
 #[cfg(feature = "mod-fs")]
@@ -86,12 +79,8 @@ where
     fs.set(
         "grep",
         lua.create_function(move |lua, args: MultiValue| {
-            let request = parse_grep_request(
-                &args,
-                crate::sandbox::FS_DOC.params("grep"),
-                "fs.grep",
-                GrepRequestOptions::FsGrep,
-            )?;
+            let request =
+                parse_grep_request(&args, crate::sandbox::FS_DOC.params("grep"), "fs.grep")?;
             let results = provider
                 .search(&request)
                 .map_err(|error| error.into_lua("fs.grep"))?;
@@ -105,7 +94,6 @@ pub(crate) fn parse_grep_request(
     args: &MultiValue,
     params: &[Param],
     fn_name: &str,
-    options: GrepRequestOptions,
 ) -> Result<GrepRequest, mlua::Error> {
     let validated = validate_args(args, params, fn_name)?;
     let opts = match &validated[0] {
@@ -115,17 +103,9 @@ pub(crate) fn parse_grep_request(
 
     let pattern = required_table_string(&opts, "pattern", fn_name)?;
     let path = required_table_string(&opts, "path", fn_name)?;
-    let glob = match options {
-        GrepRequestOptions::FsGrep => optional_table_string(&opts, "glob"),
-        #[cfg(feature = "mod-fff")]
-        GrepRequestOptions::FffAlias => None,
-    };
+    let glob = optional_table_string(&opts, "glob");
     let max_count = optional_table_usize(&opts, "max_count");
-    let files_only = match options {
-        GrepRequestOptions::FsGrep => optional_table_bool(&opts, "files_only").unwrap_or(false),
-        #[cfg(feature = "mod-fff")]
-        GrepRequestOptions::FffAlias => false,
-    };
+    let files_only = optional_table_bool(&opts, "files_only").unwrap_or(false);
 
     Ok(GrepRequest {
         pattern,
@@ -386,40 +366,20 @@ impl GrepProvider for RipgrepProvider {
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 #[derive(Clone)]
 pub(crate) struct FffGrepProvider {
     mounts: Arc<MountTable>,
-    search_mode: FffSearchMode,
 }
 
-#[cfg(feature = "mod-fff")]
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FffSearchMode {
-    #[cfg(not(feature = "mod-ripgrep"))]
-    Utf8Text,
-    Bytes,
-}
-
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl FffGrepProvider {
-    #[cfg(not(feature = "mod-ripgrep"))]
     pub(crate) fn fs_compatible(mounts: Arc<MountTable>) -> Self {
-        Self {
-            mounts,
-            search_mode: FffSearchMode::Utf8Text,
-        }
-    }
-
-    pub(crate) fn byte_search(mounts: Arc<MountTable>) -> Self {
-        Self {
-            mounts,
-            search_mode: FffSearchMode::Bytes,
-        }
+        Self { mounts }
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl GrepProvider for FffGrepProvider {
     fn search(&self, request: &GrepRequest) -> Result<Vec<GrepResult>, GrepError> {
         if request.pattern.is_empty() {
@@ -454,7 +414,7 @@ impl GrepProvider for FffGrepProvider {
                     .max_count
                     .map(|max| max.saturating_sub(result_count))
             };
-            let mut sink = CollectSink::new(needle.clone(), remaining, self.search_mode);
+            let mut sink = CollectSink::new(needle.clone(), remaining);
             let searcher = fff_grep::SearcherBuilder::new().line_number(true).build();
 
             searcher
@@ -498,20 +458,20 @@ impl GrepProvider for FffGrepProvider {
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 #[derive(Clone)]
 struct LiteralMatcher {
     needle: Vec<u8>,
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl LiteralMatcher {
     fn new(needle: Vec<u8>) -> Self {
         Self { needle }
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl fff_grep::Matcher for LiteralMatcher {
     type Error = fff_grep::NoError;
 
@@ -537,7 +497,7 @@ impl fff_grep::Matcher for LiteralMatcher {
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 struct LineMatch {
     line_number: u64,
     column: usize,
@@ -545,21 +505,19 @@ struct LineMatch {
     match_text: String,
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 struct CollectSink {
     needle: Vec<u8>,
     max_count: Option<usize>,
-    search_mode: FffSearchMode,
     matches: Vec<LineMatch>,
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl CollectSink {
-    fn new(needle: Vec<u8>, max_count: Option<usize>, search_mode: FffSearchMode) -> Self {
+    fn new(needle: Vec<u8>, max_count: Option<usize>) -> Self {
         Self {
             needle,
             max_count,
-            search_mode,
             matches: Vec::new(),
         }
     }
@@ -571,7 +529,7 @@ impl CollectSink {
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 impl fff_grep::Sink for CollectSink {
     type Error = std::io::Error;
 
@@ -594,27 +552,13 @@ impl fff_grep::Sink for CollectSink {
             .unwrap_or(1);
         let match_bytes = line_bytes.get((column - 1)..(column - 1 + self.needle.len()));
 
-        let (line, match_text) = match self.search_mode {
-            #[cfg(not(feature = "mod-ripgrep"))]
-            FffSearchMode::Utf8Text => {
-                let line = match std::str::from_utf8(line_bytes) {
-                    Ok(line) => line.to_string(),
-                    Err(_) => return Ok(true),
-                };
-                let match_text = match match_bytes.and_then(|bytes| std::str::from_utf8(bytes).ok())
-                {
-                    Some(match_text) => match_text.to_string(),
-                    None => return Ok(true),
-                };
-                (line, match_text)
-            }
-            FffSearchMode::Bytes => {
-                let match_text = match_bytes
-                    .map(String::from_utf8_lossy)
-                    .map(|text| text.into_owned())
-                    .unwrap_or_default();
-                (String::from_utf8_lossy(line_bytes).into_owned(), match_text)
-            }
+        let line = match std::str::from_utf8(line_bytes) {
+            Ok(line) => line.to_string(),
+            Err(_) => return Ok(true),
+        };
+        let match_text = match match_bytes.and_then(|bytes| std::str::from_utf8(bytes).ok()) {
+            Some(match_text) => match_text.to_string(),
+            None => return Ok(true),
         };
 
         self.matches.push(LineMatch {
@@ -628,7 +572,7 @@ impl fff_grep::Sink for CollectSink {
     }
 }
 
-#[cfg(feature = "mod-fff")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 fn trim_line_end(mut line: &[u8]) -> &[u8] {
     if let Some(stripped) = line.strip_suffix(b"\n") {
         line = stripped;

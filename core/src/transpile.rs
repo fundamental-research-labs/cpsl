@@ -97,8 +97,8 @@ impl ScopeTracker {
 mod maps;
 
 use maps::{
-    builtin_map, direct_method_map, is_passthrough_module, python_from_import_to_luau,
-    python_module_to_luau,
+    builtin_map, direct_method_map, is_passthrough_module, python_from_import_is_available,
+    python_from_import_to_luau, python_module_is_available, python_module_to_luau,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -584,8 +584,7 @@ impl<'a> Transpiler<'a> {
                         .get(var_name)
                         .map(|s| s.as_str())
                         .unwrap_or(var_name);
-                    if (is_passthrough_module(module_name)
-                        && !self.scopes.is_declared(var_name))
+                    if (is_passthrough_module(module_name) && !self.scopes.is_declared(var_name))
                         || self.import_aliases.contains_key(var_name)
                     {
                         if has_kwargs {
@@ -1721,10 +1720,12 @@ impl<'a> Transpiler<'a> {
                 .as_ref()
                 .map(|a| ident(a).to_string())
                 .unwrap_or_else(|| module.replace('.', "_"));
-            // Track all imported names → module for passthrough resolution
-            self.import_aliases.insert(name.clone(), module.clone());
             // Map known Python modules to Luau sandbox globals
             let rhs = python_module_to_luau(&module);
+            if python_module_is_available(&module) {
+                // Track available imports for passthrough method-call resolution.
+                self.import_aliases.insert(name.clone(), module.clone());
+            }
             if !self.scopes.is_declared(&name) {
                 self.emit(&format!("local {} = {}", name, rhs), node.range);
                 self.scopes.declare(&name);
@@ -1749,8 +1750,10 @@ impl<'a> Transpiler<'a> {
                 .unwrap_or_else(|| attr.to_string());
             // Map known Python from-imports to Luau sandbox globals
             let rhs = python_from_import_to_luau(&module, attr);
-            // Track from-import aliases for passthrough resolution (e.g., `from rapidfuzz import fuzz` → fuzz maps to fuzzy)
-            self.import_aliases.insert(name.clone(), rhs.clone());
+            if python_from_import_is_available(&module, attr) {
+                // Track from-import aliases for passthrough resolution.
+                self.import_aliases.insert(name.clone(), rhs.clone());
+            }
             if !self.scopes.is_declared(&name) {
                 self.emit(&format!("local {} = {}", name, rhs), node.range);
                 self.scopes.declare(&name);

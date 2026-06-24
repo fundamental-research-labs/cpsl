@@ -20,8 +20,6 @@ pub(crate) mod doc_reader;
 pub(crate) mod edgar;
 #[cfg(feature = "mod-email")]
 pub(crate) mod email;
-#[cfg(feature = "mod-fff")]
-pub(crate) mod fff;
 #[cfg(feature = "mod-fin")]
 pub(crate) mod fin;
 #[cfg(feature = "mod-fuzzy")]

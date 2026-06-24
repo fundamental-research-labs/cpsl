@@ -218,12 +218,7 @@ fn cmd_build(args: BuildArgs) {
     let image_name = args.name.unwrap_or_else(|| config.sandbox.name.clone());
 
     let features = config.to_cargo_features();
-
-    // Derive module names for display (strip "mod-" prefix)
-    let module_names: Vec<&str> = features
-        .iter()
-        .map(|f| f.strip_prefix("mod-").unwrap_or(f.as_str()))
-        .collect();
+    let module_names = config.module_display_names();
     let python_suffix = if config.python_enabled() {
         " + python"
     } else {
@@ -509,7 +504,17 @@ fn cmd_run(args: RunArgs) {
         .join(".cpsl")
         .join("images")
         .join(format!("{}.toml", args.name));
-    let image_config = SandboxConfig::from_file(&image_config).ok();
+    let image_config = if image_config.exists() {
+        Some(SandboxConfig::from_file(&image_config).unwrap_or_else(|e| {
+            eprintln!(
+                "error: invalid saved config for sandbox '{}': {}",
+                args.name, e
+            );
+            std::process::exit(1);
+        }))
+    } else {
+        None
+    };
 
     let mut cmd = std::process::Command::new(&bin_path);
 
@@ -571,8 +576,14 @@ fn cmd_modules() {
     for m in MODULE_REGISTRY {
         println!("  {:<12} {}", m.name, m.description);
     }
+    println!(
+        "  {:<12} Content search via fs.grep; providers: ripgrep (regex), fff (literal); requires fs",
+        "grep"
+    );
     println!("\nUse these names in [modules] section of cpsl.toml:");
     println!("  [modules]");
+    println!("  fs = true");
+    println!("  grep = {{ provider = \"ripgrep\" }}");
     println!("  json = true");
     println!("  csv = true");
 }
@@ -602,13 +613,13 @@ fn cmd_sandboxes() {
 
                 let modules: Vec<String> = {
                     let config_path = images_dir.join(format!("{}.toml", name));
-                    match SandboxConfig::from_file(&config_path) {
-                        Ok(config) => config
-                            .to_cargo_features()
-                            .iter()
-                            .map(|f| f.strip_prefix("mod-").unwrap_or(f).to_string())
-                            .collect(),
-                        Err(_) => vec![],
+                    if config_path.exists() {
+                        match SandboxConfig::from_file(&config_path) {
+                            Ok(config) => config.module_display_names(),
+                            Err(error) => vec![format!("invalid config: {error}")],
+                        }
+                    } else {
+                        vec![]
                     }
                 };
 

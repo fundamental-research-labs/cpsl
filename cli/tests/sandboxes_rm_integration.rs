@@ -33,6 +33,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 const SANDBOX_NAME: &str = "test-ls-rm-integ";
+const INVALID_CONFIG_SANDBOX_NAME: &str = "test-invalid-config-integ";
 
 fn cleanup() {
     let home = dirs::home_dir().unwrap();
@@ -42,6 +43,44 @@ fn cleanup() {
             .join("images")
             .join(format!("{}.toml", SANDBOX_NAME)),
     );
+}
+
+fn cleanup_invalid_config_sandbox() {
+    let home = dirs::home_dir().unwrap();
+    let _ = std::fs::remove_file(
+        home.join(".cpsl")
+            .join("bin")
+            .join(INVALID_CONFIG_SANDBOX_NAME),
+    );
+    let _ = std::fs::remove_file(
+        home.join(".cpsl")
+            .join("images")
+            .join(format!("{}.toml", INVALID_CONFIG_SANDBOX_NAME)),
+    );
+}
+
+fn write_invalid_config_sandbox() {
+    cleanup_invalid_config_sandbox();
+
+    let home = dirs::home_dir().unwrap();
+    let bin_dir = home.join(".cpsl").join("bin");
+    let images_dir = home.join(".cpsl").join("images");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::create_dir_all(&images_dir).unwrap();
+
+    std::fs::write(bin_dir.join(INVALID_CONFIG_SANDBOX_NAME), "").unwrap();
+    std::fs::write(
+        images_dir.join(format!("{}.toml", INVALID_CONFIG_SANDBOX_NAME)),
+        r#"
+[sandbox]
+name = "test-invalid-config-integ"
+
+[modules]
+fs = true
+ripgrep = true
+"#,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -111,6 +150,75 @@ fn sandboxes_lists_built_sandbox() {
     );
 
     cleanup();
+}
+
+#[test]
+#[ignore] // No build needed, but grouped with integration tests
+fn run_surfaces_invalid_saved_config() {
+    write_invalid_config_sandbox();
+
+    let output = Command::new(cli_binary())
+        .args([
+            "run",
+            INVALID_CONFIG_SANDBOX_NAME,
+            "--lua",
+            "--",
+            "print(1)",
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to run cpsl run");
+
+    assert!(
+        !output.status.success(),
+        "expected invalid saved config to fail"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid saved config"),
+        "expected invalid config error, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("standalone grep provider module 'ripgrep'"),
+        "expected provider validation error, got: {}",
+        stderr
+    );
+
+    cleanup_invalid_config_sandbox();
+}
+
+#[test]
+#[ignore] // No build needed, but grouped with integration tests
+fn sandboxes_surfaces_invalid_saved_config() {
+    write_invalid_config_sandbox();
+
+    let output = Command::new(cli_binary())
+        .args(["sandboxes"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to run cpsl sandboxes");
+
+    assert!(
+        output.status.success(),
+        "sandboxes should list invalid configs without failing: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(INVALID_CONFIG_SANDBOX_NAME),
+        "expected sandbox name in output:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("invalid config"),
+        "expected invalid config marker in output:\n{}",
+        stdout
+    );
+
+    cleanup_invalid_config_sandbox();
 }
 
 #[test]

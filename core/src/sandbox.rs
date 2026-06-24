@@ -588,8 +588,6 @@ impl SandboxBuilder {
         crate::base64::register_base64_globals(&lua)?;
         #[cfg(feature = "mod-fin")]
         crate::fin::register_fin_globals(&lua)?;
-        #[cfg(feature = "mod-fff")]
-        crate::fff::register_fff_globals(&lua, mounts.clone())?;
         #[cfg(feature = "mod-crypto")]
         crate::crypto::register_crypto_globals(&lua)?;
         #[cfg(feature = "mod-regex")]

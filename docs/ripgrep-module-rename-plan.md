@@ -9,6 +9,10 @@ This is a naming cleanup for module/build configuration and Rust feature names.
 It should not change the capsule-facing grep API, which remains `fs.grep(...)`
 until the provider-config follow-up makes `grep` a provider-selected capability.
 
+Superseded note: the provider-config follow-up has landed, so capsule manifests
+now use `grep = { provider = "ripgrep" }` or `grep = { provider = "fff" }`.
+Standalone `ripgrep = true` and `fff = true` entries are no longer valid.
+
 ## Key Changes
 
 - Rename the manifest/CLI module name from `grep` to `ripgrep`.

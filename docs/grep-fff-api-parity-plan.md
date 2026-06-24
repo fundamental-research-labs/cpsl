@@ -9,6 +9,10 @@ module name/provider mapping in this cleanup.
 `mod-ripgrep` remains the default regex provider. `mod-fff` fills the same
 `fs.grep` API only in fff-only capsules.
 
+Superseded note: the later provider-config work makes `grep = { provider = "..." }`
+the capsule-facing contract and removes provider-specific runtime globals such
+as `fff.grep(...)` from capsule builds. The shared API is `fs.grep(...)`.
+
 ## Key Changes
 
 - Keep existing `mod-ripgrep` behavior unchanged: when enabled, it owns `fs.grep`.
@@ -26,13 +30,12 @@ module name/provider mapping in this cleanup.
   #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
   ```
 
-- Keep `fff.grep` as an explicit fff-backed alias; do not make it the
-  compatibility target.
+- Keep the compatibility target as `fs.grep(...)`; later provider-config work
+  removes provider-specific globals from capsule builds.
 - Make fff-backed `fs.grep` support the current common `fs.grep` inputs:
   `pattern`, `path`, `glob`, `max_count`, `files_only`.
 - Keep the common `fs.grep` return shape: `file`, `line_number`, `line`,
-  `match_text`. If `fff.grep` keeps extra `column`, callers should not rely on
-  that through `fs.grep`.
+  `match_text`.
 - Split `FS_DOC` grep metadata so `fs.help()` shows grep docs for both
   `mod-ripgrep` and fff-only builds, with regex vs literal wording by provider.
 
@@ -41,7 +44,7 @@ module name/provider mapping in this cleanup.
 - Update CLI/module docs to describe `ripgrep` and `fff` as alternative search
   providers for `fs.grep`.
 - Keep current default/`all` feature sets unchanged; when both are compiled,
-  `mod-ripgrep` wins and `fff.grep` remains available explicitly.
+  `mod-ripgrep` wins for `fs.grep(...)`.
 - Document that pattern semantics differ by provider: `mod-ripgrep` is regex,
   `mod-fff` is literal.
 - Leave configurable name/provider mapping as a future extension, not part of
@@ -60,7 +63,7 @@ module name/provider mapping in this cleanup.
   - `glob`, `max_count`, `files_only`.
   - virtual paths and mount denial.
   - `fs.help()` includes `grep`.
-  - `fff.grep` still works.
+  - Provider-specific globals remain out of the capsule-facing API.
 - Add/default-build test coverage confirming both features compiled together
   still use the existing regex `fs.grep`.
 

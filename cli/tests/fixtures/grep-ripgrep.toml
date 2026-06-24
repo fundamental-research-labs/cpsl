@@ -1,0 +1,6 @@
+[sandbox]
+name = "test-grep-ripgrep"
+
+[modules]
+fs = true
+grep = { provider = "ripgrep" }

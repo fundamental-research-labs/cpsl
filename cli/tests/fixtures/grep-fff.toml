@@ -1,0 +1,6 @@
+[sandbox]
+name = "test-grep-fff"
+
+[modules]
+fs = true
+grep = { provider = "fff" }

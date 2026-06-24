@@ -719,7 +719,6 @@ fn test_fff_only_fs_grep_filters_invalid_utf8_per_matched_line() {
         local mixed_files = fs.grep({pattern="TODO", path="/data/mixed.bin", files_only=true})
         local invalid = fs.grep({pattern="TODO", path="/data/invalid_only.bin"})
         local invalid_files = fs.grep({pattern="TODO", path="/data/invalid_only.bin", files_only=true})
-        local alias = fff.grep({pattern="TODO", path="/data/invalid_only.bin"})
         return #nul
             .. ":" .. string.byte(nul[1].line, 5)
             .. ":" .. #mixed
@@ -730,12 +729,10 @@ fn test_fff_only_fs_grep_filters_invalid_utf8_per_matched_line() {
             .. ":" .. #mixed_files
             .. ":" .. #invalid
             .. ":" .. #invalid_files
-            .. ":" .. #alias
-            .. ":" .. alias[1].match_text
     "#,
         )
         .unwrap();
-    assert_eq!(result, "1:0:1:2:TODO valid:1:2:1:0:0:1:TODO");
+    assert_eq!(result, "1:0:1:2:TODO valid:1:2:1:0:0");
 }
 
 #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
@@ -769,24 +766,6 @@ fn test_fff_only_fs_help_includes_grep() {
     let result = sandbox.exec("fs.help()").unwrap();
     assert!(result.contains("fs.grep"), "got: {}", result);
     assert!(result.contains("Literal pattern"), "got: {}", result);
-}
-
-#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
-#[test]
-fn test_fff_only_fff_grep_still_works() {
-    let dir = TempDir::new().unwrap();
-    fs::write(dir.path().join("notes.txt"), "alpha\nneedle\n").unwrap();
-
-    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
-    let result = sandbox
-        .exec(
-            r#"
-        local matches = fff.grep({pattern="needle", path="/data/notes.txt"})
-        return #matches .. ":" .. matches[1].line_number .. ":" .. matches[1].column .. ":" .. matches[1].match_text
-    "#,
-        )
-        .unwrap();
-    assert_eq!(result, "1:2:1:needle");
 }
 
 // --- fs.tree tests ---

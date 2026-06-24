@@ -90,7 +90,6 @@ pub(super) fn is_passthrough_module(name: &str) -> bool {
             | "image"
             | "base64"
             | "fin"
-            | "fff"
             | "yfinance"
             | "edgar"
             | "crypto"
@@ -101,65 +100,89 @@ pub(super) fn is_passthrough_module(name: &str) -> bool {
     )
 }
 
-/// Map a Python `import X` module name to its Luau equivalent expression.
-/// Known modules map to sandbox globals; unknown ones fall through to `require()`.
-pub(super) fn python_module_to_luau(module: &str) -> String {
+fn python_module_global(module: &str) -> Option<String> {
     match module {
         // matplotlib.pyplot → plot global
-        "matplotlib.pyplot" | "matplotlib" => "plot".to_string(),
+        "matplotlib.pyplot" | "matplotlib" => Some("plot".to_string()),
         // seaborn → plot global (same visualization API)
-        "seaborn" => "plot".to_string(),
+        "seaborn" => Some("plot".to_string()),
         // numpy → numx global (renamed to avoid agent confusion with real numpy)
-        "numpy" => "numx".to_string(),
+        "numpy" => Some("numx".to_string()),
         // numpy submodules → numx global (linalg/random are sub-tables)
-        "numpy.linalg" => "numx.linalg".to_string(),
-        "numpy.random" => "numx.random".to_string(),
+        "numpy.linalg" => Some("numx.linalg".to_string()),
+        "numpy.random" => Some("numx.random".to_string()),
         // lxml/xml.etree → xml global
-        "lxml" | "lxml.etree" | "xml.etree" | "xml.etree.ElementTree" => "xml".to_string(),
+        "lxml" | "lxml.etree" | "xml.etree" | "xml.etree.ElementTree" => Some("xml".to_string()),
         // rapidfuzz/fuzzywuzzy → fuzzy global
         "rapidfuzz" | "rapidfuzz.fuzz" | "rapidfuzz.process" | "fuzzywuzzy" | "fuzzywuzzy.fuzz"
-        | "fuzzywuzzy.process" => "fuzzy".to_string(),
+        | "fuzzywuzzy.process" => Some("fuzzy".to_string()),
         // phonenumbers → phone global
-        "phonenumbers" => "phone".to_string(),
+        "phonenumbers" => Some("phone".to_string()),
         // email_validator → email global
-        "email_validator" => "email".to_string(),
+        "email_validator" => Some("email".to_string()),
         // pycountry → country global
-        "pycountry" => "country".to_string(),
+        "pycountry" => Some("country".to_string()),
         // dateutil → datetime global
-        "dateutil" | "dateutil.parser" | "python-dateutil" => "datetime".to_string(),
+        "dateutil" | "dateutil.parser" | "python-dateutil" => Some("datetime".to_string()),
         // PIL/Pillow → image global (all submodules map to the same sandbox module)
         "PIL" | "PIL.Image" | "PIL.ImageDraw" | "PIL.ImageFilter" | "PIL.ImageFont"
-        | "PIL.ImageEnhance" | "PIL.ImageOps" | "Pillow" => "image".to_string(),
+        | "PIL.ImageEnhance" | "PIL.ImageOps" | "Pillow" => Some("image".to_string()),
         // numpy_financial → fin global
-        "numpy_financial" => "fin".to_string(),
+        "numpy_financial" => Some("fin".to_string()),
         // yfinance → yfinance global
-        "yfinance" => "yfinance".to_string(),
+        "yfinance" => Some("yfinance".to_string()),
         // sec-edgar-downloader / edgar → edgar global
-        "sec_edgar_downloader" | "edgar" | "edgartools" => "edgar".to_string(),
+        "sec_edgar_downloader" | "edgar" | "edgartools" => Some("edgar".to_string()),
         // hashlib / hmac / jwt / uuid / cryptography → crypto global
-        "hashlib" | "hmac" | "jwt" | "uuid" | "cryptography" => "crypto".to_string(),
+        "hashlib" | "hmac" | "jwt" | "uuid" | "cryptography" => Some("crypto".to_string()),
         // re → regex global
-        "re" => "regex".to_string(),
+        "re" => Some("regex".to_string()),
         // bs4 / selectolax / html.parser → html global
-        "bs4" | "selectolax" | "html.parser" => "html".to_string(),
+        "bs4" | "selectolax" | "html.parser" => Some("html".to_string()),
         // urllib / urllib.parse → url global
-        "urllib" | "urllib.parse" => "url".to_string(),
+        "urllib" | "urllib.parse" => Some("url".to_string()),
         // qrcode → qr global
-        "qrcode" => "qr".to_string(),
+        "qrcode" => Some("qr".to_string()),
         // Passthrough modules are already sandbox globals — no require() needed
-        m if is_passthrough_module(m) => m.to_string(),
-        // Unknown modules fail immediately with a clear message
-        _ => format!(
-            r#"error("module '{}' is not available in the sandbox. Run help() to see available modules.")"#,
-            module
-        ),
+        m if is_passthrough_module(m) => Some(m.to_string()),
+        _ => None,
     }
+}
+
+pub(super) fn python_module_is_available(module: &str) -> bool {
+    python_module_global(module).is_some()
+}
+
+fn is_removed_grep_provider_module(module: &str) -> bool {
+    matches!(module, "fff" | "ripgrep")
+}
+
+fn unavailable_module_error(module: &str) -> String {
+    format!(
+        r#"error("module '{}' is not available in the sandbox. Run help() to see available modules.")"#,
+        module
+    )
+}
+
+/// Map a Python `import X` module name to its Luau equivalent expression.
+/// Known modules map to sandbox globals; unknown ones fail immediately.
+pub(super) fn python_module_to_luau(module: &str) -> String {
+    match python_module_global(module) {
+        Some(global) => global,
+        // Unknown modules fail immediately with a clear message
+        None => unavailable_module_error(module),
+    }
+}
+
+pub(super) fn python_from_import_is_available(module: &str, _attr: &str) -> bool {
+    !is_removed_grep_provider_module(module)
 }
 
 /// Map a Python `from X import Y` to its Luau equivalent expression.
 /// E.g., `from matplotlib import pyplot` → `plot`
 pub(super) fn python_from_import_to_luau(module: &str, attr: &str) -> String {
     match (module, attr) {
+        (module, _) if is_removed_grep_provider_module(module) => unavailable_module_error(module),
         ("matplotlib", "pyplot") => "plot".to_string(),
         // from lxml import etree → xml
         ("lxml", "etree") => "xml".to_string(),
