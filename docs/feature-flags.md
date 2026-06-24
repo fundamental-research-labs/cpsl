@@ -44,15 +44,15 @@ PDFium document backend.
 | `html` | `mod-html` | scraper |
 | `url` | `mod-url` | url, percent-encoding |
 | `qr` | `mod-qr` | qrcode, png |
-| `grep` | `mod-grep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
+| `ripgrep` | `mod-ripgrep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
 | `fff` | `mod-fff` | fff-grep, ignore, memchr, globset |
 | `doc` PDF engine | `pdfium-render` | pdfium-render; also enables `mod-doc` |
 
-`grep` and `fff` are alternative providers for the capsule-facing
-`fs.grep(...)` API. `mod-grep` uses regex pattern semantics and owns `fs.grep`
-whenever it is enabled. `mod-fff` uses literal pattern semantics and registers
-the same `fs.grep` API only in fff-only builds; it also exposes `fff.grep(...)`
-as an explicit fff-backed alias.
+`ripgrep` and `fff` are alternative providers for the capsule-facing
+`fs.grep(...)` API. `mod-ripgrep` uses regex pattern semantics and owns
+`fs.grep` whenever it is enabled. `mod-fff` uses literal pattern semantics and
+registers the same `fs.grep` API only in fff-only builds; it also exposes
+`fff.grep(...)` as an explicit fff-backed alias.
 
 ## Using Feature Flags Directly (Cargo)
 
@@ -81,7 +81,7 @@ and builds the dynamic library that Herm loads with `--cpsl`.
 
 | Profile | Command | Compiled CPSL modules |
 |---------|---------|-----------------------|
-| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `grep` |
+| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `ripgrep` |
 | All core features | `cargo build -p cpsl-ffi --release --features all` | every `cpsl-core/all` feature listed above |
 
 The output library path is platform-specific:
@@ -167,7 +167,7 @@ See `manifests/` for ready-to-use sandbox image manifests:
 
 `cpsl build` currently accepts the module registry exposed by the CLI:
 `fs`, `json`, `csv`, `yaml`, `xml`, `http`, `compress`, `doc`, `plot`, `numx`,
-`grep`, and `fff`. Use direct Cargo feature builds for core modules that are not yet
+`ripgrep`, and `fff`. Use direct Cargo feature builds for core modules that are not yet
 manifest-exposed.
 
 ## Downstream Consumers

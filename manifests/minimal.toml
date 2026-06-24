@@ -6,6 +6,6 @@ name = "minimal"
 
 [modules]
 fs = true
-grep = true
+ripgrep = true
 json = true
 csv = true

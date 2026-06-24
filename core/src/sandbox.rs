@@ -1458,16 +1458,16 @@ fn register_fs_search(
     fs: &mlua::Table,
     mounts: Arc<MountTable>,
 ) -> Result<(), mlua::Error> {
-    #[cfg(feature = "mod-grep")]
+    #[cfg(feature = "mod-ripgrep")]
     {
         crate::grep_api::register_fs_grep(
             lua,
             fs,
-            crate::grep_api::RegexGrepProvider::new(mounts.clone()),
+            crate::grep_api::RipgrepProvider::new(mounts.clone()),
         )?;
     }
 
-    #[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+    #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
     {
         crate::grep_api::register_fs_grep(
             lua,
@@ -1476,7 +1476,7 @@ fn register_fs_search(
         )?;
     }
 
-    #[cfg(not(any(feature = "mod-grep", feature = "mod-fff")))]
+    #[cfg(not(any(feature = "mod-ripgrep", feature = "mod-fff")))]
     {
         let _ = (lua, fs, mounts);
     }
@@ -1493,7 +1493,7 @@ fn register_fs_tree(
     // fs.tree(opts) -> string (ASCII directory tree)
     // Walks through the virtual mount layer (not the host filesystem directly),
     // so it sees all mounts, virtual dirs, and synthetic entries.
-    #[cfg(feature = "mod-grep")]
+    #[cfg(feature = "mod-ripgrep")]
     {
         let m = mounts.clone();
         fs.set(
@@ -1671,7 +1671,7 @@ fn register_fs_tree(
                         .collect();
                     entries.retain(|e| !e.is_dir || ancestor_paths.contains(&e.rel_path));
                 }
-                // Suppress unused variable warning when mod-grep is disabled
+                // Suppress unused variable warning when mod-ripgrep is disabled
                 let _ = &compiled_glob;
 
                 let dir_count = entries.iter().filter(|e| e.is_dir).count();
@@ -1781,7 +1781,7 @@ fn register_fs_tree(
         )?;
     }
 
-    #[cfg(not(feature = "mod-grep"))]
+    #[cfg(not(feature = "mod-ripgrep"))]
     {
         let _ = (lua, fs, mounts);
     }

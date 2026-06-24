@@ -384,25 +384,25 @@ pub(crate) fn arg_error(fn_name: &str, params: &[Param]) -> mlua::Error {
 }
 
 #[cfg(feature = "mod-fs")]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 const FS_GREP_DESCRIPTION: &str = "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
 
 #[cfg(feature = "mod-fs")]
-#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 const FS_GREP_DESCRIPTION: &str = "Search file contents by literal pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
 
 #[cfg(feature = "mod-fs")]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 const FS_GREP_PATTERN_DESCRIPTION: &str = "Regex pattern to search for";
 
 #[cfg(feature = "mod-fs")]
-#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
 const FS_GREP_PATTERN_DESCRIPTION: &str = "Literal pattern to search for";
 
 #[cfg(feature = "mod-fs")]
 #[cfg(any(
-    feature = "mod-grep",
-    all(feature = "mod-fff", not(feature = "mod-grep"))
+    feature = "mod-ripgrep",
+    all(feature = "mod-fff", not(feature = "mod-ripgrep"))
 ))]
 const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
@@ -539,7 +539,7 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
             returns: ReturnType::Void,
             example: Some(r#"fs.copy("/workspace/data.txt", "/artifacts/data.txt")"#),
         },
-        #[cfg(any(feature = "mod-grep", all(feature = "mod-fff", not(feature = "mod-grep"))))]
+        #[cfg(any(feature = "mod-ripgrep", all(feature = "mod-fff", not(feature = "mod-ripgrep"))))]
         FnDoc {
             name: "grep",
             description: FS_GREP_DESCRIPTION,
@@ -553,7 +553,7 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
             returns: ReturnType::Table,
             example: Some(r#"fs.grep({pattern="TODO", path="/workspace", glob="*.rs", max_count=20})"#),
         },
-        #[cfg(feature = "mod-grep")]
+        #[cfg(feature = "mod-ripgrep")]
         FnDoc {
             name: "tree",
             description: "Display a directory tree.",

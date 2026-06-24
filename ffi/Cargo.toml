@@ -15,7 +15,7 @@ herm-minimal = [
     "cpsl-core/mod-json",
     "cpsl-core/mod-csv",
     "cpsl-core/mod-http",
-    "cpsl-core/mod-grep",
+    "cpsl-core/mod-ripgrep",
 ]
 pdfium-render = ["cpsl-core/pdfium-render"]
 all = ["cpsl-core/all", "pdfium-render"]

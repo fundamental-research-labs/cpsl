@@ -7,7 +7,7 @@ name = "full"
 
 [modules]
 fs = true
-grep = true
+ripgrep = true
 json = true
 csv = true
 yaml = true

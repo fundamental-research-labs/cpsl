@@ -26,9 +26,9 @@ pub static MODULE_REGISTRY: &[ModuleManifest] = &[
         cargo_feature: "mod-fs",
     },
     ModuleManifest {
-        name: "grep",
-        description: "Regex provider for fs.grep; also includes fs.tree",
-        cargo_feature: "mod-grep",
+        name: "ripgrep",
+        description: "Ripgrep-backed regex provider for fs.grep; also includes fs.tree",
+        cargo_feature: "mod-ripgrep",
     },
     ModuleManifest {
         name: "fff",
@@ -287,6 +287,19 @@ foobar = true
     }
 
     #[test]
+    fn reject_old_grep_module_name() {
+        let toml = r#"
+[sandbox]
+name = "bad"
+
+[modules]
+grep = true
+"#;
+        let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+        assert!(err.contains("unknown module 'grep'"), "got: {}", err);
+    }
+
+    #[test]
     fn to_cargo_features_only_enabled() {
         let toml = r#"
 [sandbox]
@@ -297,12 +310,41 @@ json = true
 csv = false
 yaml = true
 fs = true
-grep = true
+ripgrep = true
 "#;
         let config = SandboxConfig::from_str(toml, "test".into()).unwrap();
         let features = config.to_cargo_features();
         // BTreeMap is sorted, so features come out in alphabetical order
-        assert_eq!(features, vec!["mod-fs", "mod-grep", "mod-json", "mod-yaml"]);
+        assert_eq!(
+            features,
+            vec!["mod-fs", "mod-json", "mod-ripgrep", "mod-yaml"]
+        );
+    }
+
+    #[test]
+    fn sample_manifests_use_ripgrep_feature() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("cli crate should be inside workspace");
+
+        for manifest in ["minimal.toml", "all.toml", "full.toml"] {
+            let path = workspace_root.join("manifests").join(manifest);
+            let config = SandboxConfig::from_file(&path).unwrap();
+            let features = config.to_cargo_features();
+
+            assert!(
+                features.iter().any(|feature| feature == "mod-ripgrep"),
+                "{} mapped to {:?}",
+                manifest,
+                features
+            );
+            assert!(
+                features.iter().all(|feature| feature != "mod-grep"),
+                "{} mapped to removed feature {:?}",
+                manifest,
+                features
+            );
+        }
     }
 
     #[test]

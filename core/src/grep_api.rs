@@ -3,7 +3,7 @@
 use crate::sandbox::{validate_args, Param};
 use crate::{MountError, MountTable};
 use mlua::{Lua, MultiValue, Value};
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,7 +39,7 @@ pub(crate) trait GrepProvider: Clone + Send + Sync + 'static {
 #[derive(Debug)]
 pub(crate) enum GrepError {
     InvalidGlob(String),
-    #[cfg(feature = "mod-grep")]
+    #[cfg(feature = "mod-ripgrep")]
     InvalidPattern(String),
     #[cfg(feature = "mod-fff")]
     Usage(String),
@@ -54,7 +54,7 @@ impl GrepError {
             GrepError::InvalidGlob(message) => {
                 mlua::Error::external(format!("{fn_name}: invalid glob: {message}"))
             }
-            #[cfg(feature = "mod-grep")]
+            #[cfg(feature = "mod-ripgrep")]
             GrepError::InvalidPattern(message) => {
                 mlua::Error::external(format!("{fn_name}: invalid pattern: {message}"))
             }
@@ -289,21 +289,21 @@ fn compile_glob(pattern: &str) -> Result<globset::GlobSet, GrepError> {
         .map_err(|error| GrepError::InvalidGlob(error.to_string()))
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[derive(Clone)]
-pub(crate) struct RegexGrepProvider {
+pub(crate) struct RipgrepProvider {
     mounts: Arc<MountTable>,
 }
 
-#[cfg(feature = "mod-grep")]
-impl RegexGrepProvider {
+#[cfg(feature = "mod-ripgrep")]
+impl RipgrepProvider {
     pub(crate) fn new(mounts: Arc<MountTable>) -> Self {
         Self { mounts }
     }
 }
 
-#[cfg(feature = "mod-grep")]
-impl GrepProvider for RegexGrepProvider {
+#[cfg(feature = "mod-ripgrep")]
+impl GrepProvider for RipgrepProvider {
     fn search(&self, request: &GrepRequest) -> Result<Vec<GrepResult>, GrepError> {
         let matcher = grep_regex::RegexMatcher::new(&request.pattern)
             .map_err(|error| GrepError::InvalidPattern(error.to_string()))?;
@@ -396,14 +396,14 @@ pub(crate) struct FffGrepProvider {
 #[cfg(feature = "mod-fff")]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FffSearchMode {
-    #[cfg(not(feature = "mod-grep"))]
+    #[cfg(not(feature = "mod-ripgrep"))]
     Utf8Text,
     Bytes,
 }
 
 #[cfg(feature = "mod-fff")]
 impl FffGrepProvider {
-    #[cfg(not(feature = "mod-grep"))]
+    #[cfg(not(feature = "mod-ripgrep"))]
     pub(crate) fn fs_compatible(mounts: Arc<MountTable>) -> Self {
         Self {
             mounts,
@@ -595,7 +595,7 @@ impl fff_grep::Sink for CollectSink {
         let match_bytes = line_bytes.get((column - 1)..(column - 1 + self.needle.len()));
 
         let (line, match_text) = match self.search_mode {
-            #[cfg(not(feature = "mod-grep"))]
+            #[cfg(not(feature = "mod-ripgrep"))]
             FffSearchMode::Utf8Text => {
                 let line = match std::str::from_utf8(line_bytes) {
                     Ok(line) => line.to_string(),

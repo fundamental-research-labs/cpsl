@@ -6,12 +6,12 @@ Make `fs.grep` the shared capsule-facing API for both grep-like providers.
 Do not add `grep.grep`, do not change shell `grep`, and do not add generic
 module name/provider mapping in this cleanup.
 
-`mod-grep` remains the default regex provider. `mod-fff` fills the same
+`mod-ripgrep` remains the default regex provider. `mod-fff` fills the same
 `fs.grep` API only in fff-only capsules.
 
 ## Key Changes
 
-- Keep existing `mod-grep` behavior unchanged: when enabled, it owns `fs.grep`.
+- Keep existing `mod-ripgrep` behavior unchanged: when enabled, it owns `fs.grep`.
 - Introduce a small shared grep API layer:
   - Typed request/result structs for the common API, such as `GrepRequest`,
     `GrepMatch`, and a files-only result shape.
@@ -23,7 +23,7 @@ module name/provider mapping in this cleanup.
 - Add a `mod-fff` fallback registration only under:
 
   ```rust
-  #[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+  #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
   ```
 
 - Keep `fff.grep` as an explicit fff-backed alias; do not make it the
@@ -34,22 +34,22 @@ module name/provider mapping in this cleanup.
   `match_text`. If `fff.grep` keeps extra `column`, callers should not rely on
   that through `fs.grep`.
 - Split `FS_DOC` grep metadata so `fs.help()` shows grep docs for both
-  `mod-grep` and fff-only builds, with regex vs literal wording by provider.
+  `mod-ripgrep` and fff-only builds, with regex vs literal wording by provider.
 
 ## Docs And Config
 
-- Update CLI/module docs to describe `grep` and `fff` as alternative search
+- Update CLI/module docs to describe `ripgrep` and `fff` as alternative search
   providers for `fs.grep`.
 - Keep current default/`all` feature sets unchanged; when both are compiled,
-  `mod-grep` wins and `fff.grep` remains available explicitly.
-- Document that pattern semantics differ by provider: `mod-grep` is regex,
+  `mod-ripgrep` wins and `fff.grep` remains available explicitly.
+- Document that pattern semantics differ by provider: `mod-ripgrep` is regex,
   `mod-fff` is literal.
 - Leave configurable name/provider mapping as a future extension, not part of
   this PR.
 
 ## Test Plan
 
-- Existing `mod-grep` `fs.grep` tests stay green.
+- Existing `mod-ripgrep` `fs.grep` tests stay green.
 - Add focused Rust-level tests around the shared API layer where useful, so
   both providers are exercised through the same request/result contract rather
   than separate Lua glue.

@@ -12,7 +12,7 @@ all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
        "mod-http", "mod-compress", "mod-doc", "mod-plot", "mod-numpy",
        "mod-random", "mod-fuzzy", "mod-phone", "mod-email", "mod-country",
        "mod-datetime", "mod-image", "mod-base64", "mod-fin", "mod-yfinance", "mod-edgar",
-       "mod-crypto", "mod-regex", "mod-html", "mod-url", "mod-qr", "mod-grep",
+       "mod-crypto", "mod-regex", "mod-html", "mod-url", "mod-qr", "mod-ripgrep",
        "mod-fff", "pdfium-render"]
 
 mod-base64 = []                                     # no extra deps — pure computation
@@ -41,7 +41,7 @@ mod-regex = ["dep:regex"]
 mod-html = ["dep:scraper"]
 mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
-mod-grep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
+mod-ripgrep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
 mod-fff = ["mod-fs", "dep:fff-grep", "dep:ignore", "dep:memchr", "dep:globset"]
 pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
 
@@ -140,7 +140,7 @@ percent-encoding = { version = "2", optional = true }
 qrcode = { version = "0.14", optional = true, default-features = false, features = ["svg"] }
 png = { version = "0.18", optional = true }
 
-# mod-grep
+# mod-ripgrep
 grep-regex = { version = "0.1", optional = true }
 grep-searcher = { version = "0.1", optional = true }
 grep-matcher = { version = "0.1", optional = true }
