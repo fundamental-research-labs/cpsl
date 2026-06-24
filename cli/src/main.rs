@@ -577,7 +577,7 @@ fn cmd_modules() {
         println!("  {:<12} {}", m.name, m.description);
     }
     println!(
-        "  {:<12} Content search via fs.grep; providers: ripgrep (regex), fff (literal); requires fs",
+        "  {:<12} Content search via fs.grep; providers: ripgrep, fff; modes: regex (default), plain; requires fs",
         "grep"
     );
     println!("\nUse these names in [modules] section of cpsl.toml:");

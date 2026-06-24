@@ -51,14 +51,17 @@ explicitly:
 ```toml
 [modules]
 fs = true
-grep = { provider = "ripgrep" } # regex semantics
+grep = { provider = "ripgrep" }
 ```
 
 ```toml
 [modules]
 fs = true
-grep = { provider = "fff" } # literal semantics
+grep = { provider = "fff" }
 ```
+
+`fs.grep(...)` supports `mode = "regex"` and `mode = "plain"` with `regex` as
+the default for both providers.
 
 `grep = true`, `grep = false`, missing providers, unknown providers, and
 standalone `ripgrep = true` or `fff = true` entries are invalid in capsule

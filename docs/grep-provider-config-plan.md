@@ -26,10 +26,10 @@ No legacy boolean or provider-module inclusion behavior is required.
 
 ## Public Config Contract
 
-- `grep = { provider = "fff" }` compiles the fff literal provider and exposes
+- `grep = { provider = "fff" }` compiles the fff provider and exposes the common
+  grep API as `fs.grep(...)`.
+- `grep = { provider = "ripgrep" }` compiles the ripgrep provider and exposes
   the common grep API as `fs.grep(...)`.
-- `grep = { provider = "ripgrep" }` compiles the ripgrep/regex provider and
-  exposes the common grep API as `fs.grep(...)`.
 - `grep = true` is invalid.
 - Standalone provider entries such as `fff = true` or `ripgrep = true` are not
   valid ways to include grep functionality in a capsule.
@@ -77,5 +77,5 @@ No legacy boolean or provider-module inclusion behavior is required.
 - Breaking existing manifests is acceptable for this follow-up.
 - Provider-specific globals such as `fff.grep` are not required for capsule
   inclusion once provider config is implemented.
-- Pattern semantics remain provider-specific unless a later plan adds exact
-  regex/literal normalization.
+- Superseded: `fs.grep(...)` now accepts `mode = "regex"` and `mode = "plain"`;
+  `regex` is the default for both providers.

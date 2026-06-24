@@ -384,20 +384,11 @@ pub(crate) fn arg_error(fn_name: &str, params: &[Param]) -> mlua::Error {
 }
 
 #[cfg(feature = "mod-fs")]
-#[cfg(feature = "mod-ripgrep")]
-const FS_GREP_DESCRIPTION: &str = "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
-
-#[cfg(feature = "mod-fs")]
-#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
-const FS_GREP_DESCRIPTION: &str = "Search file contents by literal pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
-
-#[cfg(feature = "mod-fs")]
-#[cfg(feature = "mod-ripgrep")]
-const FS_GREP_PATTERN_DESCRIPTION: &str = "Regex pattern to search for";
-
-#[cfg(feature = "mod-fs")]
-#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
-const FS_GREP_PATTERN_DESCRIPTION: &str = "Literal pattern to search for";
+#[cfg(any(
+    feature = "mod-ripgrep",
+    all(feature = "mod-fff", not(feature = "mod-ripgrep"))
+))]
+const FS_GREP_DESCRIPTION: &str = "Search file contents by regex or plain pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
 
 #[cfg(feature = "mod-fs")]
 #[cfg(any(
@@ -409,13 +400,19 @@ const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
         name: "pattern",
         typ: "string",
         required: true,
-        description: FS_GREP_PATTERN_DESCRIPTION,
+        description: "Pattern to search for",
     },
     FieldDoc {
         name: "path",
         typ: "string",
         required: true,
         description: "File or directory to search",
+    },
+    FieldDoc {
+        name: "mode",
+        typ: "string",
+        required: false,
+        description: "Search mode: \"regex\" (default) or \"plain\"",
     },
     FieldDoc {
         name: "glob",

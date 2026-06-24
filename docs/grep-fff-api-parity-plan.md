@@ -19,8 +19,7 @@ as `fff.grep(...)` from capsule builds. The shared API is `fs.grep(...)`.
 - Introduce a small shared grep API layer:
   - Typed request/result structs for the common API, such as `GrepRequest`,
     `GrepMatch`, and a files-only result shape.
-  - A `GrepProvider` trait implemented by the regex provider and the fff
-    literal provider.
+  - A `GrepProvider` trait implemented by the ripgrep and fff providers.
   - One shared Lua registration helper for `fs.grep` so argument parsing,
     accepted option names, return table shape, and error style cannot drift
     between providers.
@@ -33,11 +32,11 @@ as `fff.grep(...)` from capsule builds. The shared API is `fs.grep(...)`.
 - Keep the compatibility target as `fs.grep(...)`; later provider-config work
   removes provider-specific globals from capsule builds.
 - Make fff-backed `fs.grep` support the current common `fs.grep` inputs:
-  `pattern`, `path`, `glob`, `max_count`, `files_only`.
+  `pattern`, `path`, `mode`, `glob`, `max_count`, `files_only`.
 - Keep the common `fs.grep` return shape: `file`, `line_number`, `line`,
   `match_text`.
 - Split `FS_DOC` grep metadata so `fs.help()` shows grep docs for both
-  `mod-ripgrep` and fff-only builds, with regex vs literal wording by provider.
+  `mod-ripgrep` and fff-only builds.
 
 ## Docs And Config
 
@@ -45,8 +44,8 @@ as `fff.grep(...)` from capsule builds. The shared API is `fs.grep(...)`.
   providers for `fs.grep`.
 - Keep current default/`all` feature sets unchanged; when both are compiled,
   `mod-ripgrep` wins for `fs.grep(...)`.
-- Document that pattern semantics differ by provider: `mod-ripgrep` is regex,
-  `mod-fff` is literal.
+- Superseded: `fs.grep(...)` now accepts `mode = "regex"` and `mode = "plain"`;
+  `regex` is the default for both providers.
 - Leave configurable name/provider mapping as a future extension, not part of
   this PR.
 
@@ -71,6 +70,6 @@ as `fff.grep(...)` from capsule builds. The shared API is `fs.grep(...)`.
 
 - "Drop-in replacement" means the capsule API call site is stable as
   `fs.grep(...)`.
-- Exact pattern semantics parity is out of scope for this cleanup; regex vs
-  literal is documented.
+- Superseded: exact regex/plain semantics are now part of the common
+  `fs.grep(...)` contract.
 - `fs.tree` is not part of the grep/fff parity work.

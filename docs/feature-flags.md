@@ -45,15 +45,16 @@ PDFium document backend.
 | `url` | `mod-url` | url, percent-encoding |
 | `qr` | `mod-qr` | qrcode, png |
 | `grep` provider `ripgrep` | `mod-ripgrep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
-| `grep` provider `fff` | `mod-fff` | fff-grep, ignore, memchr, globset |
+| `grep` provider `fff` | `mod-fff` | fff-grep, grep-regex, grep-matcher, ignore, memchr, globset |
 | `doc` PDF engine | `pdfium-render` | pdfium-render; also enables `mod-doc` |
 
 `ripgrep` and `fff` are internal providers for the capsule-facing
 `fs.grep(...)` API. In `cpsl.toml`, select exactly one with
 `grep = { provider = "ripgrep" }` or `grep = { provider = "fff" }` and include
-`fs = true`. `mod-ripgrep` uses regex pattern semantics. `mod-fff` uses literal
-pattern semantics. Capsule manifests expose search through `fs.grep(...)`; the
-provider names are configuration details, not standalone runtime modules.
+`fs = true`. `fs.grep(...)` accepts `mode = "regex"` and `mode = "plain"`;
+`regex` is the default for both providers. Capsule manifests expose search
+through `fs.grep(...)`; the provider names are configuration details, not
+standalone runtime modules.
 
 ## Using Feature Flags Directly (Cargo)
 

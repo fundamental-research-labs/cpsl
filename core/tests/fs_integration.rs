@@ -568,6 +568,42 @@ fn test_grep_no_matches_returns_empty_table() {
 
 #[cfg(feature = "mod-ripgrep")]
 #[test]
+fn test_grep_plain_mode_treats_pattern_literally() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", mode="plain"})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:TODO|DONE literal:TODO|DONE");
+}
+
+#[cfg(feature = "mod-ripgrep")]
+#[test]
+fn test_grep_invalid_mode_fails() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "TODO\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result =
+        sandbox.exec(r#"fs.grep({pattern="TODO", path="/data/status.txt", mode="fuzzy"})"#);
+    assert!(result.is_err(), "invalid mode should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unsupported mode 'fuzzy'"),
+        "error should mention unsupported mode, got: {}",
+        err
+    );
+}
+
+#[cfg(feature = "mod-ripgrep")]
+#[test]
 fn test_grep_file_paths_are_virtual() {
     let dir = TempDir::new().unwrap();
     fs::create_dir_all(dir.path().join("sub")).unwrap();
@@ -650,6 +686,77 @@ fn test_fff_only_fs_grep_recursive_directory() {
         )
         .unwrap();
     assert_eq!(result, "2");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_default_regex_mode() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", max_count=1})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:DONE:DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_plain_mode_treats_pattern_literally() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", mode="plain"})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:TODO|DONE literal:TODO|DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_invalid_pattern() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("file.txt"), "content\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox.exec(r#"fs.grep({pattern="[invalid", path="/data/file.txt"})"#);
+    assert!(result.is_err(), "invalid regex should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("invalid pattern"),
+        "error should mention invalid pattern, got: {}",
+        err
+    );
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_invalid_mode_fails() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "TODO\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result =
+        sandbox.exec(r#"fs.grep({pattern="TODO", path="/data/status.txt", mode="fuzzy"})"#);
+    assert!(result.is_err(), "invalid mode should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unsupported mode 'fuzzy'"),
+        "error should mention unsupported mode, got: {}",
+        err
+    );
 }
 
 #[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
@@ -765,7 +872,8 @@ fn test_fff_only_fs_help_includes_grep() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("fs.help()").unwrap();
     assert!(result.contains("fs.grep"), "got: {}", result);
-    assert!(result.contains("Literal pattern"), "got: {}", result);
+    assert!(result.contains("regex"), "got: {}", result);
+    assert!(result.contains("plain"), "got: {}", result);
 }
 
 // --- fs.tree tests ---
