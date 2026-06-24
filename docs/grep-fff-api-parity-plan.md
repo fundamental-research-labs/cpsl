@@ -12,6 +12,14 @@ module name/provider mapping in this cleanup.
 ## Key Changes
 
 - Keep existing `mod-grep` behavior unchanged: when enabled, it owns `fs.grep`.
+- Introduce a small shared grep API layer:
+  - Typed request/result structs for the common API, such as `GrepRequest`,
+    `GrepMatch`, and a files-only result shape.
+  - A `GrepProvider` trait implemented by the regex provider and the fff
+    literal provider.
+  - One shared Lua registration helper for `fs.grep` so argument parsing,
+    accepted option names, return table shape, and error style cannot drift
+    between providers.
 - Add a `mod-fff` fallback registration only under:
 
   ```rust
@@ -42,6 +50,9 @@ module name/provider mapping in this cleanup.
 ## Test Plan
 
 - Existing `mod-grep` `fs.grep` tests stay green.
+- Add focused Rust-level tests around the shared API layer where useful, so
+  both providers are exercised through the same request/result contract rather
+  than separate Lua glue.
 - Add fff-only integration tests with
   `--no-default-features --features mod-fs,mod-fff` covering:
   - `fs.grep` exists and returns matches.
