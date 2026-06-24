@@ -384,6 +384,57 @@ pub(crate) fn arg_error(fn_name: &str, params: &[Param]) -> mlua::Error {
 }
 
 #[cfg(feature = "mod-fs")]
+#[cfg(any(
+    feature = "mod-ripgrep",
+    all(feature = "mod-fff", not(feature = "mod-ripgrep"))
+))]
+const FS_GREP_DESCRIPTION: &str = "Search file contents by regex or plain pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
+
+#[cfg(feature = "mod-fs")]
+#[cfg(any(
+    feature = "mod-ripgrep",
+    all(feature = "mod-fff", not(feature = "mod-ripgrep"))
+))]
+const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "pattern",
+        typ: "string",
+        required: true,
+        description: "Pattern to search for",
+    },
+    FieldDoc {
+        name: "path",
+        typ: "string",
+        required: true,
+        description: "File or directory to search",
+    },
+    FieldDoc {
+        name: "mode",
+        typ: "string",
+        required: false,
+        description: "Search mode: \"regex\" (default) or \"plain\"",
+    },
+    FieldDoc {
+        name: "glob",
+        typ: "string",
+        required: false,
+        description: "Glob filter for file names (e.g. \"*.rs\")",
+    },
+    FieldDoc {
+        name: "max_count",
+        typ: "number",
+        required: false,
+        description: "Maximum number of matches to return",
+    },
+    FieldDoc {
+        name: "files_only",
+        typ: "boolean",
+        required: false,
+        description: "Return only unique file paths (like rg -l)",
+    },
+];
+
+#[cfg(feature = "mod-fs")]
 pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     name: "fs",
     summary: "sandboxed filesystem (read, write, list, mkdir, copy, grep, tree, ...)",
@@ -485,27 +536,21 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
             returns: ReturnType::Void,
             example: Some(r#"fs.copy("/workspace/data.txt", "/artifacts/data.txt")"#),
         },
-        #[cfg(feature = "mod-grep")]
+        #[cfg(any(feature = "mod-ripgrep", all(feature = "mod-fff", not(feature = "mod-ripgrep"))))]
         FnDoc {
             name: "grep",
-            description: "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.",
+            description: FS_GREP_DESCRIPTION,
             params: &[Param {
                 name: "opts",
                 short: None,
                 typ: ParamType::Table,
                 required: true,
-                fields: Some(&[
-                    FieldDoc { name: "pattern", typ: "string", required: true, description: "Regex pattern to search for" },
-                    FieldDoc { name: "path", typ: "string", required: true, description: "File or directory to search" },
-                    FieldDoc { name: "glob", typ: "string", required: false, description: "Glob filter for file names (e.g. \"*.rs\")" },
-                    FieldDoc { name: "max_count", typ: "number", required: false, description: "Maximum number of matches to return" },
-                    FieldDoc { name: "files_only", typ: "boolean", required: false, description: "Return only unique file paths (like rg -l)" },
-                ]),
+                fields: Some(FS_GREP_OPTS_FIELDS),
             }],
             returns: ReturnType::Table,
             example: Some(r#"fs.grep({pattern="TODO", path="/workspace", glob="*.rs", max_count=20})"#),
         },
-        #[cfg(feature = "mod-grep")]
+        #[cfg(feature = "mod-ripgrep")]
         FnDoc {
             name: "tree",
             description: "Display a directory tree.",

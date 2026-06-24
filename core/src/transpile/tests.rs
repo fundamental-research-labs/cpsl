@@ -100,6 +100,44 @@ fn kwargs_positional_and_multiple_kwargs() {
 }
 
 #[test]
+fn import_removed_fff_provider_uses_unavailable_module_error() {
+    let result = transpile_py("import fff\nfff.grep(pattern='TODO', path='/workspace')");
+    assert!(
+        result.contains(r#"local fff = error("module 'fff' is not available in the sandbox."#),
+        "got: {}",
+        result
+    );
+    assert!(
+        !result.contains("fff.grep({"),
+        "provider globals should not be treated as passthrough modules: {}",
+        result
+    );
+}
+
+#[test]
+fn from_import_removed_grep_providers_use_unavailable_module_error() {
+    for provider in ["fff", "ripgrep"] {
+        let result = transpile_py(&format!(
+            "from {provider} import grep\ngrep(pattern='TODO', path='/workspace')"
+        ));
+        assert!(
+            result.contains(&format!(
+                r#"local grep = error("module '{provider}' is not available in the sandbox."#
+            )),
+            "{} got: {}",
+            provider,
+            result
+        );
+        assert!(
+            !result.contains(&format!(r#"require("{provider}")"#)),
+            "{} should not fall back to require: {}",
+            provider,
+            result
+        );
+    }
+}
+
+#[test]
 fn fstring_escapes_newline() {
     // f"line {i}\n" should escape the newline in the Luau format string
     let result = transpile_py(r#"x = f"line {i}\n""#);

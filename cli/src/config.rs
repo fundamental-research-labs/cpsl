@@ -17,18 +17,16 @@ pub struct ModuleManifest {
     pub cargo_feature: &'static str,
 }
 
-/// The canonical list of all built-in modules. Every other part of the system
-/// (config validation, `cpsl modules`, feature flag translation) reads from here.
+const GREP_MODULE: &str = "grep";
+const GREP_PROVIDERS: &[&str] = &["fff", "ripgrep"];
+
+/// The canonical list of built-in boolean modules. Provider-backed capabilities
+/// such as `grep` are validated and translated separately.
 pub static MODULE_REGISTRY: &[ModuleManifest] = &[
     ModuleManifest {
         name: "fs",
         description: "Filesystem operations (read, write, list, mkdir, etc.)",
         cargo_feature: "mod-fs",
-    },
-    ModuleManifest {
-        name: "grep",
-        description: "Recursive content search via fs.grep and fs.tree",
-        cargo_feature: "mod-grep",
     },
     ModuleManifest {
         name: "json",
@@ -77,9 +75,11 @@ pub static MODULE_REGISTRY: &[ModuleManifest] = &[
     },
 ];
 
-/// Returns the list of valid module names, derived from `MODULE_REGISTRY`.
+/// Returns valid public module/capability names accepted in `cpsl.toml`.
 pub fn valid_module_names() -> Vec<&'static str> {
-    MODULE_REGISTRY.iter().map(|m| m.name).collect()
+    let mut names: Vec<&'static str> = MODULE_REGISTRY.iter().map(|m| m.name).collect();
+    names.push(GREP_MODULE);
+    names
 }
 
 /// Look up a module manifest by name.
@@ -87,31 +87,62 @@ pub fn find_module(name: &str) -> Option<&'static ModuleManifest> {
     MODULE_REGISTRY.iter().find(|m| m.name == name)
 }
 
-/// A module entry in `cpsl.toml`. Supports two forms:
+fn grep_provider_feature(provider: &str) -> Option<&'static str> {
+    match provider {
+        "fff" => Some("mod-fff"),
+        "ripgrep" => Some("mod-ripgrep"),
+        _ => None,
+    }
+}
+
+fn is_grep_provider_module(name: &str) -> bool {
+    matches!(name, "fff" | "ripgrep")
+}
+
+/// Extra configuration for module entries that use table syntax.
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct ModuleConfig {
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, toml::Value>,
+}
+
+/// A module entry in `cpsl.toml`. Supports these forms:
 ///
 /// - `json = true` / `json = false` — built-in module, enabled or disabled
+/// - `grep = { provider = "ripgrep" }` — grep capability provider selection
 /// - `json = { source = "github.com/cpsl/mod-json" }` — external module (future)
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ModuleEntry {
     /// Simple boolean: `json = true`
     Enabled(bool),
-    /// Extended form with source: `json = { source = "..." }`
-    External { source: String },
+    /// Extended table form for grep providers and future external modules.
+    Config(ModuleConfig),
 }
 
 impl ModuleEntry {
-    /// Whether this module is enabled. External modules are always considered enabled.
+    /// Whether this module is enabled. Table configs are always considered enabled.
     pub fn is_enabled(&self) -> bool {
         match self {
             ModuleEntry::Enabled(b) => *b,
-            ModuleEntry::External { .. } => true,
+            ModuleEntry::Config(_) => true,
         }
     }
 
     /// Whether this module references an external source.
     pub fn is_external(&self) -> bool {
-        matches!(self, ModuleEntry::External { .. })
+        matches!(self, ModuleEntry::Config(config) if config.source.is_some())
+    }
+
+    fn grep_provider(&self) -> Option<&str> {
+        match self {
+            ModuleEntry::Config(config) => config.provider.as_deref(),
+            ModuleEntry::Enabled(_) => None,
+        }
     }
 }
 
@@ -119,7 +150,17 @@ impl fmt::Display for ModuleEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ModuleEntry::Enabled(b) => write!(f, "{}", b),
-            ModuleEntry::External { source } => write!(f, "{{ source = \"{}\" }}", source),
+            ModuleEntry::Config(config) => {
+                let mut fields = Vec::new();
+                if let Some(source) = &config.source {
+                    fields.push(format!("source = \"{}\"", source));
+                }
+                if let Some(provider) = &config.provider {
+                    fields.push(format!("provider = \"{}\"", provider));
+                }
+                fields.extend(config.extra.keys().map(|key| format!("{} = ...", key)));
+                write!(f, "{{ {} }}", fields.join(", "))
+            }
         }
     }
 }
@@ -181,6 +222,17 @@ impl SandboxConfig {
     fn validate(&self) -> Result<(), String> {
         let valid_names = valid_module_names();
         for (name, entry) in &self.modules {
+            if name == GREP_MODULE {
+                self.validate_grep_entry(entry)?;
+                continue;
+            }
+            if is_grep_provider_module(name) {
+                return Err(format!(
+                    "standalone grep provider module '{}' is not supported — use \
+                     grep = {{ provider = \"{}\" }} with fs = true",
+                    name, name
+                ));
+            }
             if entry.is_external() {
                 return Err(format!(
                     "external modules not yet supported — use built-in modules \
@@ -188,15 +240,65 @@ impl SandboxConfig {
                     name
                 ));
             }
-            if !valid_names.contains(&name.as_str()) {
+            if find_module(name).is_none() {
                 return Err(format!(
                     "unknown module '{}' — valid modules: {}",
                     name,
                     valid_names.join(", ")
                 ));
             }
+            if matches!(entry, ModuleEntry::Config(_)) {
+                return Err(format!(
+                    "module '{}' must be a boolean entry; only grep supports provider config",
+                    name
+                ));
+            }
         }
         Ok(())
+    }
+
+    fn validate_grep_entry(&self, entry: &ModuleEntry) -> Result<(), String> {
+        let config = match entry {
+            ModuleEntry::Enabled(_) => {
+                return Err(
+                    "module 'grep' must be configured as grep = { provider = \"fff\" } \
+                     or grep = { provider = \"ripgrep\" }; boolean grep entries are not supported"
+                        .to_string(),
+                );
+            }
+            ModuleEntry::Config(config) => config,
+        };
+
+        let provider = config.provider.as_deref().ok_or_else(|| {
+            "module 'grep' requires provider = \"fff\" or provider = \"ripgrep\"".to_string()
+        })?;
+
+        if config.source.is_some() || !config.extra.is_empty() {
+            return Err(
+                "module 'grep' only supports a provider field; supported providers: fff, ripgrep"
+                    .to_string(),
+            );
+        }
+
+        if grep_provider_feature(provider).is_none() {
+            return Err(format!(
+                "unknown grep provider '{}' — supported providers: {}",
+                provider,
+                GREP_PROVIDERS.join(", ")
+            ));
+        }
+
+        if !self.module_enabled("fs") {
+            return Err(
+                "module 'grep' requires fs = true because the public API is fs.grep".to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    fn module_enabled(&self, name: &str) -> bool {
+        matches!(self.modules.get(name), Some(ModuleEntry::Enabled(true)))
     }
 
     /// Translate the modules map into Cargo feature flag names.
@@ -207,7 +309,30 @@ impl SandboxConfig {
         self.modules
             .iter()
             .filter(|(_, entry)| entry.is_enabled() && !entry.is_external())
-            .filter_map(|(name, _)| find_module(name).map(|m| m.cargo_feature.to_string()))
+            .filter_map(|(name, entry)| {
+                if name == GREP_MODULE {
+                    return entry
+                        .grep_provider()
+                        .and_then(grep_provider_feature)
+                        .map(str::to_string);
+                }
+                find_module(name).map(|m| m.cargo_feature.to_string())
+            })
+            .collect()
+    }
+
+    /// Return user-facing module/capability labels for CLI summaries.
+    pub fn module_display_names(&self) -> Vec<String> {
+        self.modules
+            .iter()
+            .filter_map(|(name, entry)| match entry {
+                ModuleEntry::Enabled(true) => Some(name.clone()),
+                ModuleEntry::Config(config) if name == GREP_MODULE => config
+                    .provider
+                    .as_ref()
+                    .map(|provider| format!("grep({provider})")),
+                _ => None,
+            })
             .collect()
     }
 
@@ -282,6 +407,119 @@ foobar = true
     }
 
     #[test]
+    fn reject_old_grep_module_name() {
+        let toml = r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = true
+grep = true
+"#;
+        let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+        assert!(
+            err.contains("boolean grep entries are not supported"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn reject_grep_false() {
+        let toml = r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = true
+grep = false
+"#;
+        let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+        assert!(
+            err.contains("boolean grep entries are not supported"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn reject_grep_missing_provider() {
+        let toml = r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = true
+grep = {}
+"#;
+        let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+        assert!(err.contains("requires provider"), "got: {}", err);
+    }
+
+    #[test]
+    fn reject_grep_unknown_provider() {
+        let toml = r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = true
+grep = { provider = "ag" }
+"#;
+        let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+        assert!(err.contains("unknown grep provider 'ag'"), "got: {}", err);
+        assert!(err.contains("fff, ripgrep"), "got: {}", err);
+    }
+
+    #[test]
+    fn reject_grep_without_fs() {
+        for toml in [
+            r#"
+[sandbox]
+name = "bad"
+
+[modules]
+grep = { provider = "ripgrep" }
+"#,
+            r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = false
+grep = { provider = "ripgrep" }
+"#,
+        ] {
+            let err = SandboxConfig::from_str(toml, "test".into()).unwrap_err();
+            assert!(err.contains("requires fs = true"), "got: {}", err);
+        }
+    }
+
+    #[test]
+    fn reject_standalone_grep_provider_modules() {
+        for provider in ["fff", "ripgrep"] {
+            let toml = format!(
+                r#"
+[sandbox]
+name = "bad"
+
+[modules]
+fs = true
+{} = true
+"#,
+                provider
+            );
+            let err = SandboxConfig::from_str(&toml, "test".into()).unwrap_err();
+            assert!(
+                err.contains("standalone grep provider module"),
+                "{} got: {}",
+                provider,
+                err
+            );
+        }
+    }
+
+    #[test]
     fn to_cargo_features_only_enabled() {
         let toml = r#"
 [sandbox]
@@ -292,12 +530,108 @@ json = true
 csv = false
 yaml = true
 fs = true
-grep = true
+grep = { provider = "ripgrep" }
 "#;
         let config = SandboxConfig::from_str(toml, "test".into()).unwrap();
         let features = config.to_cargo_features();
-        // BTreeMap is sorted, so features come out in alphabetical order
-        assert_eq!(features, vec!["mod-fs", "mod-grep", "mod-json", "mod-yaml"]);
+        // BTreeMap sorts config keys, so grep's provider feature follows fs.
+        assert_eq!(
+            features,
+            vec!["mod-fs", "mod-ripgrep", "mod-json", "mod-yaml"]
+        );
+    }
+
+    #[test]
+    fn to_cargo_features_selects_only_fff_provider() {
+        let toml = r#"
+[sandbox]
+name = "test"
+
+[modules]
+fs = true
+grep = { provider = "fff" }
+"#;
+        let config = SandboxConfig::from_str(toml, "test".into()).unwrap();
+        let features = config.to_cargo_features();
+        assert_eq!(features, vec!["mod-fs", "mod-fff"]);
+        assert!(
+            features.iter().all(|feature| feature != "mod-ripgrep"),
+            "unexpected ripgrep provider in {:?}",
+            features
+        );
+    }
+
+    #[test]
+    fn module_display_names_use_public_grep_capability() {
+        let toml = r#"
+[sandbox]
+name = "test"
+
+[modules]
+json = true
+fs = true
+grep = { provider = "ripgrep" }
+"#;
+        let config = SandboxConfig::from_str(toml, "test".into()).unwrap();
+        assert_eq!(
+            config.module_display_names(),
+            vec![
+                "fs".to_string(),
+                "grep(ripgrep)".to_string(),
+                "json".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn sample_manifests_use_grep_provider_feature() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("cli crate should be inside workspace");
+
+        for manifest in ["minimal.toml", "all.toml", "full.toml"] {
+            let path = workspace_root.join("manifests").join(manifest);
+            let config = SandboxConfig::from_file(&path).unwrap();
+            let features = config.to_cargo_features();
+
+            assert!(
+                features.iter().any(|feature| feature == "mod-ripgrep"),
+                "{} mapped to {:?}",
+                manifest,
+                features
+            );
+            assert!(
+                features.iter().all(|feature| feature != "mod-fff"),
+                "{} mapped to unselected provider {:?}",
+                manifest,
+                features
+            );
+        }
+    }
+
+    #[test]
+    fn grep_provider_fixtures_select_expected_features() {
+        let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures");
+
+        let ripgrep = SandboxConfig::from_file(&fixtures_root.join("grep-ripgrep.toml")).unwrap();
+        let ripgrep_features = ripgrep.to_cargo_features();
+        assert_eq!(ripgrep_features, vec!["mod-fs", "mod-ripgrep"]);
+        assert!(
+            ripgrep_features.iter().all(|feature| feature != "mod-fff"),
+            "unexpected fff provider in {:?}",
+            ripgrep_features
+        );
+
+        let fff = SandboxConfig::from_file(&fixtures_root.join("grep-fff.toml")).unwrap();
+        let fff_features = fff.to_cargo_features();
+        assert_eq!(fff_features, vec!["mod-fs", "mod-fff"]);
+        assert!(
+            fff_features.iter().all(|feature| feature != "mod-ripgrep"),
+            "unexpected ripgrep provider in {:?}",
+            fff_features
+        );
     }
 
     #[test]
@@ -339,15 +673,23 @@ name = "minimal"
     }
 
     #[test]
-    fn all_valid_modules_accepted() {
-        let modules_toml: String = valid_module_names()
+    fn all_boolean_modules_accepted() {
+        let modules_toml: String = MODULE_REGISTRY
             .iter()
-            .map(|m| format!("{} = true", m))
+            .map(|m| format!("{} = true", m.name))
             .collect::<Vec<_>>()
             .join("\n");
         let toml = format!("[sandbox]\nname = \"all\"\n\n[modules]\n{}", modules_toml);
         let config = SandboxConfig::from_str(&toml, "test".into()).unwrap();
-        assert_eq!(config.to_cargo_features().len(), valid_module_names().len());
+        assert_eq!(config.to_cargo_features().len(), MODULE_REGISTRY.len());
+    }
+
+    #[test]
+    fn valid_module_names_include_grep_capability_not_provider_modules() {
+        let names = valid_module_names();
+        assert!(names.contains(&"grep"), "got: {:?}", names);
+        assert!(!names.contains(&"fff"), "got: {:?}", names);
+        assert!(!names.contains(&"ripgrep"), "got: {:?}", names);
     }
 
     #[test]
@@ -397,9 +739,11 @@ source = "github.com/cpsl/mod-csv"
         assert_eq!(config.modules["json"], ModuleEntry::Enabled(true));
         assert_eq!(
             config.modules["csv"],
-            ModuleEntry::External {
-                source: "github.com/cpsl/mod-csv".into()
-            }
+            ModuleEntry::Config(ModuleConfig {
+                source: Some("github.com/cpsl/mod-csv".into()),
+                provider: None,
+                extra: BTreeMap::new(),
+            })
         );
         assert!(config.modules["csv"].is_external());
         assert!(config.modules["csv"].is_enabled());
@@ -412,11 +756,24 @@ source = "github.com/cpsl/mod-csv"
         assert_eq!(
             format!(
                 "{}",
-                ModuleEntry::External {
-                    source: "github.com/foo".into()
-                }
+                ModuleEntry::Config(ModuleConfig {
+                    source: Some("github.com/foo".into()),
+                    provider: None,
+                    extra: BTreeMap::new(),
+                })
             ),
             "{ source = \"github.com/foo\" }"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ModuleEntry::Config(ModuleConfig {
+                    source: None,
+                    provider: Some("fff".into()),
+                    extra: BTreeMap::new(),
+                })
+            ),
+            "{ provider = \"fff\" }"
         );
     }
 }

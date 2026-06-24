@@ -44,8 +44,17 @@ PDFium document backend.
 | `html` | `mod-html` | scraper |
 | `url` | `mod-url` | url, percent-encoding |
 | `qr` | `mod-qr` | qrcode, png |
-| `grep` | `mod-grep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
+| `grep` provider `ripgrep` | `mod-ripgrep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
+| `grep` provider `fff` | `mod-fff` | fff-grep, grep-regex, grep-matcher, ignore, memchr, globset |
 | `doc` PDF engine | `pdfium-render` | pdfium-render; also enables `mod-doc` |
+
+`ripgrep` and `fff` are internal providers for the capsule-facing
+`fs.grep(...)` API. In `cpsl.toml`, select exactly one with
+`grep = { provider = "ripgrep" }` or `grep = { provider = "fff" }` and include
+`fs = true`. `fs.grep(...)` accepts `mode = "regex"` and `mode = "plain"`;
+`regex` is the default for both providers. Capsule manifests expose search
+through `fs.grep(...)`; the provider names are configuration details, not
+standalone runtime modules.
 
 ## Using Feature Flags Directly (Cargo)
 
@@ -74,7 +83,7 @@ and builds the dynamic library that Herm loads with `--cpsl`.
 
 | Profile | Command | Compiled CPSL modules |
 |---------|---------|-----------------------|
-| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `grep` |
+| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `ripgrep` |
 | All core features | `cargo build -p cpsl-ffi --release --features all` | every `cpsl-core/all` feature listed above |
 
 The output library path is platform-specific:
@@ -117,6 +126,7 @@ name = "my-tool"
 
 [modules]
 fs = true
+grep = { provider = "ripgrep" }
 json = true
 csv = true
 
@@ -141,7 +151,7 @@ cpsl run my-tool -- 'print(1+1)'   # inline code
 
 **`[sandbox]`** — Required. `name` is a human-readable label.
 
-**`[modules]`** — Required. Each key is a module name (see table above). Set to `true` to include, omit or set `false` to exclude. Unknown module names cause a validation error.
+**`[modules]`** — Required. Boolean modules are set to `true` to include, omitted or set to `false` to exclude. The `grep` capability must use `grep = { provider = "ripgrep" }` or `grep = { provider = "fff" }` and requires `fs = true`. Unknown module names and standalone provider entries such as `ripgrep = true` or `fff = true` cause validation errors.
 
 **`[python]`** — Optional. Set `enabled = true` to include Python-to-Luau transpiler support.
 
@@ -152,16 +162,16 @@ cpsl run my-tool -- 'print(1+1)'   # inline code
 ### Example Configs
 
 See `manifests/` for ready-to-use sandbox image manifests:
-- `minimal.toml` — Filesystem, JSON, and CSV
+- `minimal.toml` — Filesystem, grep search, JSON, and CSV
 - `json-only.toml` — Just JSON + filesystem
 - `data-science.toml` — Structured data + numerical computing + plotting
 - `full.toml` — Broad CLI-registered module set with Python enabled
 - `all.toml` — Broad CLI-registered module set
 
 `cpsl build` currently accepts the module registry exposed by the CLI:
-`fs`, `json`, `csv`, `yaml`, `xml`, `http`, `compress`, `doc`, `plot`, and
-`numx`. Use direct Cargo feature builds for core modules that are not yet
-manifest-exposed.
+`fs`, `json`, `csv`, `yaml`, `xml`, `http`, `compress`, `doc`, `plot`, `numx`,
+and `grep = { provider = "ripgrep" }` or `grep = { provider = "fff" }`. Use
+direct Cargo feature builds for core modules that are not yet manifest-exposed.
 
 ## Downstream Consumers
 

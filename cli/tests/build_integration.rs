@@ -33,6 +33,78 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn cleanup_built_sandbox(name: &str) {
+    let home = dirs::home_dir().unwrap();
+    let _ = std::fs::remove_file(home.join(".cpsl").join("bin").join(name));
+    let _ = std::fs::remove_file(
+        home.join(".cpsl")
+            .join("images")
+            .join(format!("{}.toml", name)),
+    );
+}
+
+fn assert_grep_provider_build(config_name: &str, sandbox_name: &str) {
+    let workspace = workspace_root();
+    let config = fixture_path(config_name);
+
+    let output = Command::new(cli_binary())
+        .args(["build", "-t", sandbox_name, "-f"])
+        .arg(&config)
+        .current_dir(&workspace)
+        .output()
+        .expect("failed to run cpsl build");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "cpsl build failed:\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+
+    let bin_path = dirs::home_dir()
+        .unwrap()
+        .join(".cpsl")
+        .join("bin")
+        .join(sandbox_name);
+    assert!(bin_path.exists(), "binary not found at {:?}", bin_path);
+
+    let data_dir = std::env::temp_dir().join(format!(
+        "cpsl-grep-provider-{}-{}",
+        sandbox_name,
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&data_dir);
+    std::fs::create_dir_all(&data_dir).unwrap();
+    std::fs::write(data_dir.join("notes.txt"), "alpha\nneedle here\n").unwrap();
+
+    let volume = format!("{}:/data:ro", data_dir.display());
+    let output = Command::new(&bin_path)
+        .arg("-v")
+        .arg(volume)
+        .args([
+            "--lua",
+            "--",
+            r#"local matches = fs.grep({pattern="needle", path="/data/notes.txt"})
+return #matches .. ":" .. matches[1].file .. ":" .. matches[1].line_number .. ":" .. matches[1].line .. ":" .. matches[1].match_text .. ":" .. tostring(matches[1].column)"#,
+        ])
+        .current_dir(&workspace)
+        .output()
+        .expect("failed to run built binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "grep test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(stdout.trim(), "1:/data/notes.txt:2:needle here:needle:nil");
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+    cleanup_built_sandbox(sandbox_name);
+}
+
 #[test]
 #[ignore] // Requires cargo build — slow
 fn build_json_only_produces_working_binary() {
@@ -103,11 +175,17 @@ fn build_json_only_produces_working_binary() {
     );
 
     // Cleanup
-    let _ = std::fs::remove_file(&bin_path);
-    let images_path = dirs::home_dir()
-        .unwrap()
-        .join(".cpsl")
-        .join("images")
-        .join("test-json-integ.toml");
-    let _ = std::fs::remove_file(&images_path);
+    cleanup_built_sandbox("test-json-integ");
+}
+
+#[test]
+#[ignore] // Requires cargo build — slow
+fn build_grep_ripgrep_provider_exposes_fs_grep() {
+    assert_grep_provider_build("grep-ripgrep.toml", "test-grep-ripgrep-integ");
+}
+
+#[test]
+#[ignore] // Requires cargo build — slow
+fn build_grep_fff_provider_exposes_fs_grep() {
+    assert_grep_provider_build("grep-fff.toml", "test-grep-fff-integ");
 }

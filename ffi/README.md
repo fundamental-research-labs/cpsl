@@ -8,7 +8,7 @@ mount backed by the configured host directory.
 ## Build Profiles
 
 The default build is the Herm demo profile. It keeps the dynamic library small
-and enables only `fs`, `json`, `csv`, `http`, and `grep`:
+and enables only `fs`, `json`, `csv`, `http`, and `ripgrep` (`mod-ripgrep`):
 
 ```sh
 cargo build -p cpsl-ffi --release

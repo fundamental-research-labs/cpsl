@@ -12,19 +12,24 @@ pub struct ModuleManifest {
 }
 ```
 
-The CLI's `MODULE_REGISTRY` in `cli/src/config.rs` lists a subset of modules for config validation and the `cpsl modules` command. However, it is **not** the single source of truth — it only covers ~10 modules while there are 27+.
+The CLI's `MODULE_REGISTRY` in `cli/src/config.rs` lists boolean modules for
+config validation and the `cpsl modules` command. Provider-backed capabilities
+such as `grep` are validated separately because one public capability can map to
+more than one Cargo feature.
 
 The real sources of truth are:
 
 - **`core/Cargo.toml` `[features]` section** — the complete list of available modules and their dependencies. The `all` feature flag enables every module.
 - **`core/src/sandbox.rs` `register_*_globals` calls** — what actually gets loaded into the Luau runtime. Each call is gated by `#[cfg(feature = "mod-*")]`.
-- **`MODULE_REGISTRY`** — used by the CLI for `cpsl modules` output, config validation (`to_cargo_features()`, `find_module(name)`), and mapping module names to Cargo feature strings.
+- **`MODULE_REGISTRY`** — used by the CLI for boolean module output, config validation (`to_cargo_features()`, `find_module(name)`), and mapping module names to Cargo feature strings.
+- **Provider capability validation** — special-case config such as `grep = { provider = "ripgrep" }`, which maps the public `grep` capability to an internal provider feature.
 
 Adding a new built-in module requires: adding a feature flag to `Cargo.toml`, implementing the `register_*_globals` function, adding the `#[cfg(feature)]`-gated call in `sandbox.rs`, and optionally adding a `ModuleManifest` entry to `MODULE_REGISTRY` for CLI support.
 
 ## Config Format (`cpsl.toml`)
 
-Modules are declared in the `[modules]` section. Two forms are supported:
+Modules are declared in the `[modules]` section. Boolean built-in modules and
+provider-backed capabilities use different forms.
 
 ### Built-in modules (current)
 
@@ -36,6 +41,31 @@ yaml = false   # explicitly disabled
 ```
 
 A boolean value enables or disables a built-in module. Omitted modules are not included.
+
+### Grep provider capability
+
+`grep` is not a standalone provider module. It is a public capability exposed as
+`fs.grep(...)`, so `fs = true` is required and the provider must be selected
+explicitly:
+
+```toml
+[modules]
+fs = true
+grep = { provider = "ripgrep" }
+```
+
+```toml
+[modules]
+fs = true
+grep = { provider = "fff" }
+```
+
+`fs.grep(...)` supports `mode = "regex"` and `mode = "plain"` with `regex` as
+the default for both providers.
+
+`grep = true`, `grep = false`, missing providers, unknown providers, and
+standalone `ripgrep = true` or `fff = true` entries are invalid in capsule
+manifests.
 
 ### External modules (future, forward-compatible schema)
 
@@ -60,11 +90,13 @@ Both forms deserialize into `ModuleEntry`:
 ```rust
 enum ModuleEntry {
     Enabled(bool),                   // json = true
-    External { source: String },     // json = { source = "..." }
+    Config(ModuleConfig),            // grep = { provider = "ripgrep" }
 }
 ```
 
-`ModuleEntry::is_enabled()` returns `true` for `Enabled(true)` and all `External` entries. `ModuleEntry::is_external()` distinguishes the two forms.
+`ModuleEntry::is_enabled()` returns `true` for `Enabled(true)` and table config
+entries. `ModuleEntry::is_external()` distinguishes future `source` entries from
+built-in provider config.
 
 ## Planned: External Module Workflow
 

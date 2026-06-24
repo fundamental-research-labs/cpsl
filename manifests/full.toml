@@ -7,7 +7,7 @@ name = "full"
 
 [modules]
 fs = true
-grep = true
+grep = { provider = "ripgrep" }
 json = true
 csv = true
 yaml = true

@@ -384,7 +384,7 @@ fn test_fs_read_positional_with_offset_limit() {
 
 // --- fs.grep tests ---
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_single_file() {
     let dir = TempDir::new().unwrap();
@@ -406,7 +406,7 @@ fn test_grep_single_file() {
     assert_eq!(result, "1:3:TODO");
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_single_file_line_content() {
     let dir = TempDir::new().unwrap();
@@ -424,7 +424,7 @@ fn test_grep_single_file_line_content() {
     assert_eq!(result, "beta");
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_recursive_directory() {
     let dir = TempDir::new().unwrap();
@@ -450,7 +450,7 @@ fn test_grep_recursive_directory() {
     assert_eq!(result, "2");
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_glob_filter() {
     let dir = TempDir::new().unwrap();
@@ -471,7 +471,7 @@ fn test_grep_glob_filter() {
     assert!(result.contains("code.rs"), "got: {}", result);
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_files_only() {
     let dir = TempDir::new().unwrap();
@@ -497,7 +497,7 @@ fn test_grep_files_only() {
     assert!(result.starts_with("2:"), "got: {}", result);
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_max_count() {
     let dir = TempDir::new().unwrap();
@@ -519,7 +519,7 @@ fn test_grep_max_count() {
     assert_eq!(result, "3");
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_invalid_pattern() {
     let dir = TempDir::new().unwrap();
@@ -536,7 +536,7 @@ fn test_grep_invalid_pattern() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_outside_mount_fails() {
     let dir = TempDir::new().unwrap();
@@ -548,7 +548,7 @@ fn test_grep_outside_mount_fails() {
     assert!(err.contains("No such file or directory"), "got: {}", err);
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_no_matches_returns_empty_table() {
     let dir = TempDir::new().unwrap();
@@ -566,7 +566,43 @@ fn test_grep_no_matches_returns_empty_table() {
     assert_eq!(result, "0");
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
+#[test]
+fn test_grep_plain_mode_treats_pattern_literally() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", mode="plain"})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:TODO|DONE literal:TODO|DONE");
+}
+
+#[cfg(feature = "mod-ripgrep")]
+#[test]
+fn test_grep_invalid_mode_fails() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "TODO\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result =
+        sandbox.exec(r#"fs.grep({pattern="TODO", path="/data/status.txt", mode="fuzzy"})"#);
+    assert!(result.is_err(), "invalid mode should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unsupported mode 'fuzzy'"),
+        "error should mention unsupported mode, got: {}",
+        err
+    );
+}
+
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_grep_file_paths_are_virtual() {
     let dir = TempDir::new().unwrap();
@@ -591,6 +627,255 @@ fn test_grep_file_paths_are_virtual() {
     assert!(result.contains("target.rs"), "got: {}", result);
 }
 
+#[cfg(all(feature = "mod-ripgrep", feature = "mod-fff"))]
+#[test]
+fn test_fs_grep_prefers_regex_provider_when_both_enabled() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", max_count=1})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:DONE:DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_single_file_common_shape() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("code.rs"),
+        "fn main() {\n    // TODO: fix\n}\n",
+    )
+    .unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO", path="/data/code.rs"})
+        return #matches .. ":" .. matches[1].line_number .. ":" .. matches[1].match_text .. ":" .. tostring(matches[1].column)
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:2:TODO:nil");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_recursive_directory() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "needle\n").unwrap();
+    fs::write(dir.path().join("src/b.txt"), "needle again\n").unwrap();
+    fs::write(dir.path().join("readme.md"), "no match\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="needle", path="/data"})
+        return tostring(#matches)
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "2");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_default_regex_mode() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", max_count=1})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:DONE:DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_plain_mode_treats_pattern_literally() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", mode="plain"})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:TODO|DONE literal:TODO|DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_invalid_pattern() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("file.txt"), "content\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox.exec(r#"fs.grep({pattern="[invalid", path="/data/file.txt"})"#);
+    assert!(result.is_err(), "invalid regex should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("invalid pattern"),
+        "error should mention invalid pattern, got: {}",
+        err
+    );
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_invalid_mode_fails() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "TODO\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result =
+        sandbox.exec(r#"fs.grep({pattern="TODO", path="/data/status.txt", mode="fuzzy"})"#);
+    assert!(result.is_err(), "invalid mode should error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unsupported mode 'fuzzy'"),
+        "error should mention unsupported mode, got: {}",
+        err
+    );
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_glob_and_max_count() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/code.rs"), "TODO: one\nTODO: two\n").unwrap();
+    fs::write(dir.path().join("src/notes.txt"), "TODO: note\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO", path="/data", glob="*.rs", max_count=1})
+        return #matches .. ":" .. matches[1].file .. ":" .. matches[1].line
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:/data/src/code.rs:TODO: one");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_files_only() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "TODO: one\nTODO: two\n").unwrap();
+    fs::write(dir.path().join("src/b.txt"), "TODO: three\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local files = fs.grep({pattern="TODO", path="/data", files_only=true})
+        table.sort(files)
+        return #files .. ":" .. table.concat(files, ",")
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "2:/data/src/a.txt,/data/src/b.txt");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_filters_invalid_utf8_per_matched_line() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("nul.txt"), b"TODO\0\n".as_slice()).unwrap();
+    fs::write(
+        dir.path().join("mixed.bin"),
+        b"TODO invalid \xff\nTODO valid\n".as_slice(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("invalid_only.bin"),
+        b"TODO invalid \xff\n".as_slice(),
+    )
+    .unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local nul = fs.grep({pattern="TODO", path="/data/nul.txt"})
+        local mixed = fs.grep({pattern="TODO", path="/data/mixed.bin"})
+        local capped = fs.grep({pattern="TODO", path="/data/mixed.bin", max_count=1})
+        local mixed_files = fs.grep({pattern="TODO", path="/data/mixed.bin", files_only=true})
+        local invalid = fs.grep({pattern="TODO", path="/data/invalid_only.bin"})
+        local invalid_files = fs.grep({pattern="TODO", path="/data/invalid_only.bin", files_only=true})
+        return #nul
+            .. ":" .. string.byte(nul[1].line, 5)
+            .. ":" .. #mixed
+            .. ":" .. mixed[1].line_number
+            .. ":" .. mixed[1].line
+            .. ":" .. #capped
+            .. ":" .. capped[1].line_number
+            .. ":" .. #mixed_files
+            .. ":" .. #invalid
+            .. ":" .. #invalid_files
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:0:1:2:TODO valid:1:2:1:0:0");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_grep_virtual_path_and_mount_denial_fail() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "needle\n").unwrap();
+
+    let mut mounts = MountTable::new();
+    mounts
+        .parse_and_add(&format!("{}:/workspace/src:rw", dir.path().display()))
+        .unwrap();
+    let sandbox = Sandbox::with_mounts(mounts).unwrap();
+
+    let result = sandbox.exec(r#"fs.grep({pattern="needle", path="/workspace"})"#);
+    assert!(result.is_err(), "virtual parent path should fail");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("No such file or directory"), "got: {}", err);
+
+    let result = sandbox.exec(r#"fs.grep({pattern="needle", path="/etc/passwd"})"#);
+    assert!(result.is_err(), "outside mount should fail");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("No such file or directory"), "got: {}", err);
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-ripgrep")))]
+#[test]
+fn test_fff_only_fs_help_includes_grep() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("fs.help()").unwrap();
+    assert!(result.contains("fs.grep"), "got: {}", result);
+    assert!(result.contains("regex"), "got: {}", result);
+    assert!(result.contains("plain"), "got: {}", result);
+}
+
 // --- fs.tree tests ---
 
 /// Helper to create a directory structure for tree tests.
@@ -613,7 +898,7 @@ fn create_tree_fixture(dir: &TempDir) {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_basic_output() {
     let dir = TempDir::new().unwrap();
     create_tree_fixture(&dir);
@@ -648,7 +933,7 @@ fn test_fs_tree_basic_output() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_summary_counts() {
     let dir = TempDir::new().unwrap();
     create_tree_fixture(&dir);
@@ -667,7 +952,7 @@ fn test_fs_tree_summary_counts() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_default_depth_limit() {
     let dir = TempDir::new().unwrap();
     // Create a deeply nested structure: a/b/c/d/e.txt
@@ -701,7 +986,7 @@ fn test_fs_tree_default_depth_limit() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_custom_depth() {
     let dir = TempDir::new().unwrap();
     fs::create_dir_all(dir.path().join("a/b/c/d")).unwrap();
@@ -731,7 +1016,7 @@ fn test_fs_tree_custom_depth() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_dirs_only() {
     let dir = TempDir::new().unwrap();
     create_tree_fixture(&dir);
@@ -761,7 +1046,7 @@ fn test_fs_tree_dirs_only() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_glob_filter() {
     let dir = TempDir::new().unwrap();
     create_tree_fixture(&dir);
@@ -794,7 +1079,7 @@ fn test_fs_tree_glob_filter() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_empty_directory() {
     let dir = TempDir::new().unwrap();
     // Just an empty directory — no files
@@ -809,7 +1094,7 @@ fn test_fs_tree_empty_directory() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_single_file() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("only.txt"), "content").unwrap();
@@ -825,7 +1110,7 @@ fn test_fs_tree_single_file() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_nonexistent_path_errors() {
     let dir = TempDir::new().unwrap();
     let sandbox = sandbox_with_dir(&dir, "/workspace", "rw");
@@ -835,7 +1120,7 @@ fn test_fs_tree_nonexistent_path_errors() {
 }
 
 #[test]
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 fn test_fs_tree_connectors_correct() {
     let dir = TempDir::new().unwrap();
     // Simple structure: two files at root level
@@ -862,7 +1147,7 @@ fn test_fs_tree_connectors_correct() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_fs_tree_root_shows_all_mounts() {
     let dir1 = TempDir::new().unwrap();
@@ -912,7 +1197,7 @@ fn test_fs_tree_root_shows_all_mounts() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_fs_tree_root_depth_1_shows_top_level_only() {
     let dir = TempDir::new().unwrap();
@@ -937,7 +1222,7 @@ fn test_fs_tree_root_depth_1_shows_top_level_only() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_fs_tree_virtual_dirs_shown() {
     // Even with no mounts at a path, virtual dirs like /dev, /proc should appear
@@ -966,7 +1251,7 @@ fn test_fs_tree_virtual_dirs_shown() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_shell_tree_command() {
     let dir = TempDir::new().unwrap();
@@ -1000,7 +1285,7 @@ fn test_shell_tree_command() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_shell_tree_with_depth_flag() {
     let dir = TempDir::new().unwrap();
@@ -1022,7 +1307,7 @@ fn test_shell_tree_with_depth_flag() {
     );
 }
 
-#[cfg(feature = "mod-grep")]
+#[cfg(feature = "mod-ripgrep")]
 #[test]
 fn test_shell_tree_bare_shows_cwd() {
     // Bare `tree` (no args) should show cwd ("/"), not "/."
