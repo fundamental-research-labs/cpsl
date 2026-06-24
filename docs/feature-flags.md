@@ -45,7 +45,14 @@ PDFium document backend.
 | `url` | `mod-url` | url, percent-encoding |
 | `qr` | `mod-qr` | qrcode, png |
 | `grep` | `mod-grep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
+| `fff` | `mod-fff` | fff-grep, ignore, memchr, globset |
 | `doc` PDF engine | `pdfium-render` | pdfium-render; also enables `mod-doc` |
+
+`grep` and `fff` are alternative providers for the capsule-facing
+`fs.grep(...)` API. `mod-grep` uses regex pattern semantics and owns `fs.grep`
+whenever it is enabled. `mod-fff` uses literal pattern semantics and registers
+the same `fs.grep` API only in fff-only builds; it also exposes `fff.grep(...)`
+as an explicit fff-backed alias.
 
 ## Using Feature Flags Directly (Cargo)
 
@@ -159,8 +166,8 @@ See `manifests/` for ready-to-use sandbox image manifests:
 - `all.toml` — Broad CLI-registered module set
 
 `cpsl build` currently accepts the module registry exposed by the CLI:
-`fs`, `json`, `csv`, `yaml`, `xml`, `http`, `compress`, `doc`, `plot`, and
-`numx`. Use direct Cargo feature builds for core modules that are not yet
+`fs`, `json`, `csv`, `yaml`, `xml`, `http`, `compress`, `doc`, `plot`, `numx`,
+`grep`, and `fff`. Use direct Cargo feature builds for core modules that are not yet
 manifest-exposed.
 
 ## Downstream Consumers

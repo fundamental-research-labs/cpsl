@@ -14,7 +14,7 @@ mod doc;
 #[cfg(feature = "mod-fs")]
 pub(crate) use doc::FS_DOC;
 pub(crate) use doc::{
-    arg_error, validate_args, FieldDoc, FnDoc, HelpMode, ModuleDoc, Param, ParamType, ReturnType,
+    validate_args, FieldDoc, FnDoc, HelpMode, ModuleDoc, Param, ParamType, ReturnType,
 };
 
 mod errors;
@@ -1458,213 +1458,27 @@ fn register_fs_search(
     fs: &mlua::Table,
     mounts: Arc<MountTable>,
 ) -> Result<(), mlua::Error> {
-    // fs.grep(opts) -> table of matches
     #[cfg(feature = "mod-grep")]
     {
-        let m = mounts.clone();
-        fs.set(
-            "grep",
-            lua.create_function(move |lua, args: MultiValue| {
-                let validated = validate_args(&args, FS_DOC.params("grep"), "fs.grep")?;
-                let opts = match &validated[0] {
-                    Value::Table(t) => t.clone(),
-                    _ => unreachable!("validate_args ensures table"),
-                };
-
-                // Extract required fields
-                let pattern: String = opts
-                    .get::<mlua::String>("pattern")
-                    .map_err(|_| {
-                        mlua::Error::external("fs.grep: missing required field 'pattern' (string)")
-                    })?
-                    .to_string_lossy()
-                    .to_string();
-                let sandbox_path: String = opts
-                    .get::<mlua::String>("path")
-                    .map_err(|_| {
-                        mlua::Error::external("fs.grep: missing required field 'path' (string)")
-                    })?
-                    .to_string_lossy()
-                    .to_string();
-
-                // Extract optional fields
-                let glob_pattern: Option<String> =
-                    opts.get::<Value>("glob").ok().and_then(|v| match v {
-                        Value::String(s) => Some(s.to_string_lossy().to_string()),
-                        _ => None,
-                    });
-                let max_count: Option<usize> =
-                    opts.get::<Value>("max_count").ok().and_then(|v| match v {
-                        Value::Integer(n) => Some(n.max(0) as usize),
-                        Value::Number(n) => Some((n as i64).max(0) as usize),
-                        _ => None,
-                    });
-                let files_only: bool = opts
-                    .get::<Value>("files_only")
-                    .ok()
-                    .and_then(|v| match v {
-                        Value::Boolean(b) => Some(b),
-                        _ => None,
-                    })
-                    .unwrap_or(false);
-
-                // Compile glob filter if specified
-                let compiled_glob: Option<globset::GlobSet> = match glob_pattern {
-                    Some(ref g) => {
-                        let glob = globset::Glob::new(g).map_err(|e| {
-                            mlua::Error::external(format!("fs.grep: invalid glob: {}", e))
-                        })?;
-                        let set =
-                            globset::GlobSetBuilder::new()
-                                .add(glob)
-                                .build()
-                                .map_err(|e| {
-                                    mlua::Error::external(format!("fs.grep: invalid glob: {}", e))
-                                })?;
-                        Some(set)
-                    }
-                    None => None,
-                };
-
-                // Compile the regex matcher
-                let matcher = grep_regex::RegexMatcher::new(&pattern).map_err(|e| {
-                    mlua::Error::external(format!("fs.grep: invalid pattern: {}", e))
-                })?;
-
-                // Resolve the sandbox path to host path
-                let host_path = m
-                    .resolve_read(&sandbox_path)
-                    .map_err(mlua::Error::external)?;
-
-                // Collect files to search
-                let mut files_to_search: Vec<(std::path::PathBuf, String)> = Vec::new(); // (host_path, virtual_path)
-
-                if host_path.is_file() {
-                    files_to_search.push((host_path.clone(), sandbox_path.clone()));
-                } else if host_path.is_dir() {
-                    let mut builder = ignore::WalkBuilder::new(&host_path);
-                    builder.hidden(false); // don't skip hidden files — let .gitignore handle it
-
-                    for entry in builder.build() {
-                        let entry = match entry {
-                            Ok(e) => e,
-                            Err(_) => continue,
-                        };
-                        let path = entry.path();
-                        if !path.is_file() {
-                            continue;
-                        }
-
-                        // Apply glob filter if specified
-                        if let Some(ref glob_set) = compiled_glob {
-                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                if !glob_set.is_match(name) {
-                                    continue;
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
-
-                        // Translate host path back to sandbox virtual path
-                        let virtual_path = if let Ok(relative) = path.strip_prefix(&host_path) {
-                            if relative.as_os_str().is_empty() {
-                                sandbox_path.clone()
-                            } else {
-                                let rel_str = relative.to_string_lossy();
-                                if sandbox_path.ends_with('/') {
-                                    format!("{}{}", sandbox_path, rel_str)
-                                } else {
-                                    format!("{}/{}", sandbox_path, rel_str)
-                                }
-                            }
-                        } else {
-                            continue;
-                        };
-
-                        files_to_search.push((path.to_path_buf(), virtual_path));
-                    }
-                } else {
-                    return Err(mlua::Error::external(crate::MountError::NotFound(
-                        sandbox_path,
-                    )));
-                }
-
-                // Search each file and collect results
-                let result_table = lua.create_table()?;
-                let mut match_count: usize = 0;
-                let mut seen_files: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                let mut result_idx: usize = 1;
-
-                'outer: for (file_host_path, file_virtual_path) in &files_to_search {
-                    if let Some(max) = max_count {
-                        if match_count >= max {
-                            break;
-                        }
-                    }
-
-                    let mut searcher = grep_searcher::Searcher::new();
-                    let mut file_matches: Vec<(u64, String, String)> = Vec::new(); // (line_number, line, match_text)
-
-                    let search_result = searcher.search_path(
-                        &matcher,
-                        file_host_path,
-                        grep_searcher::sinks::UTF8(|line_num, line_content| {
-                            // Extract the matched text
-                            let mut match_text = String::new();
-                            use grep_matcher::Matcher;
-                            if let Ok(Some(m)) = matcher.find(line_content.as_bytes()) {
-                                match_text = line_content[m.start()..m.end()].to_string();
-                            }
-                            let line_str = line_content
-                                .trim_end_matches('\n')
-                                .trim_end_matches('\r')
-                                .to_string();
-                            file_matches.push((line_num, line_str, match_text));
-                            Ok(true)
-                        }),
-                    );
-
-                    if search_result.is_err() {
-                        // Skip files that can't be searched (binary, permission errors, etc.)
-                        continue;
-                    }
-
-                    if files_only {
-                        if !file_matches.is_empty() && !seen_files.contains(file_virtual_path) {
-                            seen_files.insert(file_virtual_path.clone());
-                            result_table.set(result_idx, file_virtual_path.as_str())?;
-                            result_idx += 1;
-                            match_count += 1;
-                            if let Some(max) = max_count {
-                                if match_count >= max {
-                                    break 'outer;
-                                }
-                            }
-                        }
-                    } else {
-                        for (line_num, line_str, match_text) in file_matches {
-                            let entry = lua.create_table()?;
-                            entry.set("file", file_virtual_path.as_str())?;
-                            entry.set("line_number", line_num)?;
-                            entry.set("line", line_str.as_str())?;
-                            entry.set("match_text", match_text.as_str())?;
-                            result_table.set(result_idx, entry)?;
-                            result_idx += 1;
-                            match_count += 1;
-                            if let Some(max) = max_count {
-                                if match_count >= max {
-                                    break 'outer;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Ok(result_table)
-            })?,
+        crate::grep_api::register_fs_grep(
+            lua,
+            fs,
+            crate::grep_api::RegexGrepProvider::new(mounts.clone()),
         )?;
+    }
+
+    #[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+    {
+        crate::grep_api::register_fs_grep(
+            lua,
+            fs,
+            crate::grep_api::FffGrepProvider::fs_compatible(mounts.clone()),
+        )?;
+    }
+
+    #[cfg(not(any(feature = "mod-grep", feature = "mod-fff")))]
+    {
+        let _ = (lua, fs, mounts);
     }
 
     Ok(())
@@ -1965,6 +1779,11 @@ fn register_fs_tree(
                 Ok(output)
             })?,
         )?;
+    }
+
+    #[cfg(not(feature = "mod-grep"))]
+    {
+        let _ = (lua, fs, mounts);
     }
 
     Ok(())

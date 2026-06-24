@@ -27,12 +27,12 @@ pub static MODULE_REGISTRY: &[ModuleManifest] = &[
     },
     ModuleManifest {
         name: "grep",
-        description: "Recursive content search via fs.grep and fs.tree",
+        description: "Regex provider for fs.grep; also includes fs.tree",
         cargo_feature: "mod-grep",
     },
     ModuleManifest {
         name: "fff",
-        description: "Fast literal content search via fff.grep",
+        description: "Literal provider for fs.grep in fff-only builds; also exposes fff.grep",
         cargo_feature: "mod-fff",
     },
     ModuleManifest {

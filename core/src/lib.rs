@@ -26,6 +26,8 @@ pub(crate) mod fff;
 pub(crate) mod fin;
 #[cfg(feature = "mod-fuzzy")]
 pub(crate) mod fuzzy;
+#[cfg(any(feature = "mod-grep", feature = "mod-fff"))]
+pub(crate) mod grep_api;
 #[cfg(feature = "mod-html")]
 pub(crate) mod html_mod;
 #[cfg(feature = "mod-http")]

@@ -591,6 +591,204 @@ fn test_grep_file_paths_are_virtual() {
     assert!(result.contains("target.rs"), "got: {}", result);
 }
 
+#[cfg(all(feature = "mod-grep", feature = "mod-fff"))]
+#[test]
+fn test_fs_grep_prefers_regex_provider_when_both_enabled() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("status.txt"), "DONE\nTODO|DONE literal\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO|DONE", path="/data/status.txt", max_count=1})
+        return #matches .. ":" .. matches[1].line .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:DONE:DONE");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_single_file_common_shape() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("code.rs"),
+        "fn main() {\n    // TODO: fix\n}\n",
+    )
+    .unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO", path="/data/code.rs"})
+        return #matches .. ":" .. matches[1].line_number .. ":" .. matches[1].match_text .. ":" .. tostring(matches[1].column)
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:2:TODO:nil");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_recursive_directory() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "needle\n").unwrap();
+    fs::write(dir.path().join("src/b.txt"), "needle again\n").unwrap();
+    fs::write(dir.path().join("readme.md"), "no match\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="needle", path="/data"})
+        return tostring(#matches)
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "2");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_glob_and_max_count() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/code.rs"), "TODO: one\nTODO: two\n").unwrap();
+    fs::write(dir.path().join("src/notes.txt"), "TODO: note\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fs.grep({pattern="TODO", path="/data", glob="*.rs", max_count=1})
+        return #matches .. ":" .. matches[1].file .. ":" .. matches[1].line
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:/data/src/code.rs:TODO: one");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_files_only() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "TODO: one\nTODO: two\n").unwrap();
+    fs::write(dir.path().join("src/b.txt"), "TODO: three\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local files = fs.grep({pattern="TODO", path="/data", files_only=true})
+        table.sort(files)
+        return #files .. ":" .. table.concat(files, ",")
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "2:/data/src/a.txt,/data/src/b.txt");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_filters_invalid_utf8_per_matched_line() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("nul.txt"), b"TODO\0\n".as_slice()).unwrap();
+    fs::write(
+        dir.path().join("mixed.bin"),
+        b"TODO invalid \xff\nTODO valid\n".as_slice(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("invalid_only.bin"),
+        b"TODO invalid \xff\n".as_slice(),
+    )
+    .unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local nul = fs.grep({pattern="TODO", path="/data/nul.txt"})
+        local mixed = fs.grep({pattern="TODO", path="/data/mixed.bin"})
+        local capped = fs.grep({pattern="TODO", path="/data/mixed.bin", max_count=1})
+        local mixed_files = fs.grep({pattern="TODO", path="/data/mixed.bin", files_only=true})
+        local invalid = fs.grep({pattern="TODO", path="/data/invalid_only.bin"})
+        local invalid_files = fs.grep({pattern="TODO", path="/data/invalid_only.bin", files_only=true})
+        local alias = fff.grep({pattern="TODO", path="/data/invalid_only.bin"})
+        return #nul
+            .. ":" .. string.byte(nul[1].line, 5)
+            .. ":" .. #mixed
+            .. ":" .. mixed[1].line_number
+            .. ":" .. mixed[1].line
+            .. ":" .. #capped
+            .. ":" .. capped[1].line_number
+            .. ":" .. #mixed_files
+            .. ":" .. #invalid
+            .. ":" .. #invalid_files
+            .. ":" .. #alias
+            .. ":" .. alias[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:0:1:2:TODO valid:1:2:1:0:0:1:TODO");
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_grep_virtual_path_and_mount_denial_fail() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "needle\n").unwrap();
+
+    let mut mounts = MountTable::new();
+    mounts
+        .parse_and_add(&format!("{}:/workspace/src:rw", dir.path().display()))
+        .unwrap();
+    let sandbox = Sandbox::with_mounts(mounts).unwrap();
+
+    let result = sandbox.exec(r#"fs.grep({pattern="needle", path="/workspace"})"#);
+    assert!(result.is_err(), "virtual parent path should fail");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("No such file or directory"), "got: {}", err);
+
+    let result = sandbox.exec(r#"fs.grep({pattern="needle", path="/etc/passwd"})"#);
+    assert!(result.is_err(), "outside mount should fail");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("No such file or directory"), "got: {}", err);
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fs_help_includes_grep() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("fs.help()").unwrap();
+    assert!(result.contains("fs.grep"), "got: {}", result);
+    assert!(result.contains("Literal pattern"), "got: {}", result);
+}
+
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+#[test]
+fn test_fff_only_fff_grep_still_works() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("notes.txt"), "alpha\nneedle\n").unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+        local matches = fff.grep({pattern="needle", path="/data/notes.txt"})
+        return #matches .. ":" .. matches[1].line_number .. ":" .. matches[1].column .. ":" .. matches[1].match_text
+    "#,
+        )
+        .unwrap();
+    assert_eq!(result, "1:2:1:needle");
+}
+
 // --- fs.tree tests ---
 
 /// Helper to create a directory structure for tree tests.

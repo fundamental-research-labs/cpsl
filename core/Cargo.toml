@@ -42,7 +42,7 @@ mod-html = ["dep:scraper"]
 mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
 mod-grep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
-mod-fff = ["mod-fs", "dep:fff-grep", "dep:ignore", "dep:memchr"]
+mod-fff = ["mod-fs", "dep:fff-grep", "dep:ignore", "dep:memchr", "dep:globset"]
 pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
 
 [dependencies]

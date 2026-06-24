@@ -384,6 +384,60 @@ pub(crate) fn arg_error(fn_name: &str, params: &[Param]) -> mlua::Error {
 }
 
 #[cfg(feature = "mod-fs")]
+#[cfg(feature = "mod-grep")]
+const FS_GREP_DESCRIPTION: &str = "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
+
+#[cfg(feature = "mod-fs")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+const FS_GREP_DESCRIPTION: &str = "Search file contents by literal pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.";
+
+#[cfg(feature = "mod-fs")]
+#[cfg(feature = "mod-grep")]
+const FS_GREP_PATTERN_DESCRIPTION: &str = "Regex pattern to search for";
+
+#[cfg(feature = "mod-fs")]
+#[cfg(all(feature = "mod-fff", not(feature = "mod-grep")))]
+const FS_GREP_PATTERN_DESCRIPTION: &str = "Literal pattern to search for";
+
+#[cfg(feature = "mod-fs")]
+#[cfg(any(
+    feature = "mod-grep",
+    all(feature = "mod-fff", not(feature = "mod-grep"))
+))]
+const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "pattern",
+        typ: "string",
+        required: true,
+        description: FS_GREP_PATTERN_DESCRIPTION,
+    },
+    FieldDoc {
+        name: "path",
+        typ: "string",
+        required: true,
+        description: "File or directory to search",
+    },
+    FieldDoc {
+        name: "glob",
+        typ: "string",
+        required: false,
+        description: "Glob filter for file names (e.g. \"*.rs\")",
+    },
+    FieldDoc {
+        name: "max_count",
+        typ: "number",
+        required: false,
+        description: "Maximum number of matches to return",
+    },
+    FieldDoc {
+        name: "files_only",
+        typ: "boolean",
+        required: false,
+        description: "Return only unique file paths (like rg -l)",
+    },
+];
+
+#[cfg(feature = "mod-fs")]
 pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     name: "fs",
     summary: "sandboxed filesystem (read, write, list, mkdir, copy, grep, tree, ...)",
@@ -485,22 +539,16 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
             returns: ReturnType::Void,
             example: Some(r#"fs.copy("/workspace/data.txt", "/artifacts/data.txt")"#),
         },
-        #[cfg(feature = "mod-grep")]
+        #[cfg(any(feature = "mod-grep", all(feature = "mod-fff", not(feature = "mod-grep"))))]
         FnDoc {
             name: "grep",
-            description: "Search file contents by regex pattern. Searches recursively in directories (respects .gitignore). Returns table of matches.",
+            description: FS_GREP_DESCRIPTION,
             params: &[Param {
                 name: "opts",
                 short: None,
                 typ: ParamType::Table,
                 required: true,
-                fields: Some(&[
-                    FieldDoc { name: "pattern", typ: "string", required: true, description: "Regex pattern to search for" },
-                    FieldDoc { name: "path", typ: "string", required: true, description: "File or directory to search" },
-                    FieldDoc { name: "glob", typ: "string", required: false, description: "Glob filter for file names (e.g. \"*.rs\")" },
-                    FieldDoc { name: "max_count", typ: "number", required: false, description: "Maximum number of matches to return" },
-                    FieldDoc { name: "files_only", typ: "boolean", required: false, description: "Return only unique file paths (like rg -l)" },
-                ]),
+                fields: Some(FS_GREP_OPTS_FIELDS),
             }],
             returns: ReturnType::Table,
             example: Some(r#"fs.grep({pattern="TODO", path="/workspace", glob="*.rs", max_count=20})"#),
