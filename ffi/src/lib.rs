@@ -290,11 +290,19 @@ fn create_runtime_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, St
     sandbox
         .exec(&format!(
             "local sh = require(\"shrt\"); sh.set_root(\"{}\"); sh.cd(\"{}\")",
-            escape_luau_string("/"),
+            escape_luau_string(shell_root_for(config)),
             escape_luau_string(&config.initial_cwd)
         ))
         .map_err(|error| format!("failed to initialize CPSL shell: {error}"))?;
     Ok(sandbox)
+}
+
+fn shell_root_for(config: &ValidatedSessionConfig) -> &str {
+    if config.mounts.len() == 1 && config.mounts[0].virtual_path == WORKDIR {
+        WORKDIR
+    } else {
+        "/"
+    }
 }
 
 fn create_http_gateway(config: &ValidatedSessionConfig) -> HttpGateway {
@@ -711,6 +719,12 @@ mod tests {
         assert_success(&workdir_ls, 0);
         assert!(workdir_ls["stdout"].as_str().unwrap().contains("notes.txt"));
 
+        let cd_root = eval(session, "cd /");
+        assert_eq!(cd_root["ok"], true);
+        assert_eq!(cd_root["exit_code"], 0);
+        assert!(cd_root["error"].is_null(), "{cd_root}");
+        assert_eq!(cd_root["cwd"], "/");
+
         cpsl_session_free(session);
     }
 
@@ -1076,13 +1090,19 @@ mod tests {
         }
 
         let etc_hostname = eval(session, "cat /etc/hostname");
-        assert_success(&etc_hostname, 0);
-        assert_eq!(etc_hostname["stdout"], "sandbox\n");
+        assert_success(&etc_hostname, 1);
+        assert!(etc_hostname["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("Path traversal denied"));
 
         let cd_root = eval(session, "cd /");
-        assert_eq!(cd_root["ok"], true);
-        assert_eq!(cd_root["exit_code"], 0);
-        assert_eq!(cd_root["cwd"], "/");
+        assert_success(&cd_root, 1);
+        assert!(cd_root["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("Path traversal denied"));
+        assert_eq!(cd_root["cwd"], WORKDIR);
 
         cpsl_session_free(session);
     }
