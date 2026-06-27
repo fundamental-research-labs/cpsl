@@ -241,6 +241,7 @@ function sh.echo(...)
     else
         emit(result)
     end
+    sh.last_exit_code = 0
     return result
 end
 
@@ -1231,7 +1232,9 @@ function sh.false_cmd()
 end
 
 function sh.exit(code)
-    error("exit:" .. tostring(code or 0), 0)
+    local exit_code = tonumber(code) or 0
+    sh.last_exit_code = exit_code
+    error("exit:" .. tostring(exit_code), 0)
 end
 
 -- ============================================================
