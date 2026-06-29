@@ -1,0 +1,41 @@
+[package]
+name = "apple-calendar"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+thiserror = "2"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "NSArray",
+    "NSDate",
+    "NSError",
+    "NSObject",
+    "NSPredicate",
+    "NSProcessInfo",
+    "NSString",
+    "NSURL",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGColor"] }
+objc2-event-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "EKCalendar",
+    "EKCalendarItem",
+    "EKEvent",
+    "EKEventStore",
+    "EKObject",
+    "EKSource",
+    "EKTypes",
+    "objc2-core-graphics",
+] }
+
+[dev-dependencies]

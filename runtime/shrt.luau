@@ -94,6 +94,54 @@ local function tostring_val(v)
     return tostring(v)
 end
 
+local function json_quote(s)
+    s = tostring(s or "")
+    s = string.gsub(s, "\\", "\\\\")
+    s = string.gsub(s, "\"", "\\\"")
+    s = string.gsub(s, "\n", "\\n")
+    s = string.gsub(s, "\r", "\\r")
+    s = string.gsub(s, "\t", "\\t")
+    return "\"" .. s .. "\""
+end
+
+local function is_array_table(t)
+    local len = #t
+    local count = 0
+    for k, _ in pairs(t) do
+        if type(k) ~= "number" or k < 1 or k > len or k ~= math.floor(k) then
+            return false
+        end
+        count = count + 1
+    end
+    return count == len
+end
+
+local function simple_json(value)
+    local kind = type(value)
+    if value == nil then
+        return "null"
+    elseif kind == "string" then
+        return json_quote(value)
+    elseif kind == "number" or kind == "boolean" then
+        return tostring(value)
+    elseif kind ~= "table" then
+        return json_quote(tostring(value))
+    end
+
+    local parts = {}
+    if is_array_table(value) then
+        for i = 1, #value do
+            table.insert(parts, simple_json(value[i]))
+        end
+        return "[" .. table.concat(parts, ", ") .. "]"
+    end
+
+    for k, v in pairs(value) do
+        table.insert(parts, json_quote(k) .. ": " .. simple_json(v))
+    end
+    return "{" .. table.concat(parts, ", ") .. "}"
+end
+
 -- Forward-declare emit so helpers above its definition close over this local.
 -- Luau's `local function emit` would not be visible to earlier function bodies.
 local emit
@@ -1467,7 +1515,7 @@ function sh.shell_help()
         .. "Variables:      export VAR=value, $VAR\n"
 
     -- Dynamically list loaded modules
-    local known = {"fs","compress","json","csv","doc","plot","yaml","xml","numx","http","fuzzy","phone","email","country","currency","datetime","image","random","base64","fin","yfinance","edgar","ocr","crypto","regex","html","url","qr","sfae"}
+    local known = {"fs","calendar","compress","json","csv","doc","plot","yaml","xml","numx","http","fuzzy","phone","email","country","currency","datetime","image","random","base64","fin","yfinance","edgar","ocr","crypto","regex","html","url","qr","sfae"}
     local lines = {}
     for _, name in ipairs(known) do
         local m = rawget(_G, name)
@@ -1570,8 +1618,8 @@ function sh.run(name, method, args)
             if param_order and #param_order > 0 then
                 -- Check if table has named string keys (not just positional [1],[2],...)
                 local has_named = false
-                for _, pname in ipairs(param_order) do
-                    if args[pname] ~= nil then
+                for k, _ in pairs(args) do
+                    if type(k) == "string" then
                         has_named = true
                         break
                     end
@@ -1579,8 +1627,30 @@ function sh.run(name, method, args)
                 if has_named then
                     -- Coerce string numbers to actual numbers for numeric-looking values
                     local unpacked = {}
+                    local param_names = {}
                     for _, pname in ipairs(param_order) do
+                        param_names[pname] = true
+                    end
+                    for idx, pname in ipairs(param_order) do
                         local v = args[pname]
+                        if v == nil then
+                            v = args[idx]
+                        end
+                        if v == nil and pname == "opts" then
+                            local opts = {}
+                            local has_opts = false
+                            for k, extra in pairs(args) do
+                                if type(k) == "string" and not param_names[k] then
+                                    if type(extra) == "string" then
+                                        local n = tonumber(extra)
+                                        if n then extra = n end
+                                    end
+                                    opts[k] = extra
+                                    has_opts = true
+                                end
+                            end
+                            if has_opts then v = opts end
+                        end
                         if type(v) == "string" then
                             local n = tonumber(v)
                             if n then v = n end
@@ -1652,11 +1722,16 @@ function sh.run(name, method, args)
     -- userdata (e.g. numx arrays) via tostring which calls __tostring metamethod.
     if result ~= nil then
         if type(result) == "table" then
-            local ok_enc, encoded = pcall(json.encode, result, {pretty = true})
-            if ok_enc then
-                emit(encoded)
+            local encoder = type(json) == "table" and json.encode or nil
+            if type(encoder) == "function" then
+                local ok_enc, encoded = pcall(encoder, result, {pretty = true})
+                if ok_enc then
+                    emit(encoded)
+                else
+                    emit(simple_json(result))
+                end
             else
-                emit(tostring(result))
+                emit(simple_json(result))
             end
         elseif type(result) == "string" or type(result) == "number" then
             emit(tostring(result))
