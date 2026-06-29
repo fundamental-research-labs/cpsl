@@ -1,34 +1,59 @@
-# CPSL Calendar EventKit V1 Plan
+# CPSL Apple Calendar EventKit V1 Plan
 
 ## Summary
 
-Build `calendar` as a CPSL built-in module for iOS and macOS Calendar events,
-backed by EventKit through a new `modules/native-calendar` crate. V1 is
+Build `calendar` as the runtime module exposed by Apple-targeted CPSL capsules,
+backed by EventKit through a new `modules/apple-calendar` crate. V1 is
 deliberately small: full-access-only, events-only, explicit permission request,
 no recurrence editing, no reminders, no attendees, and no implicit prompts.
 
+CPSL capsules are platform-specific. An iOS or macOS capsule can expose this
+Apple implementation as `calendar`; a future Android capsule can expose its own
+`calendar` module backed by Android APIs. V1 should not force a universal
+lowest-common-denominator Calendar API across operating systems.
+
 This plan was reviewed by three subagents from the angles of CPSL module
 architecture, EventKit platform design, and testing/build compatibility. They
-converged on the native crate plus thin CPSL facade architecture.
+converged on a platform-specific native crate plus thin CPSL facade
+architecture.
 
 ## Key Changes
 
-- Add `modules/native-calendar` with plain Rust request/result types,
-  `CalendarGateway`, an injectable backend abstraction for tests,
-  `CalendarError`, an Apple EventKit backend, and an unsupported backend for
-  non-Apple builds.
+- Add `modules/apple-calendar` with plain Rust request/result types,
+  `AppleCalendarGateway`, an injectable backend abstraction for tests,
+  `AppleCalendarError`, and an EventKit implementation.
 - Add `core/src/calendar.rs` as the thin Luau facade: docs, argument
   validation, table conversion, RFC3339 parsing/formatting through `chrono`,
-  and calls into `CalendarGateway`.
-- Add `mod-calendar = ["dep:native-calendar", "dep:chrono"]` to
-  `core/Cargo.toml`; include it in `core/all` only once the non-Apple
-  unsupported backend compiles cleanly.
+  and calls into the Apple Calendar gateway.
+- Add `mod-apple-calendar = ["dep:apple-calendar", "dep:chrono"]` to
+  `core/Cargo.toml`.
 - Do not add `calendar` to CLI `MODULE_REGISTRY` or manifest presets in V1.
   Target bundled/signed iOS and macOS host embeddings first; standalone CLI/TCC
   packaging can be a later pass.
-- Register `calendar` only when `mod-calendar` is compiled, using a platform
-  default gateway or an injected gateway from
+- Register the runtime `calendar` global only when `mod-apple-calendar` is
+  compiled and the capsule target is Apple, using a platform default gateway or
+  an injected gateway from
   `SandboxBuilder::calendar_gateway(...)`.
+- Do not support multiple Calendar modules in one capsule. The runtime module
+  name is `calendar`; the package and feature names identify which platform
+  implementation supplies it.
+
+## Platform Model
+
+`modules/apple-calendar` is intentionally Apple-specific. It should not try to
+be a permanent abstraction layer for Android, Windows, or future providers.
+Shared method names across platform Calendar modules are encouraged when the
+semantics genuinely match, but source compatibility is not a V1 requirement.
+
+Future platform variants can use the same runtime name in their own capsules:
+
+- Apple capsules: `modules/apple-calendar`, feature `mod-apple-calendar`,
+  runtime global `calendar`.
+- Android capsules, later: likely `modules/android-calendar`, feature
+  `mod-android-calendar`, runtime global `calendar`.
+
+The agent-facing contract is the capsule's dynamic module help/capability
+metadata, not a single static API promised by all platforms.
 
 ## Public API
 
@@ -113,7 +138,7 @@ calendar create "Dentist" 2026-07-01T15:00:00Z 2026-07-01T16:00:00Z --location "
   serial worker or actor. Never move EventKit objects across CPSL/Lua
   boundaries.
 - Core validates RFC3339 timestamps and passes typed request structs to native
-  code; native code bridges to and from `NSDate`.
+  code; `modules/apple-calendar` bridges to and from `NSDate`.
 - All operations require full access. Missing access returns a clear
   `calendar: full access required` style error.
 - Recurring event mutations are rejected in V1. Fetching occurrences is allowed
@@ -125,11 +150,13 @@ calendar create "Dentist" 2026-07-01T15:00:00Z 2026-07-01T16:00:00Z --location "
 
 - Core mock-backed tests for every API: ordered Lua calls, shell/table-form
   calls, Python-transpiled call shape where relevant, bad args, missing access,
-  denied/restricted/not-determined, unsupported platform, and help output.
-- Native crate tests for gateway behavior, unsupported backend, error mapping,
-  and mock backend injection.
-- Non-Apple CI must compile `mod-calendar` and return deterministic unsupported
-  errors without linking Apple frameworks.
+  denied/restricted/not-determined, and help output.
+- `modules/apple-calendar` tests for gateway behavior, error mapping, and mock
+  backend injection.
+- Non-Apple CI should not be required to build or expose `mod-apple-calendar`
+  as part of default capsule presets. If the feature is accidentally enabled on
+  a non-Apple target, it should fail clearly at build/config time rather than
+  pretending to provide Calendar access.
 - Apple manual smoke test, ignored by default: request full access, create a
   unique event, list/find it, update it, and delete it.
 - Host packaging docs must mention `NSCalendarsFullAccessUsageDescription`, the
@@ -142,8 +169,10 @@ calendar create "Dentist" 2026-07-01T15:00:00Z 2026-07-01T16:00:00Z --location "
 - V1 targets signed or bundled iOS/macOS host embeddings first, not standalone
   CLI Calendar access.
 - V1 uses modern EventKit APIs only; no deprecated `requestAccess(to:)` fallback.
-- Public module name is `calendar` despite overlap with Python's standard
-  library module name.
+- Public runtime module name is `calendar` despite overlap with Python's
+  standard library module name.
+- Capsules expose at most one `calendar` module. Platform-specific package and
+  feature names select the implementation at build time.
 - Event identifiers are not treated as durable sync IDs. Callers should re-query
   by time range if an ID goes stale.
 
