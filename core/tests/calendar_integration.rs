@@ -203,9 +203,18 @@ fn status_request_access_and_help_work() {
         .unwrap();
     assert!(shell_help.contains("calendar"));
 
+    let shell_status = sandbox
+        .exec(
+            &sh_transpile::transpile_sh("calendar status")
+                .unwrap()
+                .luau_source,
+        )
+        .unwrap();
+    assert!(shell_status.contains("full_access"), "{shell_status}");
+
     assert_eq!(
         mock.calls.lock().unwrap().as_slice(),
-        ["status", "request_full_access"]
+        ["status", "request_full_access", "status"]
     );
 }
 

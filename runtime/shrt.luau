@@ -1664,7 +1664,9 @@ function sh.run(name, method, args)
     end
 
     local ok, result
-    if type(call_args) == "table" and call_args[1] ~= nil and rawget(mod, "__params") then
+    if call_args == nil then
+        ok, result = pcall(fn)
+    elseif type(call_args) == "table" and call_args[1] ~= nil and rawget(mod, "__params") then
         -- Unpacked positional args
         ok, result = pcall(fn, table.unpack(call_args))
     else
