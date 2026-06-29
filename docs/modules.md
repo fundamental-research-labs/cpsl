@@ -19,12 +19,21 @@ more than one Cargo feature.
 
 The real sources of truth are:
 
-- **`core/Cargo.toml` `[features]` section** — the complete list of available modules and their dependencies. The `all` feature flag enables every module.
+- **`core/Cargo.toml` `[features]` section** — the complete list of available modules and their dependencies. The `all` feature flag enables the default cross-platform module set; platform-hosted modules can be opt-in only.
 - **`core/src/sandbox.rs` `register_*_globals` calls** — what actually gets loaded into the Luau runtime. Each call is gated by `#[cfg(feature = "mod-*")]`.
 - **`MODULE_REGISTRY`** — used by the CLI for boolean module output, config validation (`to_cargo_features()`, `find_module(name)`), and mapping module names to Cargo feature strings.
 - **Provider capability validation** — special-case config such as `grep = { provider = "ripgrep" }`, which maps the public `grep` capability to an internal provider feature.
 
 Adding a new built-in module requires: adding a feature flag to `Cargo.toml`, implementing the `register_*_globals` function, adding the `#[cfg(feature)]`-gated call in `sandbox.rs`, and optionally adding a `ModuleManifest` entry to `MODULE_REGISTRY` for CLI support.
+
+Apple Calendar is an opt-in platform module, not a CLI manifest module in V1.
+Its feature is `mod-apple-calendar`, its native crate is
+`modules/apple-calendar`, and the runtime global is `calendar` only for
+Apple-targeted host embeddings. It is not listed in `MODULE_REGISTRY`, is not
+included in manifest presets, and is not part of `all` because enabling it on
+non-Apple targets fails at build time. Host applications can inject
+`SandboxBuilder::calendar_gateway(...)`; otherwise Apple builds use the
+platform EventKit gateway.
 
 ## Config Format (`cpsl.toml`)
 

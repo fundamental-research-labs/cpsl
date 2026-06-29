@@ -1,6 +1,8 @@
 //! Luau sandbox construction, execution, and global module registration.
 
 use crate::mount::MountTable;
+#[cfg(feature = "mod-apple-calendar")]
+use apple_calendar::AppleCalendarGateway;
 use mlua::{Lua, MultiValue, Value};
 #[cfg(feature = "mod-http")]
 use native_http::HttpGateway;
@@ -371,6 +373,8 @@ pub struct SandboxBuilder {
     auto_tmp: bool,
     #[cfg(feature = "mod-http")]
     http_gateway: Option<Arc<HttpGateway>>,
+    #[cfg(feature = "mod-apple-calendar")]
+    calendar_gateway: Option<Arc<AppleCalendarGateway>>,
     #[cfg(cpsl_experimental_sfae)]
     sfae_store: Option<Arc<Mutex<dyn SecretStore + Send>>>,
     #[cfg(cpsl_experimental_sfae)]
@@ -391,6 +395,8 @@ impl Default for SandboxBuilder {
             auto_tmp: true,
             #[cfg(feature = "mod-http")]
             http_gateway: None,
+            #[cfg(feature = "mod-apple-calendar")]
+            calendar_gateway: None,
             #[cfg(cpsl_experimental_sfae)]
             sfae_store: None,
             #[cfg(cpsl_experimental_sfae)]
@@ -420,6 +426,12 @@ impl SandboxBuilder {
     #[cfg(feature = "mod-http")]
     pub fn http_gateway(mut self, gateway: Arc<HttpGateway>) -> Self {
         self.http_gateway = Some(gateway);
+        self
+    }
+
+    #[cfg(feature = "mod-apple-calendar")]
+    pub fn calendar_gateway(mut self, gateway: Arc<AppleCalendarGateway>) -> Self {
+        self.calendar_gateway = Some(gateway);
         self
     }
 
@@ -605,6 +617,23 @@ impl SandboxBuilder {
             crate::yfinance::register_yfinance_globals(&lua, gw.clone())?;
             #[cfg(feature = "mod-edgar")]
             crate::edgar::register_edgar_globals(&lua, gw.clone())?;
+        }
+        #[cfg(all(
+            feature = "mod-apple-calendar",
+            any(target_os = "macos", target_os = "ios")
+        ))]
+        {
+            let gateway = self
+                .calendar_gateway
+                .unwrap_or_else(AppleCalendarGateway::shared_platform_default);
+            crate::calendar::register_calendar_globals(&lua, gateway)?;
+        }
+        #[cfg(all(
+            feature = "mod-apple-calendar",
+            not(any(target_os = "macos", target_os = "ios"))
+        ))]
+        if let Some(ref gateway) = self.calendar_gateway {
+            crate::calendar::register_calendar_globals(&lua, gateway.clone())?;
         }
         #[cfg(cpsl_experimental_sfae)]
         if let (Some(ref store), Some(ref prompt)) = (&self.sfae_store, &self.sfae_prompt) {
@@ -914,7 +943,7 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
     // global names and includes only those that are actually registered.
     let code = r#"
         function help()
-            local known = {"base64","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
+            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","xml","yaml","yfinance"}
             local lines = {}
             for _, name in ipairs(known) do
                 local m = rawget(_G, name)

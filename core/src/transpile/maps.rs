@@ -89,6 +89,7 @@ pub(super) fn is_passthrough_module(name: &str) -> bool {
             | "datetime"
             | "image"
             | "base64"
+            | "calendar"
             | "fin"
             | "yfinance"
             | "edgar"
