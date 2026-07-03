@@ -1027,8 +1027,10 @@ fn all_module_docs() -> Vec<(&'static str, &'static ModuleDoc)> {
     docs.push(("csv", &crate::csv_mod::CSV_DOC));
     #[cfg(feature = "mod-compress")]
     docs.push(("compress", &crate::compress::COMPRESS_DOC));
-    #[cfg(feature = "mod-doc")]
+    #[cfg(all(feature = "mod-doc", not(feature = "pdfium-render")))]
     docs.push(("doc", &crate::doc::DOC_MOD_DOC));
+    #[cfg(all(feature = "mod-doc", feature = "pdfium-render"))]
+    docs.push(("doc", &crate::doc::DOC_MOD_DOC_PDFIUM));
     #[cfg(feature = "mod-http")]
     docs.push(("http", &crate::http::HTTP_DOC));
     #[cfg(feature = "mod-plot")]

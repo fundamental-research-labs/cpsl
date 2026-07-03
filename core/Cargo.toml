@@ -24,7 +24,7 @@ mod-yaml = ["dep:yaml-rust2"]
 mod-xml = ["dep:quick-xml"]
 mod-http = ["dep:native-http"]
 mod-compress = ["dep:zip", "dep:tar", "dep:flate2", "dep:bzip2", "dep:xz2", "dep:sevenz-rust"]
-mod-doc = ["dep:calamine", "dep:rtf-parser", "dep:pulldown-cmark", "dep:native-webview-pdf", "dep:sha2", "dep:hex"]
+mod-doc = ["dep:zip", "dep:quick-xml", "dep:calamine", "dep:rtf-parser", "dep:pulldown-cmark", "dep:native-webview-pdf", "dep:sha2", "dep:hex"]
 mod-plot = ["dep:plotly"]
 mod-numpy = ["dep:ndarray", "dep:faer", "dep:rand", "dep:rand_distr"]
 mod-fuzzy = ["dep:rapidfuzz"]
@@ -64,7 +64,7 @@ csv = { version = "1", optional = true }
 yaml-rust2 = { version = "0.11", optional = true }
 
 # mod-xml
-quick-xml = { version = "0.39", optional = true }
+quick-xml = { version = "0.41", optional = true }
 
 # mod-http
 native-http = { path = "../modules/native-http", optional = true }
@@ -78,7 +78,7 @@ tar = { version = "0.4", optional = true }
 flate2 = { version = "1", optional = true }
 
 # mod-doc
-calamine = { version = "0.33", optional = true }
+calamine = { version = "0.35", optional = true }
 rtf-parser = { version = "0.4", optional = true }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 native-webview-pdf = { path = "../modules/native-webview-pdf", optional = true }
@@ -93,7 +93,7 @@ plotly = { version = "0.14", optional = true }
 rapidfuzz = { version = "0.5", optional = true }
 
 # mod-phone
-phonenumber = { version = "0.3", optional = true }
+phonenumber = { version = "0.3.10", optional = true }
 
 # mod-email
 email_address = { version = "0.2", optional = true }

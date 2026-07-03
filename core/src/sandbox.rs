@@ -11,10 +11,12 @@ use std::sync::{Arc, Mutex};
 
 mod doc;
 
+#[allow(unused_imports)]
+pub(crate) use doc::validate_args;
 #[cfg(feature = "mod-fs")]
 pub(crate) use doc::FS_DOC;
 pub(crate) use doc::{
-    arg_error, validate_args, FieldDoc, FnDoc, HelpMode, ModuleDoc, Param, ParamType, ReturnType,
+    arg_error, FieldDoc, FnDoc, HelpMode, ModuleDoc, Param, ParamType, ReturnType,
 };
 
 mod errors;
