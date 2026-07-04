@@ -92,7 +92,7 @@ impl PdfiumEngine {
 
     /// Platform-specific library filename.
     fn platform_lib_name() -> &'static str {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             "libpdfium.dylib"
         }
@@ -104,7 +104,12 @@ impl PdfiumEngine {
         {
             "pdfium.dll"
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "linux",
+            target_os = "windows"
+        )))]
         {
             "libpdfium.so"
         }

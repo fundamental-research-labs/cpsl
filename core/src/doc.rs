@@ -397,7 +397,7 @@ const DOC_RENDER_FILE_PARAMS: &[Param] = &[
     },
 ];
 
-/// Static doc for structural-only mode (no vision callback).
+#[cfg(not(feature = "pdfium-render"))]
 pub(crate) static DOC_MOD_DOC: ModuleDoc = ModuleDoc {
     name: "doc",
     summary: "document reading & conversion; structural parsing (pdf, xlsx, docx, pptx, html, ...)",
@@ -431,7 +431,7 @@ pub(crate) static DOC_MOD_DOC: ModuleDoc = ModuleDoc {
     ],
 };
 
-/// Static doc for vision-enabled mode (vision callback registered).
+#[cfg(not(feature = "pdfium-render"))]
 static DOC_MOD_DOC_VISION: ModuleDoc = ModuleDoc {
     name: "doc",
     summary: "document reading & conversion; structural + vision modes (pdf, xlsx, docx, images, ...)",

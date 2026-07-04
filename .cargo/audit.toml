@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+    # calamine 0.35.0 and phonenumber 0.3.10+9.0.33 still depend on
+    # quick-xml 0.39.x. CPSL's direct quick-xml dependency is on 0.41.0;
+    # remove these ignores when upstream publishes fixed dependency ranges.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

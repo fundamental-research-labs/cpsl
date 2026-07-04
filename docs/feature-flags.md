@@ -72,18 +72,16 @@ cargo build -p cpsl-cli --no-default-features --features mod-json,mod-fs
 Feature flags on `cpsl-cli`, `cpsl-ffi`, and other downstream crates forward to
 `cpsl-core`.
 
-## Herm CPSL Library Builds
+## CPSL FFI Library Builds
 
-Herm's `--cpsl` demo path loads the native dynamic library from `cpsl-ffi`. It
-does not use `cpsl build` or a manifest.
-
-Herm owns the end-to-end Linux and macOS build/run flow. From a Herm checkout,
-run `scripts/build-cpsl-image.sh`; it fetches this CPSL repo as a dependency
-and builds the dynamic library that Herm loads with `--cpsl`.
+The `cpsl-ffi` crate builds a native dynamic library that downstream
+applications can load through the C ABI. It does not use `cpsl build` or a
+manifest.
 
 | Profile | Command | Compiled CPSL modules |
 |---------|---------|-----------------------|
-| Herm demo minimum | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `ripgrep` |
+| Minimal FFI | `cargo build -p cpsl-ffi --release` | `fs`, `json`, `csv`, `http`, `ripgrep` |
+| Embedded agent | `cargo build -p cpsl-ffi --release --no-default-features --features embedded-agent` | minimal profile plus `yaml`, `xml`, `doc` + PDFium, `plot`, `numpy`, `random`, `fuzzy`, `phone`, `email`, `country`, `datetime`, `image`, `base64`, `fin`, `regex`, `html`, `url`, `qr` |
 | All core features | `cargo build -p cpsl-ffi --release --features all` | every `cpsl-core/all` feature listed above |
 
 The output library path is platform-specific:
@@ -92,25 +90,7 @@ The output library path is platform-specific:
 - macOS: `target/release/libcpsl.dylib`
 - Windows: `target/release/cpsl.dll`
 
-From the CPSL repo root, a direct minimum-profile library build is:
-
-```sh
-cargo build -p cpsl-ffi --release
-CPSL_LIB="$(pwd)/target/release/libcpsl.so"
-
-herm --cpsl "$CPSL_LIB"
-```
-
-To run the same Herm build against an all-features CPSL library, change only the
-first build command:
-
-```sh
-cargo build -p cpsl-ffi --release --features all
-```
-
-Enabling all CPSL features expands the modules available to Herm's CPSL command
-path and `/shell --bash`. It does not enable Herm's container-mode tools such as
-`devenv`, host `git`, or package installation.
+Downstream consumers choose the modules they compile into their library build.
 
 The `all` profile pulls native document/PDF dependencies. On Linux that can
 require GTK/WebKit development packages, and PDF-related tests may also need

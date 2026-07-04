@@ -12,6 +12,7 @@ use mlua::{Lua, MultiValue, Value};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::reader::Reader;
 use quick_xml::writer::Writer;
+use quick_xml::XmlVersion;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -130,7 +131,10 @@ fn parse_xml_tree(xml_text: &str) -> Result<XmlNode, mlua::Error> {
                     .filter_map(|a| {
                         let a = a.ok()?;
                         let key = String::from_utf8_lossy(a.key.as_ref()).to_string();
-                        let val = a.unescape_value().ok()?.to_string();
+                        let val = a
+                            .normalized_value(XmlVersion::Implicit1_0)
+                            .ok()?
+                            .to_string();
                         Some((key, val))
                     })
                     .collect();
@@ -157,7 +161,10 @@ fn parse_xml_tree(xml_text: &str) -> Result<XmlNode, mlua::Error> {
                     .filter_map(|a| {
                         let a = a.ok()?;
                         let key = String::from_utf8_lossy(a.key.as_ref()).to_string();
-                        let val = a.unescape_value().ok()?.to_string();
+                        let val = a
+                            .normalized_value(XmlVersion::Implicit1_0)
+                            .ok()?
+                            .to_string();
                         Some((key, val))
                     })
                     .collect();

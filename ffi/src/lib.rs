@@ -364,12 +364,18 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
 
 #[cfg(feature = "pdfium-render")]
 fn discover_pdfium_from_base(base: &Path) -> Option<PdfiumEngine> {
-    let lib_dir = base.join("libs").join("pdfium").join("lib");
-    if lib_dir.is_dir() {
-        PdfiumEngine::from_path(lib_dir).ok()
-    } else {
-        None
+    for candidate in [
+        base.join("libs").join("pdfium").join("lib"),
+        base.to_path_buf(),
+        base.join("Frameworks"),
+    ] {
+        if candidate.exists() {
+            if let Ok(engine) = PdfiumEngine::from_path(&candidate) {
+                return Some(engine);
+            }
+        }
     }
+    None
 }
 
 fn eval_bash(session: &Session, request: &EvalRequest) -> serde_json::Value {

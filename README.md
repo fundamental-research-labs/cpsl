@@ -74,12 +74,6 @@ For quick experiments, the repo-local CLI can also run an ephemeral scratch sand
 
 The default mode is Bash-compatible, including for `./cpsl run NAME`. `--lua` executes Luau directly. `--python` transpiles Python syntax to Luau; it does not invoke CPython or require Python to be installed.
 
-### Herm Local Sandbox Build
-
-Herm owns the end-to-end native local sandbox build flow. From a Herm checkout,
-run `scripts/build-cpsl-image.sh`; it fetches this CPSL repo as a build
-dependency.
-
 ### Custom Capsule 📝
 
 A capsule starts as TOML. Give it a name, enable only the modules it needs, and allow specific network domains:
@@ -175,4 +169,3 @@ These local comparison runs use `./bench-python-luau.sh`, which is optional and 
 | CLI release artifacts | Publish `cpsl` CLI binaries for macOS, Windows, and Linux when tagging a version. | [#11](https://github.com/fundamental-research-labs/cpsl/issues/11) |
 | Capsule module contracts | Define the external capsule-module contract, including module metadata, source pinning, compatibility checks, and build boundaries so community modules can live in separate repositories. Distinct from CPSL Hub: this is the source/build contract; Hub is artifact distribution and discovery. | [#18](https://github.com/fundamental-research-labs/cpsl/issues/18) |
 | CPSL Hub | Design the push and pull workflow for pre-built capsules, including metadata, compatibility checks, and provenance. | [#12](https://github.com/fundamental-research-labs/cpsl/issues/12) |
-| Agent sandbox demo | Build the first demo with Herm, a container-aware and easily customizable agent. Herm runs a bounded workflow inside a CPSL capsule with explicit files, modules, network rules, and inspectable output artifacts. | [#13](https://github.com/fundamental-research-labs/cpsl/issues/13), [draft PR #17](https://github.com/fundamental-research-labs/cpsl/pull/17) |

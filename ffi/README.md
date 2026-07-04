@@ -7,14 +7,21 @@ mount backed by the configured host directory.
 
 ## Build Profiles
 
-The default build is the Herm demo profile. It keeps the dynamic library small
+The default build is the minimal FFI profile. It keeps the dynamic library small
 and enables only `fs`, `json`, `csv`, `http`, and `ripgrep` (`mod-ripgrep`):
 
 ```sh
 cargo build -p cpsl-ffi --release
 ```
 
-To test Herm with every CPSL core feature compiled into the same library:
+The embedded agent profile adds the cross-platform Rust-backed utility modules,
+plus document/PDF support:
+
+```sh
+cargo build -p cpsl-ffi --release --no-default-features --features embedded-agent
+```
+
+To test every CPSL core feature compiled into the same library:
 
 ```sh
 cargo build -p cpsl-ffi --release --features all
@@ -32,5 +39,4 @@ Probe the release library with:
 cargo test -p cpsl-ffi --test probe -- --ignored
 ```
 
-See `../docs/feature-flags.md` for the full module list. Herm's end-to-end
-build script lives in the Herm repo as `scripts/build-cpsl-image.sh`.
+See `../docs/feature-flags.md` for the full module list.

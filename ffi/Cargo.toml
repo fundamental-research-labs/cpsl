@@ -9,13 +9,35 @@ name = "cpsl"
 crate-type = ["cdylib"]
 
 [features]
-default = ["herm-minimal"]
-herm-minimal = [
+default = ["ffi-minimal"]
+ffi-minimal = [
     "cpsl-core/mod-fs",
     "cpsl-core/mod-json",
     "cpsl-core/mod-csv",
     "cpsl-core/mod-http",
     "cpsl-core/mod-ripgrep",
+]
+embedded-agent = [
+    "ffi-minimal",
+    "cpsl-core/mod-yaml",
+    "cpsl-core/mod-xml",
+    "cpsl-core/mod-doc",
+    "cpsl-core/mod-plot",
+    "cpsl-core/mod-numpy",
+    "cpsl-core/mod-random",
+    "cpsl-core/mod-fuzzy",
+    "cpsl-core/mod-phone",
+    "cpsl-core/mod-email",
+    "cpsl-core/mod-country",
+    "cpsl-core/mod-datetime",
+    "cpsl-core/mod-image",
+    "cpsl-core/mod-base64",
+    "cpsl-core/mod-fin",
+    "cpsl-core/mod-regex",
+    "cpsl-core/mod-html",
+    "cpsl-core/mod-url",
+    "cpsl-core/mod-qr",
+    "pdfium-render",
 ]
 pdfium-render = ["cpsl-core/pdfium-render"]
 all = ["cpsl-core/all", "pdfium-render"]

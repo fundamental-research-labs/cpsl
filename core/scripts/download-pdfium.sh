@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download the correct PDFium binary for the current platform.
 #
-# Usage: ./download-pdfium.sh [--version VERSION] [--output DIR]
+# Usage: ./download-pdfium.sh [--version VERSION] [--target TARGET] [--output DIR]
 #
 # Defaults:
 #   VERSION  = 7734  (chromium build number)
@@ -18,9 +18,11 @@ DEFAULT_OUTPUT="$SCRIPT_DIR/../libs/pdfium"
 
 # Parse arguments
 OUTPUT=""
+TARGET="${PDFIUM_TARGET:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) PDFIUM_VERSION="$2"; shift 2 ;;
+    --target)  TARGET="$2"; shift 2 ;;
     --output)  OUTPUT="$2"; shift 2 ;;
     *)         echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
@@ -60,16 +62,17 @@ detect_target() {
   esac
 }
 
-TARGET="$(detect_target)"
+TARGET="${TARGET:-$(detect_target)}"
 ASSET="pdfium-${TARGET}.tgz"
 CACHE_DIR="$HOME/.cache/pdfium/${PDFIUM_VERSION}/${TARGET}"
 CACHE_FILE="$CACHE_DIR/$ASSET"
 
 # Library filename per platform
 case "$TARGET" in
-  mac-*)   LIB_NAME="libpdfium.dylib" ;;
-  linux-*) LIB_NAME="libpdfium.so" ;;
-  win-*)   LIB_NAME="pdfium.dll" ;;
+  ios-*|mac-*) LIB_NAME="libpdfium.dylib" ;;
+  linux-*)     LIB_NAME="libpdfium.so" ;;
+  win-*)       LIB_NAME="pdfium.dll" ;;
+  *)           echo "Unsupported PDFium target: $TARGET" >&2; exit 1 ;;
 esac
 
 # Check if already at output location
@@ -96,6 +99,6 @@ mkdir -p "$OUTPUT"
 echo "Extracting to $OUTPUT..."
 tar xzf "$CACHE_FILE" -C "$OUTPUT"
 
-echo "PDFium ${PDFIUM_VERSION} ready: $OUTPUT/$LIB_NAME"
+echo "PDFium ${PDFIUM_VERSION} ready: $OUTPUT/lib/$LIB_NAME"
 echo ""
 echo "Set PDFIUM_DYNAMIC_LIB_PATH=$OUTPUT/lib/$LIB_NAME for pdfium-render"
