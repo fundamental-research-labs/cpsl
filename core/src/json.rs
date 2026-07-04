@@ -97,11 +97,10 @@ pub(crate) fn register_json_globals(lua: &Lua) -> Result<(), mlua::Error> {
             let pretty = opts
                 .and_then(|t| t.get::<bool>("pretty").ok())
                 .unwrap_or(false);
-            let serde_val = lua_to_json(value)?;
             let result = if pretty {
-                serde_json::to_string_pretty(&serde_val).map_err(mlua::Error::external)?
+                serde_json::to_string_pretty(&lua_to_json(value)?).map_err(mlua::Error::external)?
             } else {
-                serde_json::to_string(&serde_val).map_err(mlua::Error::external)?
+                lua_to_json_string(value)?
             };
             Ok(result)
         })?,
@@ -152,8 +151,27 @@ fn json_to_lua(lua: &Lua, val: &serde_json::Value) -> Result<Value, mlua::Error>
     }
 }
 
+/// Maximum nesting depth when encoding Lua values to JSON. Lua tables can
+/// contain reference cycles, which would otherwise recurse until the process
+/// stack overflows and aborts. Matches serde_json's default recursion limit.
+const MAX_ENCODE_DEPTH: usize = 128;
+
+/// Encode a Lua value as a compact JSON string.
+pub(crate) fn lua_to_json_string(value: &Value) -> Result<String, mlua::Error> {
+    serde_json::to_string(&lua_to_json(value)?).map_err(mlua::Error::external)
+}
+
 /// Convert a Lua value to serde_json::Value.
 fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
+    lua_to_json_at_depth(value, 0)
+}
+
+fn lua_to_json_at_depth(value: &Value, depth: usize) -> Result<serde_json::Value, mlua::Error> {
+    if depth > MAX_ENCODE_DEPTH {
+        return Err(mlua::Error::external(
+            "maximum nesting depth exceeded while encoding JSON (cyclic table?)",
+        ));
+    }
     match value {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
@@ -173,7 +191,7 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
                     let mut arr = Vec::with_capacity(len);
                     for i in 1..=len {
                         let val: Value = data.raw_get(i)?;
-                        arr.push(lua_to_json(&val)?);
+                        arr.push(lua_to_json_at_depth(&val, depth + 1)?);
                     }
                     return Ok(serde_json::Value::Array(arr));
                 }
@@ -188,7 +206,7 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
                             Value::Number(n) => n.to_string(),
                             _ => continue,
                         };
-                        map.insert(key, lua_to_json(&v)?);
+                        map.insert(key, lua_to_json_at_depth(&v, depth + 1)?);
                     }
                     return Ok(serde_json::Value::Object(map));
                 }
@@ -201,7 +219,7 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let val: Value = t.raw_get(i)?;
-                    arr.push(lua_to_json(&val)?);
+                    arr.push(lua_to_json_at_depth(&val, depth + 1)?);
                 }
                 Ok(serde_json::Value::Array(arr))
             } else {
@@ -219,7 +237,7 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
                             )))
                         }
                     };
-                    map.insert(key, lua_to_json(&v)?);
+                    map.insert(key, lua_to_json_at_depth(&v, depth + 1)?);
                 }
                 Ok(serde_json::Value::Object(map))
             }
