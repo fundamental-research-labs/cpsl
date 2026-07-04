@@ -1,6 +1,8 @@
 /cpsl
 /cpsl.exe
 /target
+/modules/apple-calendar/Cargo.lock
+/modules/apple-calendar/target/
 /test/output/
 /web/dist/
 /.tmp-home/

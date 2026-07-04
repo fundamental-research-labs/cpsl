@@ -43,6 +43,7 @@ mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
 mod-ripgrep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
 mod-fff = ["mod-fs", "dep:fff-grep", "dep:grep-regex", "dep:grep-matcher", "dep:ignore", "dep:memchr", "dep:globset"]
+mod-apple-calendar = ["dep:apple-calendar", "dep:chrono"]
 pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
 
 [dependencies]
@@ -68,6 +69,9 @@ quick-xml = { version = "0.41", optional = true }
 
 # mod-http
 native-http = { path = "../modules/native-http", optional = true }
+
+# mod-apple-calendar
+apple-calendar = { path = "../modules/apple-calendar", optional = true }
 
 # mod-compress
 zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
@@ -158,3 +162,4 @@ harness = false
 [dev-dependencies]
 tempfile = "3"
 pdfium-render = { version = "0.8", features = ["sync"] }  # for trait imports in tests
+apple-calendar = { path = "../modules/apple-calendar", features = ["test-support"] }

@@ -13,8 +13,9 @@ enabled or disabled. This means:
 ## Available Core Features
 
 `core/Cargo.toml` is the source of truth for the complete feature list. The
-`default` feature enables `all`, which includes every core module and the
-PDFium document backend.
+`default` feature enables `all`, which includes the cross-platform core module
+set and the PDFium document backend. Platform-hosted native modules such as
+Apple Calendar are opt-in and are not included in `all`.
 
 | Capability | Feature flag | Key dependencies |
 |------------|--------------|------------------|
@@ -47,6 +48,7 @@ PDFium document backend.
 | `grep` provider `ripgrep` | `mod-ripgrep` | grep-regex, grep-searcher, grep-matcher, ignore, globset |
 | `grep` provider `fff` | `mod-fff` | fff-grep, grep-regex, grep-matcher, ignore, memchr, globset |
 | `doc` PDF engine | `pdfium-render` | pdfium-render; also enables `mod-doc` |
+| Apple `calendar` | `mod-apple-calendar` | apple-calendar, chrono, EventKit |
 
 `ripgrep` and `fff` are internal providers for the capsule-facing
 `fs.grep(...)` API. In `cpsl.toml`, select exactly one with
@@ -56,6 +58,14 @@ PDFium document backend.
 through `fs.grep(...)`; the provider names are configuration details, not
 standalone runtime modules.
 
+`mod-apple-calendar` is Apple-only and intentionally excluded from `all`, CLI
+module manifests, and default capsule presets. It is for signed or bundled
+macOS/iOS host embeddings that can satisfy EventKit privacy requirements. The
+runtime global is `calendar`; host applications may inject a gateway with
+`SandboxBuilder::calendar_gateway(...)`, otherwise Apple builds use the platform
+EventKit gateway. Enabling this feature on non-Apple targets fails at build time
+with a clear error instead of registering a stub module.
+
 ## Using Feature Flags Directly (Cargo)
 
 ```sh
@@ -64,6 +74,9 @@ cargo build -p cpsl-core
 
 # Build with only json and fs
 cargo build -p cpsl-core --no-default-features --features mod-json,mod-fs
+
+# Build an Apple-hosted calendar capsule/library on macOS or iOS targets
+cargo build -p cpsl-core --no-default-features --features mod-apple-calendar
 
 # Build the CLI with specific modules
 cargo build -p cpsl-cli --no-default-features --features mod-json,mod-fs
@@ -95,6 +108,16 @@ Downstream consumers choose the modules they compile into their library build.
 The `all` profile pulls native document/PDF dependencies. On Linux that can
 require GTK/WebKit development packages, and PDF-related tests may also need
 PDFium.
+
+Apple Calendar host packaging requirements:
+
+- Minimum OS: iOS 17 or macOS 14, because V1 uses
+  `requestFullAccessToEvents`.
+- Info.plist must include `NSCalendarsFullAccessUsageDescription`.
+- Sandboxed macOS hosts need the Calendar entitlement
+  `com.apple.security.personal-information.calendars`.
+- V1 requests full access only and supports events only; reminders, attendees,
+  recurrence editing, and implicit permission prompts are not supported.
 
 ## Using `cpsl.toml` (Recommended)
 

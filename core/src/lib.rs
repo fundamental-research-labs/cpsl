@@ -2,6 +2,8 @@
 
 #[cfg(feature = "mod-base64")]
 pub(crate) mod base64;
+#[cfg(feature = "mod-apple-calendar")]
+pub(crate) mod calendar;
 #[cfg(feature = "mod-compress")]
 pub(crate) mod compress;
 #[cfg(feature = "mod-country")]
@@ -65,6 +67,8 @@ pub(crate) mod yaml;
 #[cfg(feature = "mod-yfinance")]
 pub(crate) mod yfinance;
 
+#[cfg(feature = "mod-apple-calendar")]
+pub use apple_calendar::AppleCalendarGateway;
 pub use mount::{MountError, MountPermission, MountTable};
 #[cfg(feature = "mod-http")]
 pub use native_http::HttpGateway;
