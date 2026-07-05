@@ -1,4 +1,4 @@
-//! macOS implementation: WKWebView + `createPDF`.
+//! Apple platform implementation: WKWebView + `createPDF`.
 //!
 //! WKWebView MUST live on the main thread. Two code paths:
 //!
@@ -347,7 +347,7 @@ fn prepare_html(html: &str, opts: &PdfOptions) -> String {
     let mr_pt = opts.margin_right * 72.0;
     let mb_pt = opts.margin_bottom * 72.0;
     let ml_pt = opts.margin_left * 72.0;
-    // macOS `createPDF` does NOT honour @page margins, so we apply them
+    // WebKit `createPDF` does NOT honour @page margins, so we apply them
     // as body padding instead.  The viewport and body width equal the full
     // page width; with box-sizing:border-box the content area ends up at
     // (page_w - margin_left - margin_right) points — exactly the intended

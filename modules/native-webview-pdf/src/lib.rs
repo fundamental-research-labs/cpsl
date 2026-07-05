@@ -1,12 +1,14 @@
 //! Platform-native HTML→PDF conversion.
 //!
 //! Uses the OS-native webview engine to render HTML and export PDF:
-//! - macOS: WKWebView + `createPDF`
+//! - macOS/iOS: WKWebView + `createPDF`
 //! - Windows: WebView2 + `PrintToPdfStream`
 //! - Linux: WebKitGTK + print operation → cairo PDF surface
 //!
 //! Zero bundled engine — uses what the OS already ships.
 
+#[cfg(target_os = "ios")]
+mod ios;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -62,9 +64,13 @@ pub enum PdfError {
 
 /// Render an HTML string to PDF bytes using the platform's native webview.
 ///
-/// This is a blocking call. On macOS it spins a runloop internally;
+/// This is a blocking call. On Apple platforms it spins a runloop internally;
 /// on Windows it pumps the message loop; on Linux it runs GTK main iteration.
 pub fn html_to_pdf(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfError> {
+    #[cfg(target_os = "ios")]
+    {
+        ios::html_to_pdf(html, opts)
+    }
     #[cfg(target_os = "macos")]
     {
         macos::html_to_pdf(html, opts)
@@ -77,7 +83,12 @@ pub fn html_to_pdf(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfError> {
     {
         linux::html_to_pdf(html, opts)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "linux"
+    )))]
     {
         let _ = (html, opts);
         Err(PdfError::Unsupported)
