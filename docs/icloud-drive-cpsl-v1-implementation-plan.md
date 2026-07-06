@@ -10,7 +10,7 @@
 
 - Add a Herm-side `AuthorizedMount` or `CPSLMountDescriptor` contract with `label`, staged `host_path`, `/icloud/<slug>` `virtual_path`, `mode: ro|rw`, `source_platform`, `source_kind`, `access_lifetime`, `hydration_state`, and `writable_staged_copy`.
 - Validate mounts before worker startup: canonical existing staged dirs, outside `/workdir` and other writable mounts; reject duplicate or shadow paths, bad slugs, reserved paths, unsupported providers, and `rw` unless `writable_staged_copy=true`.
-- Add `--session-config <path>` to `herm/cmd/herm/cpsl_worker.go`, keep legacy `--workspace`, and generate deterministic FFI session JSON with `/workdir:rw` plus sorted `/icloud/*` mounts.
+- Add public Herm `--cpsl-session-config <path>` and internal worker `--session-config <path>`, keep legacy `--workspace`, and generate deterministic FFI session JSON with `/workdir:rw` plus sorted `/icloud/*` mounts.
 - Extend CPSL prompts through `PromptData` so main agents and subagents render the same sanitized mount table. Do not expose host paths, Apple paths, bookmarks, security-scoped URLs, or provider IDs.
 - Disable provider-side tools and CPSL HTTP egress when any iCloud-origin mount is active, regardless of `--allow-domain *`.
 - Update docs to supersede the older broad/live-mount wording and state that V1 supports `ro` and explicit staged-only `rw`.
@@ -20,6 +20,31 @@
 - macOS, iOS, or iPadOS host selects iCloud Drive directories through native pickers, materializes files, file-coordinates copy, and stages content into app-controlled storage outside writable CPSL mounts.
 - The host passes only sanitized descriptors to Herm/CPSL.
 - Revoke cancels active work, closes or restarts the worker, removes descriptors, clears prompt context, releases platform access, and deletes staged data.
+
+Descriptor file shape:
+
+```json
+{
+  "workspace": "/optional/workdir/fallback",
+  "mounts": [
+    {
+      "label": "Project",
+      "host_path": "/app/staged/icloud/project",
+      "virtual_path": "/icloud/project",
+      "mode": "ro",
+      "source_platform": "ipados",
+      "source_kind": "icloud-drive-directory",
+      "access_lifetime": "session",
+      "hydration_state": "staged",
+      "writable_staged_copy": false
+    }
+  ]
+}
+```
+
+The public Herm flag validates and preloads sanitized prompt rows. The worker
+re-reads and validates the descriptor file immediately before creating the CPSL
+session.
 
 ## Test Plan
 

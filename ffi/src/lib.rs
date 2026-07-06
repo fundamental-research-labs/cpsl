@@ -1550,6 +1550,147 @@ mod tests {
     }
 
     #[test]
+    fn icloud_mounts_are_visible_and_enforce_modes() {
+        let workdir = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        let draft = TempDir::new().unwrap();
+        fs::write(project.path().join("input.txt"), "icloud input").unwrap();
+        let config = json!({
+            "mounts": [
+                {
+                    "host": workdir.path().canonicalize().unwrap(),
+                    "virtual": WORKDIR,
+                    "mode": "rw"
+                },
+                {
+                    "host": project.path().canonicalize().unwrap(),
+                    "virtual": "/icloud/project",
+                    "mode": "ro"
+                },
+                {
+                    "host": draft.path().canonicalize().unwrap(),
+                    "virtual": "/icloud/draft",
+                    "mode": "rw"
+                }
+            ],
+            "initial_cwd": WORKDIR,
+            "language": LANGUAGE_LUAU,
+            "http": {
+                "mode": "policy",
+                "allow_domains": [],
+                "deny_domains": []
+            }
+        });
+        let config = CString::new(config.to_string()).unwrap();
+        let session = cpsl_session_new(config.as_ptr());
+        assert!(!session.is_null(), "session_new failed: {}", unsafe {
+            borrowed_ffi_string(cpsl_last_error())
+        });
+
+        let response = eval_luau(
+            session,
+            r#"
+                local entries = fs.list("/icloud")
+                table.sort(entries)
+                print(table.concat(entries, ","))
+                print(fs.read("/icloud/project/input.txt"))
+                local write_ok = pcall(function()
+                    fs.write("/icloud/project/input.txt", "changed")
+                end)
+                print("write:" .. tostring(write_ok))
+                local remove_ok = pcall(function()
+                    fs.remove("/icloud/project/input.txt")
+                end)
+                print("remove:" .. tostring(remove_ok))
+                local rename_ok = pcall(function()
+                    fs.rename("/icloud/project/input.txt", "/icloud/project/renamed.txt")
+                end)
+                print("rename:" .. tostring(rename_ok))
+                fs.write("/icloud/draft/out.txt", "draft output")
+                print(fs.read("/icloud/draft/out.txt"))
+            "#,
+        );
+
+        assert_success(&response, 0);
+        let stdout = response["stdout"].as_str().unwrap();
+        assert!(stdout.contains("draft,project"), "{response}");
+        assert!(stdout.contains("icloud input"), "{response}");
+        assert!(stdout.contains("write:false"), "{response}");
+        assert!(stdout.contains("remove:false"), "{response}");
+        assert!(stdout.contains("rename:false"), "{response}");
+        assert!(stdout.contains("draft output"), "{response}");
+        assert_eq!(
+            fs::read_to_string(project.path().join("input.txt")).unwrap(),
+            "icloud input"
+        );
+        assert_eq!(
+            fs::read_to_string(draft.path().join("out.txt")).unwrap(),
+            "draft output"
+        );
+
+        cpsl_session_free(session);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn icloud_mount_symlinks_cannot_escape() {
+        let workdir = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside secret").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            project.path().join("link.txt"),
+        )
+        .unwrap();
+        let config = json!({
+            "mounts": [
+                {
+                    "host": workdir.path().canonicalize().unwrap(),
+                    "virtual": WORKDIR,
+                    "mode": "rw"
+                },
+                {
+                    "host": project.path().canonicalize().unwrap(),
+                    "virtual": "/icloud/project",
+                    "mode": "ro"
+                }
+            ],
+            "initial_cwd": WORKDIR,
+            "language": LANGUAGE_LUAU,
+            "http": {
+                "mode": "policy",
+                "allow_domains": [],
+                "deny_domains": []
+            }
+        });
+        let config = CString::new(config.to_string()).unwrap();
+        let session = cpsl_session_new(config.as_ptr());
+        assert!(!session.is_null(), "session_new failed: {}", unsafe {
+            borrowed_ffi_string(cpsl_last_error())
+        });
+
+        let response = eval_luau(
+            session,
+            r#"
+                local ok, err = pcall(function()
+                    return fs.read("/icloud/project/link.txt")
+                end)
+                print(ok)
+                print(tostring(err))
+            "#,
+        );
+
+        assert_success(&response, 0);
+        let stdout = response["stdout"].as_str().unwrap();
+        assert!(!stdout.contains("outside secret"), "{response}");
+        assert!(stdout.contains("false"), "{response}");
+        assert!(stdout.contains("Path traversal denied"), "{response}");
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
     fn metadata_advertises_native_luau_and_bash() {
         let metadata = unsafe { owned_ffi_string(cpsl_backend_metadata_json()) };
         let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
