@@ -120,6 +120,16 @@ fn test_global_help_returns_help() {
         "should list standard libs: {}",
         result
     );
+    assert!(
+        result.contains("integer is Luau's exact 64-bit integer type"),
+        "should explain integer type: {}",
+        result
+    );
+    assert!(
+        result.contains("buffer.readinteger/writeinteger"),
+        "should mention integer buffer APIs: {}",
+        result
+    );
 }
 
 #[test]

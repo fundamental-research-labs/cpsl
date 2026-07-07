@@ -989,6 +989,8 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
                 .. "  help()       Show this help message\n"
                 .. "\n"
                 .. "Standard libraries: string, table, math, bit32, buffer, vector, integer, coroutine, utf8\n"
+                .. "  integer is Luau's exact 64-bit integer type; it is distinct from number/string.\n"
+                .. "  Use integer.* operations and buffer.readinteger/writeinteger for exact 64-bit binary data.\n"
                 .. "\n"
                 .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
             print(text)
