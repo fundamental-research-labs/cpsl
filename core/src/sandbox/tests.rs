@@ -121,8 +121,13 @@ fn test_global_help_returns_help() {
         result
     );
     assert!(
-        result.contains("integer is Luau's exact 64-bit integer type"),
-        "should explain integer type: {}",
+        result.contains("Use number for ordinary math; integer.* is for exact 64-bit values."),
+        "should explain when to use integer: {}",
+        result
+    );
+    assert!(
+        result.contains("Integer values do not auto-convert with number/string"),
+        "should explain integer interop: {}",
         result
     );
     assert!(
