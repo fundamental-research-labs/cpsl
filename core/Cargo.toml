@@ -13,7 +13,7 @@ all = ["mod-fs", "mod-json", "mod-csv", "mod-yaml", "mod-xml",
        "mod-random", "mod-fuzzy", "mod-phone", "mod-email", "mod-country",
        "mod-datetime", "mod-image", "mod-base64", "mod-fin", "mod-yfinance", "mod-edgar",
        "mod-crypto", "mod-regex", "mod-html", "mod-url", "mod-qr", "mod-ripgrep",
-       "mod-fff", "pdfium-render"]
+       "mod-fff", "mod-webbrowser", "pdfium-render"]
 
 mod-base64 = []                                     # no extra deps — pure computation
 mod-fs = ["dep:rand"]                               # rand for /dev/urandom
@@ -41,6 +41,7 @@ mod-regex = ["dep:regex"]
 mod-html = ["dep:scraper"]
 mod-url = ["dep:url", "dep:percent-encoding"]
 mod-qr = ["dep:qrcode", "dep:png"]
+mod-webbrowser = ["dep:serde_json"]
 mod-ripgrep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
 mod-fff = ["mod-fs", "dep:fff-grep", "dep:grep-regex", "dep:grep-matcher", "dep:ignore", "dep:memchr", "dep:globset"]
 mod-apple-calendar = ["dep:apple-calendar", "dep:chrono"]

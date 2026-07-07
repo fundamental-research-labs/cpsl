@@ -60,6 +60,8 @@ pub mod sh_transpile;
 pub mod transpile;
 #[cfg(feature = "mod-url")]
 pub(crate) mod url_mod;
+#[cfg(feature = "mod-webbrowser")]
+pub(crate) mod webbrowser;
 #[cfg(feature = "mod-xml")]
 pub(crate) mod xml;
 #[cfg(feature = "mod-yaml")]
@@ -80,3 +82,5 @@ pub use sandbox::{
 };
 #[cfg(cpsl_experimental_sfae)]
 pub use sfae::{BrowserOpener, CredentialPrompt};
+#[cfg(feature = "mod-webbrowser")]
+pub use webbrowser::WebBrowserGateway;

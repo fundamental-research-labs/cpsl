@@ -2,17 +2,21 @@
 
 #[cfg(feature = "pdfium-render")]
 use cpsl_core::PdfiumEngine;
+#[cfg(feature = "webbrowser")]
+use cpsl_core::WebBrowserGateway;
 use cpsl_core::{HttpGateway, MountPermission, MountTable, Sandbox};
 use serde::Deserialize;
 use serde_json::json;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::net::IpAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(feature = "webbrowser")]
+use url::Url;
 
-const CPSL_ABI_VERSION: u32 = 1;
+const CPSL_ABI_VERSION: u32 = 2;
 const WORKDIR: &str = "/workdir";
 const LANGUAGE_LUAU: &str = "luau";
 const LANGUAGE_BASH: &str = "bash";
@@ -30,6 +34,114 @@ pub struct cpsl_session_t {
     _private: [u8; 0],
 }
 
+type WebBrowserHandleJsonFn =
+    unsafe extern "C" fn(user_data: *mut c_void, request_json: *const c_char) -> *mut c_char;
+type WebBrowserStringFreeFn = unsafe extern "C" fn(value: *mut c_char);
+type WebBrowserUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct cpsl_webbrowser_callbacks_t {
+    user_data: *mut c_void,
+    handle_json: Option<WebBrowserHandleJsonFn>,
+    string_free: Option<WebBrowserStringFreeFn>,
+    user_data_free: Option<WebBrowserUserDataFreeFn>,
+}
+
+#[cfg(feature = "webbrowser")]
+struct FfiWebBrowserGateway {
+    user_data: *mut c_void,
+    handle_json: WebBrowserHandleJsonFn,
+    string_free: WebBrowserStringFreeFn,
+    user_data_free: Option<WebBrowserUserDataFreeFn>,
+    callback_lock: Mutex<()>,
+}
+
+#[cfg(feature = "webbrowser")]
+struct PolicyWebBrowserGateway {
+    inner: Arc<dyn WebBrowserGateway>,
+    policy: WebBrowserPolicy,
+}
+
+#[cfg(feature = "webbrowser")]
+#[derive(Clone)]
+struct WebBrowserPolicy {
+    allow_domains: Vec<String>,
+    deny_domains: Vec<String>,
+}
+
+#[cfg(feature = "webbrowser")]
+unsafe impl Send for FfiWebBrowserGateway {}
+#[cfg(feature = "webbrowser")]
+unsafe impl Sync for FfiWebBrowserGateway {}
+
+#[cfg(feature = "webbrowser")]
+impl WebBrowserGateway for FfiWebBrowserGateway {
+    fn handle_json(&self, request_json: &str) -> Result<String, String> {
+        let request = CString::new(request_json)
+            .map_err(|_| "webbrowser request JSON contained an embedded NUL byte".to_string())?;
+        let _guard = self
+            .callback_lock
+            .lock()
+            .map_err(|_| "webbrowser callback lock was poisoned".to_string())?;
+        let response = unsafe { (self.handle_json)(self.user_data, request.as_ptr()) };
+        if response.is_null() {
+            return Err("webbrowser callback returned NULL".to_string());
+        }
+
+        let result = unsafe { CStr::from_ptr(response) }
+            .to_str()
+            .map(str::to_owned)
+            .map_err(|_| "webbrowser callback returned non-UTF-8 JSON".to_string());
+        unsafe {
+            (self.string_free)(response);
+        }
+        result
+    }
+}
+
+#[cfg(feature = "webbrowser")]
+impl WebBrowserGateway for PolicyWebBrowserGateway {
+    fn handle_json(&self, request_json: &str) -> Result<String, String> {
+        let mut request: serde_json::Value = serde_json::from_str(request_json)
+            .map_err(|error| format!("invalid webbrowser request JSON: {error}"))?;
+        let object = request
+            .as_object_mut()
+            .ok_or_else(|| "webbrowser request JSON must be an object".to_string())?;
+
+        if object.get("command").and_then(serde_json::Value::as_str) == Some("open") {
+            let url = object
+                .get("url")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "webbrowser.open: missing URL".to_string())?;
+            self.policy.check_url(url)?;
+        }
+
+        object.insert(
+            "networkPolicy".to_string(),
+            json!({
+                "allowDomains": &self.policy.allow_domains,
+                "denyDomains": &self.policy.deny_domains,
+                "unrestricted": self.policy.allow_domains.iter().any(|domain| domain == "*"),
+            }),
+        );
+        self.inner.handle_json(&request.to_string())
+    }
+}
+
+#[cfg(feature = "webbrowser")]
+impl Drop for FfiWebBrowserGateway {
+    fn drop(&mut self) {
+        if !self.user_data.is_null() {
+            if let Some(user_data_free) = self.user_data_free {
+                unsafe {
+                    user_data_free(self.user_data);
+                }
+            }
+        }
+    }
+}
+
 struct Session {
     _config: ValidatedSessionConfig,
     sandbox: Sandbox,
@@ -40,6 +152,8 @@ struct ValidatedSessionConfig {
     initial_cwd: String,
     allow_domains: Vec<String>,
     deny_domains: Vec<String>,
+    #[cfg(feature = "webbrowser")]
+    webbrowser_policy: WebBrowserPolicy,
 }
 
 struct ValidatedMountConfig {
@@ -55,6 +169,9 @@ struct SessionConfig {
     initial_cwd: String,
     language: String,
     http: HttpConfig,
+    #[cfg_attr(not(feature = "webbrowser"), allow(dead_code))]
+    #[serde(default)]
+    webbrowser: Option<WebBrowserConfig>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +186,15 @@ struct MountConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HttpConfig {
+    mode: String,
+    allow_domains: Vec<String>,
+    deny_domains: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "webbrowser"), allow(dead_code))]
+struct WebBrowserConfig {
     mode: String,
     allow_domains: Vec<String>,
     deny_domains: Vec<String>,
@@ -98,7 +224,8 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
             "languages": [LANGUAGE_LUAU, LANGUAGE_BASH],
             "capabilities": {
                 "mounts": true,
-                "network_policy": true
+                "network_policy": true,
+                "webbrowser_callbacks": cfg!(feature = "webbrowser")
             }
         });
         owned_c_string(metadata.to_string())
@@ -107,10 +234,49 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_session_t {
+    session_new_inner(config_json, None)
+}
+
+#[cfg(feature = "webbrowser")]
+#[no_mangle]
+pub extern "C" fn cpsl_session_new_with_webbrowser_callbacks(
+    config_json: *const c_char,
+    callbacks: *const cpsl_webbrowser_callbacks_t,
+) -> *mut cpsl_session_t {
+    let gateway = match validate_webbrowser_callbacks(callbacks) {
+        Ok(gateway) => gateway,
+        Err(error) => {
+            set_last_error(&error);
+            return ptr::null_mut();
+        }
+    };
+    session_new_inner(config_json, gateway)
+}
+
+#[cfg(not(feature = "webbrowser"))]
+#[no_mangle]
+pub extern "C" fn cpsl_session_new_with_webbrowser_callbacks(
+    _config_json: *const c_char,
+    callbacks: *const cpsl_webbrowser_callbacks_t,
+) -> *mut cpsl_session_t {
+    free_webbrowser_callback_context(callbacks);
+    set_last_error("CPSL was built without mod-webbrowser");
+    ptr::null_mut()
+}
+
+fn session_new_inner(
+    config_json: *const c_char,
+    #[cfg(feature = "webbrowser")] webbrowser_gateway: Option<Arc<dyn WebBrowserGateway>>,
+    #[cfg(not(feature = "webbrowser"))] _webbrowser_gateway: Option<()>,
+) -> *mut cpsl_session_t {
     ffi_result(|| {
         let config_json = c_str_arg(config_json, "config_json")?;
         let config = validate_session_config(&config_json)?;
-        let sandbox = create_runtime_sandbox(&config)?;
+        let sandbox = create_runtime_sandbox(
+            &config,
+            #[cfg(feature = "webbrowser")]
+            webbrowser_gateway,
+        )?;
         let session = Box::new(Session {
             sandbox,
             _config: config,
@@ -197,6 +363,46 @@ where
     }
 }
 
+#[cfg(feature = "webbrowser")]
+fn validate_webbrowser_callbacks(
+    callbacks: *const cpsl_webbrowser_callbacks_t,
+) -> Result<Option<Arc<dyn WebBrowserGateway>>, String> {
+    if callbacks.is_null() {
+        return Ok(None);
+    }
+
+    let callbacks = unsafe { &*callbacks };
+    let handle_json = callbacks
+        .handle_json
+        .ok_or_else(|| "webbrowser callbacks.handle_json must not be NULL".to_string())?;
+    let string_free = callbacks
+        .string_free
+        .ok_or_else(|| "webbrowser callbacks.string_free must not be NULL".to_string())?;
+
+    Ok(Some(Arc::new(FfiWebBrowserGateway {
+        user_data: callbacks.user_data,
+        handle_json,
+        string_free,
+        user_data_free: callbacks.user_data_free,
+        callback_lock: Mutex::new(()),
+    })))
+}
+
+#[cfg(not(feature = "webbrowser"))]
+fn free_webbrowser_callback_context(callbacks: *const cpsl_webbrowser_callbacks_t) {
+    if callbacks.is_null() {
+        return;
+    }
+    let callbacks = unsafe { &*callbacks };
+    if !callbacks.user_data.is_null() {
+        if let Some(user_data_free) = callbacks.user_data_free {
+            unsafe {
+                user_data_free(callbacks.user_data);
+            }
+        }
+    }
+}
+
 fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, String> {
     let config: SessionConfig = serde_json::from_str(config_json)
         .map_err(|error| format!("invalid session config: {error}"))?;
@@ -212,8 +418,11 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
     if config.http.mode != "policy" {
         return Err("session http mode must be policy".to_string());
     }
-    let allow_domains = validate_domain_list(config.http.allow_domains, "allow_domains")?;
-    let deny_domains = validate_domain_list(config.http.deny_domains, "deny_domains")?;
+    let allow_domains = validate_domain_list(config.http.allow_domains, "http", "allow_domains")?;
+    let deny_domains = validate_domain_list(config.http.deny_domains, "http", "deny_domains")?;
+    #[cfg(feature = "webbrowser")]
+    let webbrowser_policy =
+        validate_webbrowser_policy(config.webbrowser, &allow_domains, &deny_domains)?;
 
     let mut mount_table = MountTable::new();
     let mut mounts = Vec::with_capacity(config.mounts.len());
@@ -240,6 +449,8 @@ fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, 
         initial_cwd: config.initial_cwd,
         allow_domains,
         deny_domains,
+        #[cfg(feature = "webbrowser")]
+        webbrowser_policy,
     })
 }
 
@@ -260,7 +471,10 @@ fn validate_mount_config(mount: &MountConfig) -> Result<ValidatedMountConfig, St
     })
 }
 
-fn create_runtime_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, String> {
+fn create_runtime_sandbox(
+    config: &ValidatedSessionConfig,
+    #[cfg(feature = "webbrowser")] webbrowser_gateway: Option<Arc<dyn WebBrowserGateway>>,
+) -> Result<Sandbox, String> {
     let mut mounts = MountTable::new();
     for mount in &config.mounts {
         mounts
@@ -274,6 +488,15 @@ fn create_runtime_sandbox(config: &ValidatedSessionConfig) -> Result<Sandbox, St
         .mounts(mounts)
         .http_gateway(Arc::new(create_http_gateway(config)))
         .auto_tmp(false);
+    #[cfg(feature = "webbrowser")]
+    let builder = if let Some(gateway) = webbrowser_gateway {
+        builder.webbrowser_gateway(Arc::new(PolicyWebBrowserGateway {
+            inner: gateway,
+            policy: config.webbrowser_policy.clone(),
+        }))
+    } else {
+        builder
+    };
     #[cfg(feature = "pdfium-render")]
     let builder = if let Some(engine) = discover_pdfium_engine() {
         builder.pdfium_engine(Arc::new(engine))
@@ -314,6 +537,74 @@ fn create_http_gateway(config: &ValidatedSessionConfig) -> HttpGateway {
         builder = builder.deny_domain(domain.clone());
     }
     builder.build()
+}
+
+#[cfg(feature = "webbrowser")]
+fn validate_webbrowser_policy(
+    config: Option<WebBrowserConfig>,
+    http_allow_domains: &[String],
+    http_deny_domains: &[String],
+) -> Result<WebBrowserPolicy, String> {
+    match config {
+        Some(config) => {
+            if config.mode != "policy" {
+                return Err("session webbrowser mode must be policy".to_string());
+            }
+            Ok(WebBrowserPolicy {
+                allow_domains: validate_domain_list(
+                    config.allow_domains,
+                    "webbrowser",
+                    "allow_domains",
+                )?,
+                deny_domains: validate_domain_list(
+                    config.deny_domains,
+                    "webbrowser",
+                    "deny_domains",
+                )?,
+            })
+        }
+        None => Ok(WebBrowserPolicy {
+            allow_domains: http_allow_domains.to_vec(),
+            deny_domains: http_deny_domains.to_vec(),
+        }),
+    }
+}
+
+#[cfg(feature = "webbrowser")]
+impl WebBrowserPolicy {
+    fn check_url(&self, url: &str) -> Result<(), String> {
+        let parsed =
+            Url::parse(url).map_err(|error| format!("webbrowser: invalid URL: {error}"))?;
+        match parsed.scheme() {
+            "http" | "https" => {}
+            scheme => {
+                return Err(format!(
+                    "webbrowser: URL scheme '{scheme}' is not allowed by policy"
+                ))
+            }
+        }
+        let domain = parsed
+            .host_str()
+            .ok_or_else(|| "webbrowser: URL must include a host".to_string())?
+            .to_ascii_lowercase();
+        if self.is_allowed(&domain) {
+            Ok(())
+        } else {
+            Err(format!("http: access to '{domain}' was denied"))
+        }
+    }
+
+    fn is_allowed(&self, domain: &str) -> bool {
+        !matches_any_policy_domain(domain, &self.deny_domains)
+            && matches_any_policy_domain(domain, &self.allow_domains)
+    }
+}
+
+#[cfg(feature = "webbrowser")]
+fn matches_any_policy_domain(domain: &str, entries: &[String]) -> bool {
+    entries
+        .iter()
+        .any(|entry| entry == "*" || domain == entry || domain.ends_with(&format!(".{entry}")))
 }
 
 #[cfg(feature = "pdfium-render")]
@@ -504,10 +795,14 @@ fn validate_initial_cwd(path: &str, mounts: &MountTable) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_domain_list(domains: Vec<String>, field: &str) -> Result<Vec<String>, String> {
+fn validate_domain_list(
+    domains: Vec<String>,
+    policy_name: &str,
+    field: &str,
+) -> Result<Vec<String>, String> {
     for domain in &domains {
         validate_policy_domain(domain).map_err(|error| {
-            format!("session http {field} entry {domain:?} is invalid: {error}")
+            format!("session {policy_name} {field} entry {domain:?} is invalid: {error}")
         })?;
     }
     Ok(domains)
@@ -645,6 +940,17 @@ mod tests {
         assert_eq!(validated.mounts[0].permission, MountPermission::ReadWrite);
         assert_eq!(validated.allow_domains, Vec::<String>::new());
         assert_eq!(validated.deny_domains, Vec::<String>::new());
+        #[cfg(feature = "webbrowser")]
+        {
+            assert_eq!(
+                validated.webbrowser_policy.allow_domains,
+                Vec::<String>::new()
+            );
+            assert_eq!(
+                validated.webbrowser_policy.deny_domains,
+                Vec::<String>::new()
+            );
+        }
     }
 
     #[test]
@@ -744,6 +1050,58 @@ mod tests {
         assert!(languages.iter().any(|language| language == LANGUAGE_BASH));
     }
 
+    #[test]
+    fn metadata_advertises_webbrowser_callback_feature_flag() {
+        let metadata = unsafe { owned_ffi_string(cpsl_backend_metadata_json()) };
+        let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+
+        assert_eq!(
+            metadata["capabilities"]["webbrowser_callbacks"],
+            cfg!(feature = "webbrowser")
+        );
+    }
+
+    #[cfg(feature = "webbrowser")]
+    #[test]
+    fn webbrowser_callbacks_enable_luau_module() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session_with_webbrowser_callbacks(dir.path());
+
+        let response = eval_luau(
+            session,
+            r#"
+                local result = webbrowser.open("https://example.com")
+                print(result.browser)
+                print(result.page.title)
+            "#,
+        );
+
+        assert_success(&response, 0);
+        assert_eq!(response["stdout"], "test-browser\nExample Domain\n");
+
+        cpsl_session_free(session);
+    }
+
+    #[cfg(feature = "webbrowser")]
+    #[test]
+    fn webbrowser_callbacks_follow_default_network_policy() {
+        let dir = TempDir::new().unwrap();
+        let session = new_session_with_webbrowser_callbacks_and_policy(dir.path(), None);
+
+        let response = eval_luau(
+            session,
+            r#"return webbrowser.open("https://example.com").browser"#,
+        );
+
+        assert_eval_error(&response, "sandbox_denied");
+        assert_eq!(
+            response["error"]["message"],
+            "Network access is denied by policy"
+        );
+
+        cpsl_session_free(session);
+    }
+
     #[cfg(feature = "pdfium-render")]
     #[test]
     fn runtime_sandbox_creation_does_not_require_pdfium_library() {
@@ -751,7 +1109,12 @@ mod tests {
         let config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
         let validated = validate_session_config(&config.to_string()).unwrap();
 
-        let sandbox = create_runtime_sandbox(&validated).unwrap();
+        let sandbox = create_runtime_sandbox(
+            &validated,
+            #[cfg(feature = "webbrowser")]
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             sandbox.exec("return type(doc.pdfInfo)").unwrap(),
@@ -775,6 +1138,26 @@ mod tests {
         assert_eq!(
             validated.deny_domains,
             ["blocked.example.com", "blocked.example.com"]
+        );
+    }
+
+    #[cfg(feature = "webbrowser")]
+    #[test]
+    fn validates_webbrowser_policy_domains() {
+        let dir = TempDir::new().unwrap();
+        let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
+        config["webbrowser"] = json!({
+            "mode": "policy",
+            "allow_domains": ["*"],
+            "deny_domains": ["blocked.example.com"]
+        });
+
+        let validated = validate_session_config(&config.to_string()).unwrap();
+
+        assert_eq!(validated.webbrowser_policy.allow_domains, ["*"]);
+        assert_eq!(
+            validated.webbrowser_policy.deny_domains,
+            ["blocked.example.com"]
         );
     }
 
@@ -1213,6 +1596,82 @@ mod tests {
             borrowed_ffi_string(cpsl_last_error())
         });
         session
+    }
+
+    #[cfg(feature = "webbrowser")]
+    fn new_session_with_webbrowser_callbacks(host: &Path) -> *mut cpsl_session_t {
+        new_session_with_webbrowser_callbacks_and_policy(
+            host,
+            Some(json!({
+                "mode": "policy",
+                "allow_domains": ["example.com"],
+                "deny_domains": []
+            })),
+        )
+    }
+
+    #[cfg(feature = "webbrowser")]
+    fn new_session_with_webbrowser_callbacks_and_policy(
+        host: &Path,
+        webbrowser_policy: Option<serde_json::Value>,
+    ) -> *mut cpsl_session_t {
+        let host = host.canonicalize().unwrap();
+        let mut config = session_config(host.to_str().unwrap());
+        config["language"] = json!(LANGUAGE_LUAU);
+        if let Some(webbrowser_policy) = webbrowser_policy {
+            config["webbrowser"] = webbrowser_policy;
+        }
+        let config = CString::new(config.to_string()).unwrap();
+        let callbacks = cpsl_webbrowser_callbacks_t {
+            user_data: ptr::null_mut(),
+            handle_json: Some(test_webbrowser_handle_json),
+            string_free: Some(test_webbrowser_string_free),
+            user_data_free: None,
+        };
+        let session = cpsl_session_new_with_webbrowser_callbacks(config.as_ptr(), &callbacks);
+        assert!(
+            !session.is_null(),
+            "session_new_with_webbrowser_callbacks failed: {}",
+            unsafe { borrowed_ffi_string(cpsl_last_error()) }
+        );
+        session
+    }
+
+    #[cfg(feature = "webbrowser")]
+    unsafe extern "C" fn test_webbrowser_handle_json(
+        _user_data: *mut std::ffi::c_void,
+        request_json: *const c_char,
+    ) -> *mut c_char {
+        let request = CStr::from_ptr(request_json).to_str().unwrap();
+        let request: serde_json::Value = serde_json::from_str(request).unwrap();
+        assert_eq!(request["command"], "open");
+        assert_eq!(request["resourceMode"], "lean");
+        assert_eq!(request["networkPolicy"]["allowDomains"][0], "example.com");
+        CString::new(
+            json!({
+                "ok": true,
+                "browser": "test-browser",
+                "resourceMode": "lean",
+                "url": request["url"],
+                "page": {
+                    "browser": "test-browser",
+                    "title": "Example Domain",
+                    "url": request["url"],
+                    "text": "example text",
+                    "actions": []
+                }
+            })
+            .to_string(),
+        )
+        .unwrap()
+        .into_raw()
+    }
+
+    #[cfg(feature = "webbrowser")]
+    unsafe extern "C" fn test_webbrowser_string_free(value: *mut c_char) {
+        if !value.is_null() {
+            drop(CString::from_raw(value));
+        }
     }
 
     fn eval(session: *mut cpsl_session_t, input: &str) -> serde_json::Value {

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 type AbiVersion = unsafe extern "C" fn() -> u32;
 type MetadataJson = unsafe extern "C" fn() -> *mut c_char;
 type SessionNew = unsafe extern "C" fn(*const c_char) -> *mut std::ffi::c_void;
+type SessionNewWithWebBrowserCallbacks =
+    unsafe extern "C" fn(*const c_char, *const std::ffi::c_void) -> *mut std::ffi::c_void;
 type SessionFree = unsafe extern "C" fn(*mut std::ffi::c_void);
 type Eval = unsafe extern "C" fn(*mut std::ffi::c_void, *const c_char) -> *mut c_char;
 type StringFree = unsafe extern "C" fn(*mut c_char);
@@ -32,18 +34,22 @@ fn probe_release_library_exports_contract_symbols() {
         let metadata_json: Symbol<MetadataJson> =
             library.get(b"cpsl_backend_metadata_json").unwrap();
         let session_new: Symbol<SessionNew> = library.get(b"cpsl_session_new").unwrap();
+        let _session_new_with_webbrowser_callbacks: Symbol<SessionNewWithWebBrowserCallbacks> =
+            library
+                .get(b"cpsl_session_new_with_webbrowser_callbacks")
+                .unwrap();
         let session_free: Symbol<SessionFree> = library.get(b"cpsl_session_free").unwrap();
         let eval: Symbol<Eval> = library.get(b"cpsl_eval").unwrap();
         let string_free: Symbol<StringFree> = library.get(b"cpsl_string_free").unwrap();
         let last_error: Symbol<LastError> = library.get(b"cpsl_last_error").unwrap();
 
-        assert_eq!(abi_version(), 1);
+        assert_eq!(abi_version(), 2);
         assert_eq!(borrowed_c_string(last_error()), "");
 
         let metadata = owned_c_string(metadata_json(), *string_free);
         let metadata: Value = serde_json::from_str(&metadata).unwrap();
         assert_eq!(metadata["name"], "cpsl");
-        assert_eq!(metadata["abi_version"], 1);
+        assert_eq!(metadata["abi_version"], 2);
         assert!(metadata["languages"]
             .as_array()
             .unwrap()
