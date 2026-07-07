@@ -970,7 +970,7 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
                 .. "  require(m)   Load a registered module\n"
                 .. "  help()       Show this help message\n"
                 .. "\n"
-                .. "Standard libraries: string, table, math, bit32, buffer, coroutine, utf8\n"
+                .. "Standard libraries: string, table, math, bit32, buffer, vector, coroutine, utf8\n"
                 .. "\n"
                 .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
             print(text)

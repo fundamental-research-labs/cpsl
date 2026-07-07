@@ -48,6 +48,24 @@ fn test_sandbox_blocks_dangerous_globals() {
 }
 
 #[test]
+fn test_luau_buffer_and_vector_are_available() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local b = buffer.create(4)
+            buffer.writeu8(b, 0, 65)
+            local v = vector.create(1, 2, 3)
+            local w = vector.create(3, 2, 1)
+            return type(buffer), type(b), buffer.readu8(b, 0), type(vector), type(v), vector.dot(v, w)
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(result, "table\tbuffer\t65\ttable\tvector\t10");
+}
+
+#[test]
 fn test_global_help_returns_help() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("return help()").unwrap();
@@ -68,7 +86,7 @@ fn test_global_help_returns_help() {
         result
     );
     assert!(
-        result.contains("string, table, math"),
+        result.contains("string, table, math, bit32, buffer, vector, coroutine, utf8"),
         "should list standard libs: {}",
         result
     );
