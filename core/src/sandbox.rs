@@ -9,7 +9,7 @@ use native_http::HttpGateway;
 #[cfg(cpsl_experimental_sfae)]
 use sfae_core::store::SecretStore;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 mod doc;
 
@@ -205,6 +205,22 @@ impl Sandbox {
     /// Access the underlying Lua VM.
     pub fn lua(&self) -> &Lua {
         &self.lua
+    }
+}
+
+fn enable_luau_integer_flags() -> Result<(), mlua::Error> {
+    static RESULT: OnceLock<Result<(), &'static str>> = OnceLock::new();
+
+    match RESULT.get_or_init(|| {
+        for flag in ["LuauIntegerLibrary", "LuauIntegerType2"] {
+            Lua::set_fflag(flag, true).map_err(|_| flag)?;
+        }
+        Ok(())
+    }) {
+        Ok(()) => Ok(()),
+        Err(flag) => Err(mlua::Error::external(format!(
+            "failed to enable Luau integer feature flag {flag}"
+        ))),
     }
 }
 
@@ -486,6 +502,8 @@ impl SandboxBuilder {
     }
 
     pub fn build(self) -> Result<Sandbox, SandboxError> {
+        enable_luau_integer_flags()?;
+
         let lua = Lua::new();
         let mut mount_table = self.mounts.unwrap_or_default();
 
@@ -970,7 +988,7 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
                 .. "  require(m)   Load a registered module\n"
                 .. "  help()       Show this help message\n"
                 .. "\n"
-                .. "Standard libraries: string, table, math, bit32, buffer, vector, coroutine, utf8\n"
+                .. "Standard libraries: string, table, math, bit32, buffer, vector, integer, coroutine, utf8\n"
                 .. "\n"
                 .. "Removed (sandboxed): io, os, loadfile, dofile, string.dump\n"
             print(text)

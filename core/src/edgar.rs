@@ -584,7 +584,7 @@ pub(crate) fn register_edgar_globals(
                     _ => None,
                 };
                 let count = match validated.get(4) {
-                    Some(Value::Integer(n)) => Some(*n),
+                    Some(Value::Integer(n)) => Some(*n as i32),
                     Some(Value::Number(n)) => Some(*n as i32),
                     _ => None,
                 };
@@ -622,7 +622,7 @@ pub(crate) fn register_edgar_globals(
                     _ => None,
                 };
                 let count = match validated.get(2) {
-                    Some(Value::Integer(n)) => Some(*n),
+                    Some(Value::Integer(n)) => Some(*n as i32),
                     Some(Value::Number(n)) => Some(*n as i32),
                     _ => None,
                 };

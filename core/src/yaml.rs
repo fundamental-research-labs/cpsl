@@ -107,7 +107,7 @@ fn yaml_to_lua(lua: &Lua, val: &Yaml) -> Result<Value, mlua::Error> {
         Yaml::Boolean(b) => Ok(Value::Boolean(*b)),
         Yaml::Integer(i) => {
             if *i >= i32::MIN as i64 && *i <= i32::MAX as i64 {
-                Ok(Value::Integer(*i as i32))
+                Ok(Value::Integer(*i as mlua::Integer))
             } else {
                 Ok(Value::Number(*i as f64))
             }

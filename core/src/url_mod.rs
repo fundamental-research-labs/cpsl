@@ -168,7 +168,7 @@ pub fn register_url_globals(lua: &Lua) -> Result<(), mlua::Error> {
                     result.set(
                         "port",
                         match parsed.port() {
-                            Some(p) => Value::Integer(p as i32),
+                            Some(p) => Value::Integer(p as mlua::Integer),
                             None => Value::Nil,
                         },
                     )?;

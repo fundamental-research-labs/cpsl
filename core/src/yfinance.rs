@@ -719,7 +719,7 @@ pub(crate) fn register_yfinance_globals(
                     }
                 };
                 let count = match validated.get(1) {
-                    Some(Value::Integer(n)) => Some(*n),
+                    Some(Value::Integer(n)) => Some(*n as i32),
                     Some(Value::Number(n)) => Some(*n as i32),
                     _ => None,
                 };

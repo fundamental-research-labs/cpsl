@@ -124,7 +124,7 @@ fn json_to_lua(lua: &Lua, val: &serde_json::Value) -> Result<Value, mlua::Error>
             if let Some(i) = n.as_i64() {
                 // Keep integers as integers when possible
                 if i >= i32::MIN as i64 && i <= i32::MAX as i64 {
-                    Ok(Value::Integer(i as i32))
+                    Ok(Value::Integer(i as mlua::Integer))
                 } else {
                     Ok(Value::Number(i as f64))
                 }

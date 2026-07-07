@@ -66,6 +66,36 @@ fn test_luau_buffer_and_vector_are_available() {
 }
 
 #[test]
+fn test_luau_integer_and_buffer_integer_access_are_available() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local b = buffer.create(8)
+            local n = integer.fromstring("1122334455667788", 16)
+            assert(n ~= nil)
+            buffer.writeinteger(b, 0, n)
+            local r = buffer.readinteger(b, 0)
+            return type(integer),
+                type(buffer.readinteger),
+                type(buffer.writeinteger),
+                type(r),
+                tostring(r),
+                buffer.readu32(b, 0),
+                buffer.readu32(b, 4),
+                type(42i),
+                tostring(42i)
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(
+        result,
+        "table\tfunction\tfunction\tinteger\t1234605616436508552\t1432778632\t287454020\tinteger\t42"
+    );
+}
+
+#[test]
 fn test_global_help_returns_help() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("return help()").unwrap();
@@ -86,7 +116,7 @@ fn test_global_help_returns_help() {
         result
     );
     assert!(
-        result.contains("string, table, math, bit32, buffer, vector, coroutine, utf8"),
+        result.contains("string, table, math, bit32, buffer, vector, integer, coroutine, utf8"),
         "should list standard libs: {}",
         result
     );
