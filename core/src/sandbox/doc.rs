@@ -448,7 +448,7 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
                 Param { name: "limit", short: Some('l'), typ: ParamType::Number, required: false, fields: None },
             ],
             returns: ReturnType::String,
-            example: Some(r#"local text = fs.read({path="/workspace/data.txt", offset=10, limit=50})"#),
+            example: Some(r#"local text = fs.read("/workspace/data.txt", 10, 50)"#),
         },
         FnDoc {
             name: "write",
@@ -462,10 +462,10 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "list",
-            description: "List entries in a directory.",
+            description: "List entries in a directory. Returns an array of entry name strings, not records.",
             params: &[Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None }],
             returns: ReturnType::Table,
-            example: None,
+            example: Some(r#"for _, name in ipairs(fs.list("/workspace")) do print(name) end"#),
         },
         FnDoc {
             name: "exists",

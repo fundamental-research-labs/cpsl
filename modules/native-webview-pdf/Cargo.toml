@@ -6,15 +6,13 @@ edition = "2021"
 [dependencies]
 thiserror = "2"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
     "NSData",
     "NSError",
     "NSString",
-    "NSURL",
-    "NSThread",
     "NSRunLoop",
     "NSDate",
 ] }
@@ -23,13 +21,7 @@ objc2-web-kit = { version = "0.3", features = [
     "WKWebView",
     "WKWebViewConfiguration",
     "WKPDFConfiguration",
-    "WKNavigation",
-    "WKNavigationDelegate",
     "block2",
-] }
-objc2-app-kit = { version = "0.3", features = [
-    "NSView",
-    "NSResponder",
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]

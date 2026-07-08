@@ -170,6 +170,11 @@ fn test_fs_help_returns_help() {
     assert!(result.contains("fs.read"));
     assert!(result.contains("fs.write"));
     assert!(result.contains("fs.list"));
+    assert!(
+        result.contains("Returns an array of entry name strings"),
+        "fs.list help should document string entries: {}",
+        result
+    );
     assert!(result.contains("fs.exists"));
     assert!(result.contains("fs.mkdir"));
     assert!(result.contains("fs.help()"));

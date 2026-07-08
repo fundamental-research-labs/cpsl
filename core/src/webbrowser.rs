@@ -212,7 +212,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "eval",
-            description: "Evaluate JavaScript in a browser.",
+            description: "Evaluate JavaScript in a browser. Returns a table; read the JavaScript result from the value field.",
             params: &[
                 Param {
                     name: "browser",
@@ -238,7 +238,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
             ],
             returns: ReturnType::Table,
             example: Some(
-                r#"webbrowser.eval(browser, "return document.title", {function_body=true})"#,
+                r#"local title = webbrowser.eval(browser, "return document.title", {function_body=true}).value"#,
             ),
         },
         FnDoc {
@@ -282,9 +282,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
                 },
             ],
             returns: ReturnType::Table,
-            example: Some(
-                r#"local page = webbrowser.open("https://example.com", {wait_resources=true})"#,
-            ),
+            example: Some(r#"local browser = webbrowser.open("https://example.com").browser"#),
         },
         FnDoc {
             name: "page",
@@ -1864,6 +1862,27 @@ mod tests {
         assert_eq!(requests[0]["command"], "open");
         assert_eq!(requests[0]["url"], "https://example.com");
         assert_eq!(requests[0]["resourceMode"], "lean");
+    }
+
+    #[test]
+    fn help_documents_eval_value_and_open_without_resource_wait() {
+        let gateway = Arc::new(RecordingGateway::default());
+        let sandbox = sandbox(gateway);
+
+        let help = sandbox.exec("return webbrowser.help()").unwrap();
+
+        assert!(
+            help.contains("read the JavaScript result from the value field"),
+            "eval help should document result.value: {help}"
+        );
+        assert!(
+            help.contains(r#"local title = webbrowser.eval(browser, "return document.title", {function_body=true}).value"#),
+            "eval example should read .value: {help}"
+        );
+        assert!(
+            help.contains(r#"local browser = webbrowser.open("https://example.com").browser"#),
+            "open example should avoid initial resource wait: {help}"
+        );
     }
 
     #[test]
