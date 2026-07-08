@@ -36,6 +36,8 @@ pub(crate) mod http;
 pub(crate) mod image;
 #[cfg(feature = "mod-json")]
 pub(crate) mod json;
+#[cfg(feature = "mod-location")]
+pub(crate) mod location;
 pub(crate) mod lua_util;
 mod mount;
 #[cfg(feature = "mod-numpy")]
@@ -71,6 +73,8 @@ pub(crate) mod yfinance;
 
 #[cfg(feature = "mod-apple-calendar")]
 pub use apple_calendar::AppleCalendarGateway;
+#[cfg(feature = "mod-location")]
+pub use location::LocationGateway;
 pub use mount::{MountError, MountPermission, MountTable};
 #[cfg(feature = "mod-http")]
 pub use native_http::HttpGateway;

@@ -1,5 +1,7 @@
 //! Luau sandbox construction, execution, and global module registration.
 
+#[cfg(feature = "mod-location")]
+use crate::location::LocationGateway;
 use crate::mount::MountTable;
 #[cfg(feature = "mod-apple-calendar")]
 use apple_calendar::AppleCalendarGateway;
@@ -395,6 +397,8 @@ pub struct SandboxBuilder {
     calendar_gateway: Option<Arc<AppleCalendarGateway>>,
     #[cfg(feature = "mod-webbrowser")]
     webbrowser_gateway: Option<Arc<dyn crate::webbrowser::WebBrowserGateway>>,
+    #[cfg(feature = "mod-location")]
+    location_gateway: Option<Arc<dyn LocationGateway>>,
     #[cfg(cpsl_experimental_sfae)]
     sfae_store: Option<Arc<Mutex<dyn SecretStore + Send>>>,
     #[cfg(cpsl_experimental_sfae)]
@@ -419,6 +423,8 @@ impl Default for SandboxBuilder {
             calendar_gateway: None,
             #[cfg(feature = "mod-webbrowser")]
             webbrowser_gateway: None,
+            #[cfg(feature = "mod-location")]
+            location_gateway: None,
             #[cfg(cpsl_experimental_sfae)]
             sfae_store: None,
             #[cfg(cpsl_experimental_sfae)]
@@ -463,6 +469,12 @@ impl SandboxBuilder {
         gateway: Arc<dyn crate::webbrowser::WebBrowserGateway>,
     ) -> Self {
         self.webbrowser_gateway = Some(gateway);
+        self
+    }
+
+    #[cfg(feature = "mod-location")]
+    pub fn location_gateway(mut self, gateway: Arc<dyn LocationGateway>) -> Self {
+        self.location_gateway = Some(gateway);
         self
     }
 
@@ -646,6 +658,10 @@ impl SandboxBuilder {
         #[cfg(feature = "mod-webbrowser")]
         if let Some(ref gateway) = self.webbrowser_gateway {
             crate::webbrowser::register_webbrowser_globals(&lua, gateway.clone(), mounts.clone())?;
+        }
+        #[cfg(feature = "mod-location")]
+        if let Some(ref gateway) = self.location_gateway {
+            crate::location::register_location_globals(&lua, gateway.clone())?;
         }
         #[cfg(feature = "mod-http")]
         if let Some(ref gw) = self.http_gateway {
@@ -980,7 +996,7 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
     // global names and includes only those that are actually registered.
     let code = r#"
         function help()
-            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xml","yaml","yfinance"}
+            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","location","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xml","yaml","yfinance"}
             local lines = {}
             for _, name in ipairs(known) do
                 local m = rawget(_G, name)

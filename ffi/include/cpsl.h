@@ -14,6 +14,9 @@ typedef struct cpsl_session cpsl_session_t;
 typedef char *(*cpsl_webbrowser_handle_json_fn)(void *user_data, const char *request_json);
 typedef void (*cpsl_webbrowser_string_free_fn)(char *value);
 typedef void (*cpsl_webbrowser_user_data_free_fn)(void *user_data);
+typedef char *(*cpsl_location_handle_json_fn)(void *user_data, const char *request_json);
+typedef void (*cpsl_location_string_free_fn)(char *value);
+typedef void (*cpsl_location_user_data_free_fn)(void *user_data);
 typedef void (*cpsl_file_activity_handle_fn)(
     void *user_data,
     const char *path,
@@ -33,6 +36,13 @@ typedef struct cpsl_file_activity_callbacks {
     cpsl_file_activity_handle_fn handle_activity;
     cpsl_file_activity_user_data_free_fn user_data_free;
 } cpsl_file_activity_callbacks_t;
+
+typedef struct cpsl_location_callbacks {
+    void *user_data;
+    cpsl_location_handle_json_fn handle_json;
+    cpsl_location_string_free_fn string_free;
+    cpsl_location_user_data_free_fn user_data_free;
+} cpsl_location_callbacks_t;
 
 uint32_t cpsl_abi_version(void);
 
@@ -74,6 +84,18 @@ cpsl_session_t *cpsl_session_new_with_callbacks(
     const char *config_json,
     const cpsl_webbrowser_callbacks_t *webbrowser_callbacks,
     const cpsl_file_activity_callbacks_t *file_activity_callbacks
+);
+
+/*
+ * Creates a session with all supported host callback families. Location
+ * callbacks receive borrowed UTF-8 JSON requests and must return caller-owned
+ * UTF-8 JSON that CPSL releases with location_callbacks->string_free.
+ */
+cpsl_session_t *cpsl_session_new_with_host_callbacks(
+    const char *config_json,
+    const cpsl_webbrowser_callbacks_t *webbrowser_callbacks,
+    const cpsl_file_activity_callbacks_t *file_activity_callbacks,
+    const cpsl_location_callbacks_t *location_callbacks
 );
 
 /* NULL is a no-op. Passing any other non-CPSL pointer is undefined behavior. */

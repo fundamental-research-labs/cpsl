@@ -673,6 +673,7 @@ fn format_timestamp(ms: UnixMillis) -> Result<String, mlua::Error> {
 fn status_to_table(lua: &Lua, status: CalendarStatus) -> Result<Table, mlua::Error> {
     let table = lua.create_table()?;
     table.set("access", status.access.as_str())?;
+    table.set("state", access_state(status.access))?;
     table.set("full_access", status.full_access)?;
     table.set("supported", status.supported)?;
     table.set("platform", status.platform)?;
@@ -682,8 +683,20 @@ fn status_to_table(lua: &Lua, status: CalendarStatus) -> Result<Table, mlua::Err
 fn access_to_table(lua: &Lua, access: CalendarAccessResponse) -> Result<Table, mlua::Error> {
     let table = lua.create_table()?;
     table.set("access", access.access.as_str())?;
+    table.set("state", access_state(access.access))?;
     table.set("granted", access.granted)?;
     Ok(table)
+}
+
+fn access_state(access: AccessStatus) -> &'static str {
+    match access {
+        AccessStatus::FullAccess => "granted",
+        AccessStatus::NotDetermined => "undefined",
+        AccessStatus::Denied
+        | AccessStatus::Restricted
+        | AccessStatus::WriteOnly
+        | AccessStatus::Unknown => "denied",
+    }
 }
 
 fn calendars_to_table(lua: &Lua, calendars: Vec<CalendarInfo>) -> Result<Table, mlua::Error> {
