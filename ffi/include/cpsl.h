@@ -14,6 +14,12 @@ typedef struct cpsl_session cpsl_session_t;
 typedef char *(*cpsl_webbrowser_handle_json_fn)(void *user_data, const char *request_json);
 typedef void (*cpsl_webbrowser_string_free_fn)(char *value);
 typedef void (*cpsl_webbrowser_user_data_free_fn)(void *user_data);
+typedef void (*cpsl_file_activity_handle_fn)(
+    void *user_data,
+    const char *path,
+    const char *operation
+);
+typedef void (*cpsl_file_activity_user_data_free_fn)(void *user_data);
 
 typedef struct cpsl_webbrowser_callbacks {
     void *user_data;
@@ -21,6 +27,12 @@ typedef struct cpsl_webbrowser_callbacks {
     cpsl_webbrowser_string_free_fn string_free;
     cpsl_webbrowser_user_data_free_fn user_data_free;
 } cpsl_webbrowser_callbacks_t;
+
+typedef struct cpsl_file_activity_callbacks {
+    void *user_data;
+    cpsl_file_activity_handle_fn handle_activity;
+    cpsl_file_activity_user_data_free_fn user_data_free;
+} cpsl_file_activity_callbacks_t;
 
 uint32_t cpsl_abi_version(void);
 
@@ -51,6 +63,17 @@ cpsl_session_t *cpsl_session_new(const char *config_json);
 cpsl_session_t *cpsl_session_new_with_webbrowser_callbacks(
     const char *config_json,
     const cpsl_webbrowser_callbacks_t *callbacks
+);
+
+/*
+ * Creates a session with optional callback families. Pass NULL for callback
+ * groups the host does not need. File activity callbacks receive borrowed
+ * virtual paths and operation names such as "read" or "write".
+ */
+cpsl_session_t *cpsl_session_new_with_callbacks(
+    const char *config_json,
+    const cpsl_webbrowser_callbacks_t *webbrowser_callbacks,
+    const cpsl_file_activity_callbacks_t *file_activity_callbacks
 );
 
 /* NULL is a no-op. Passing any other non-CPSL pointer is undefined behavior. */

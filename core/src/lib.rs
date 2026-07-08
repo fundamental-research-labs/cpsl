@@ -77,8 +77,8 @@ pub use native_http::HttpGateway;
 #[cfg(feature = "pdfium-render")]
 pub use pdfium_engine::PdfiumEngine;
 pub use sandbox::{
-    clean_lua_error, humanize_error, DocReadCallback, ExecError, Sandbox, SandboxBuilder,
-    SandboxError, VisionCallback,
+    clean_lua_error, humanize_error, DocReadCallback, ExecError, FileActivityCallback, Sandbox,
+    SandboxBuilder, SandboxError, VisionCallback,
 };
 #[cfg(cpsl_experimental_sfae)]
 pub use sfae::{BrowserOpener, CredentialPrompt};
