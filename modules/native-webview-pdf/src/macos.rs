@@ -14,9 +14,27 @@ use crate::{PdfError, PdfOptions};
 use objc2::MainThreadMarker;
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSData, NSDate, NSRunLoop, NSString};
-use objc2_web_kit::{WKPDFConfiguration, WKWebView, WKWebViewConfiguration};
+use objc2_web_kit::{WKPDFConfiguration, WKWebViewConfiguration};
 use std::ffi::c_void;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
+
+#[cfg(target_os = "ios")]
+use objc2::rc::Retained;
+#[cfg(target_os = "ios")]
+use objc2::runtime::AnyObject;
+#[cfg(target_os = "macos")]
+use objc2::MainThreadOnly;
+#[cfg(target_os = "ios")]
+use objc2::{class, msg_send};
+#[cfg(target_os = "macos")]
+use objc2_web_kit::WKWebView;
+
+#[cfg(target_os = "macos")]
+type PlatformWebView = WKWebView;
+#[cfg(target_os = "ios")]
+type PlatformWebView = AnyObject;
+
+type PdfCompletionBlock = block2::DynBlock<dyn Fn(*mut NSData, *mut objc2_foundation::NSError)>;
 
 /// Compute the full-page frame in points (72pt/in).
 ///
@@ -57,13 +75,12 @@ fn html_to_pdf_on_main(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfErro
     let styled = prepare_html(html, opts);
     let config = unsafe { WKWebViewConfiguration::new(mtm) };
     let frame = page_frame(opts);
-    let webview =
-        unsafe { WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config) };
+    let webview = create_webview(mtm, frame, &config);
 
     let ns = NSString::from_str(&styled);
-    unsafe { webview.loadHTMLString_baseURL(&ns, None) };
+    load_html(&webview, &ns);
 
-    spin_runloop(|| unsafe { !webview.isLoading() })?;
+    spin_runloop(|| !webview_is_loading(&webview))?;
 
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
     let pdf_config = unsafe { WKPDFConfiguration::new(mtm) };
@@ -82,7 +99,7 @@ fn html_to_pdf_on_main(html: &str, opts: &PdfOptions) -> Result<Vec<u8>, PdfErro
         },
     );
 
-    unsafe { webview.createPDFWithConfiguration_completionHandler(Some(&pdf_config), &block) };
+    create_pdf(&webview, &pdf_config, &block);
 
     let mut result = None;
     spin_runloop(|| match rx.try_recv() {
@@ -163,7 +180,7 @@ struct SharedResult {
 
 /// Pipeline state — heap-allocated, only ever accessed on the main thread.
 struct Pipeline {
-    webview: Option<objc2::rc::Retained<WKWebView>>,
+    webview: Option<objc2::rc::Retained<PlatformWebView>>,
     shared: Arc<SharedResult>,
     start: std::time::Instant,
 }
@@ -230,11 +247,9 @@ extern "C" fn pipeline_setup(ptr: *mut c_void) {
     };
 
     let config = unsafe { WKWebViewConfiguration::new(mtm) };
-    let webview = unsafe {
-        WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), ctx.frame, &config)
-    };
+    let webview = create_webview(mtm, ctx.frame, &config);
     let ns = NSString::from_str(&ctx.html);
-    unsafe { webview.loadHTMLString_baseURL(&ns, None) };
+    load_html(&webview, &ns);
 
     let pipe = Box::into_raw(Box::new(Pipeline {
         webview: Some(webview),
@@ -275,7 +290,7 @@ extern "C" fn pipeline_poll(ptr: *mut c_void) {
     let loading = pipe
         .webview
         .as_ref()
-        .map_or(false, |wv| unsafe { wv.isLoading() });
+        .map_or(false, |wv| webview_is_loading(wv));
 
     if loading {
         // Not done yet — re-schedule in 10ms.
@@ -323,7 +338,7 @@ fn pipeline_create_pdf(ptr: *mut c_void) {
         },
     );
 
-    unsafe { webview.createPDFWithConfiguration_completionHandler(Some(&pdf_config), &block) };
+    create_pdf(webview, &pdf_config, &block);
 }
 
 /// Signal the background thread with the final result.
@@ -333,6 +348,74 @@ fn signal_result(shared: &SharedResult, result: Result<Vec<u8>, PdfError>) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+
+#[cfg(target_os = "macos")]
+fn create_webview(
+    mtm: MainThreadMarker,
+    frame: CGRect,
+    config: &WKWebViewConfiguration,
+) -> objc2::rc::Retained<PlatformWebView> {
+    unsafe { WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, config) }
+}
+
+#[cfg(target_os = "ios")]
+fn create_webview(
+    _mtm: MainThreadMarker,
+    frame: CGRect,
+    config: &WKWebViewConfiguration,
+) -> Retained<PlatformWebView> {
+    let allocated: *mut AnyObject = unsafe { msg_send![class!(WKWebView), alloc] };
+    let webview: *mut AnyObject =
+        unsafe { msg_send![allocated, initWithFrame: frame, configuration: config] };
+    unsafe { Retained::from_raw(webview) }
+        .expect("WKWebView initWithFrame:configuration: returned nil")
+}
+
+#[cfg(target_os = "macos")]
+fn load_html(webview: &PlatformWebView, html: &NSString) {
+    unsafe {
+        webview.loadHTMLString_baseURL(html, None);
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn load_html(webview: &PlatformWebView, html: &NSString) {
+    let _: *mut AnyObject = unsafe {
+        msg_send![webview, loadHTMLString: html, baseURL: std::ptr::null_mut::<AnyObject>()]
+    };
+}
+
+#[cfg(target_os = "macos")]
+fn webview_is_loading(webview: &PlatformWebView) -> bool {
+    unsafe { webview.isLoading() }
+}
+
+#[cfg(target_os = "ios")]
+fn webview_is_loading(webview: &PlatformWebView) -> bool {
+    unsafe { msg_send![webview, isLoading] }
+}
+
+#[cfg(target_os = "macos")]
+fn create_pdf(
+    webview: &PlatformWebView,
+    pdf_config: &WKPDFConfiguration,
+    block: &PdfCompletionBlock,
+) {
+    unsafe {
+        webview.createPDFWithConfiguration_completionHandler(Some(pdf_config), block);
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn create_pdf(
+    webview: &PlatformWebView,
+    pdf_config: &WKPDFConfiguration,
+    block: &PdfCompletionBlock,
+) {
+    let _: () = unsafe {
+        msg_send![webview, createPDFWithConfiguration: pdf_config, completionHandler: block]
+    };
+}
 
 fn prepare_html(html: &str, opts: &PdfOptions) -> String {
     let (w, h) = if opts.landscape {
