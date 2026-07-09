@@ -1,5 +1,7 @@
 //! C ABI for loading CPSL as a sandbox library.
 
+#[cfg(feature = "calendar")]
+use cpsl_core::CalendarActivityCallback;
 #[cfg(feature = "location")]
 use cpsl_core::LocationGateway;
 #[cfg(feature = "pdfium-render")]
@@ -43,6 +45,9 @@ type WebBrowserUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
 type FileActivityHandleFn =
     unsafe extern "C" fn(user_data: *mut c_void, path: *const c_char, operation: *const c_char);
 type FileActivityUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
+type CalendarActivityHandleFn =
+    unsafe extern "C" fn(user_data: *mut c_void, operation: *const c_char);
+type CalendarActivityUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
 type LocationHandleJsonFn =
     unsafe extern "C" fn(user_data: *mut c_void, request_json: *const c_char) -> *mut c_char;
 type LocationStringFreeFn = unsafe extern "C" fn(value: *mut c_char);
@@ -63,6 +68,14 @@ pub struct cpsl_file_activity_callbacks_t {
     user_data: *mut c_void,
     handle_activity: Option<FileActivityHandleFn>,
     user_data_free: Option<FileActivityUserDataFreeFn>,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct cpsl_calendar_activity_callbacks_t {
+    user_data: *mut c_void,
+    handle_activity: Option<CalendarActivityHandleFn>,
+    user_data_free: Option<CalendarActivityUserDataFreeFn>,
 }
 
 #[allow(non_camel_case_types)]
@@ -110,6 +123,16 @@ struct FfiFileActivityBridge {
 
 unsafe impl Send for FfiFileActivityBridge {}
 unsafe impl Sync for FfiFileActivityBridge {}
+
+struct FfiCalendarActivityBridge {
+    user_data: *mut c_void,
+    handle_activity: CalendarActivityHandleFn,
+    user_data_free: Option<CalendarActivityUserDataFreeFn>,
+    callback_lock: Mutex<()>,
+}
+
+unsafe impl Send for FfiCalendarActivityBridge {}
+unsafe impl Sync for FfiCalendarActivityBridge {}
 
 #[cfg(feature = "location")]
 struct FfiLocationGateway {
@@ -258,6 +281,32 @@ impl Drop for FfiFileActivityBridge {
     }
 }
 
+impl FfiCalendarActivityBridge {
+    fn notify(&self, operation: &str) {
+        let Ok(operation) = CString::new(operation) else {
+            return;
+        };
+        let Ok(_guard) = self.callback_lock.lock() else {
+            return;
+        };
+        unsafe {
+            (self.handle_activity)(self.user_data, operation.as_ptr());
+        }
+    }
+}
+
+impl Drop for FfiCalendarActivityBridge {
+    fn drop(&mut self) {
+        if !self.user_data.is_null() {
+            if let Some(user_data_free) = self.user_data_free {
+                unsafe {
+                    user_data_free(self.user_data);
+                }
+            }
+        }
+    }
+}
+
 struct Session {
     _config: ValidatedSessionConfig,
     sandbox: Sandbox,
@@ -342,6 +391,7 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
                 "mounts": true,
                 "network_policy": true,
                 "file_activity_callbacks": true,
+                "calendar_activity_callbacks": cfg!(feature = "calendar"),
                 "webbrowser_callbacks": cfg!(feature = "webbrowser"),
                 "location_callbacks": cfg!(feature = "location")
             }
@@ -355,6 +405,8 @@ pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_sess
     session_new_inner(
         config_json,
         None,
+        None,
+        #[cfg(feature = "calendar")]
         None,
         #[cfg(feature = "location")]
         None,
@@ -377,6 +429,8 @@ pub extern "C" fn cpsl_session_new_with_webbrowser_callbacks(
     session_new_inner(
         config_json,
         gateway,
+        None,
+        #[cfg(feature = "calendar")]
         None,
         #[cfg(feature = "location")]
         None,
@@ -428,6 +482,8 @@ pub extern "C" fn cpsl_session_new_with_callbacks(
         config_json,
         webbrowser_gateway,
         file_activity_callback,
+        #[cfg(feature = "calendar")]
+        None,
         #[cfg(feature = "location")]
         None,
     )
@@ -440,9 +496,27 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks(
     file_activity_callbacks: *const cpsl_file_activity_callbacks_t,
     location_callbacks: *const cpsl_location_callbacks_t,
 ) -> *mut cpsl_session_t {
+    cpsl_session_new_with_host_callbacks_v2(
+        config_json,
+        webbrowser_callbacks,
+        file_activity_callbacks,
+        ptr::null(),
+        location_callbacks,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
+    config_json: *const c_char,
+    webbrowser_callbacks: *const cpsl_webbrowser_callbacks_t,
+    file_activity_callbacks: *const cpsl_file_activity_callbacks_t,
+    calendar_activity_callbacks: *const cpsl_calendar_activity_callbacks_t,
+    location_callbacks: *const cpsl_location_callbacks_t,
+) -> *mut cpsl_session_t {
     let file_activity_callback = match validate_file_activity_callbacks(file_activity_callbacks) {
         Ok(callback) => callback,
         Err(error) => {
+            free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
@@ -452,6 +526,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks(
     let webbrowser_gateway = match validate_webbrowser_callbacks(webbrowser_callbacks) {
         Ok(gateway) => gateway,
         Err(error) => {
+            free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
@@ -461,15 +536,32 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks(
     let webbrowser_gateway = match reject_webbrowser_callbacks(webbrowser_callbacks) {
         Ok(gateway) => gateway,
         Err(error) => {
+            free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
     };
+    #[cfg(feature = "calendar")]
+    let calendar_activity_callback =
+        match validate_calendar_activity_callbacks(calendar_activity_callbacks) {
+            Ok(callback) => callback,
+            Err(error) => {
+                free_calendar_activity_callback_context(calendar_activity_callbacks);
+                free_location_callback_context(location_callbacks);
+                set_last_error(&error);
+                return ptr::null_mut();
+            }
+        };
+    #[cfg(not(feature = "calendar"))]
+    {
+        free_calendar_activity_callback_context(calendar_activity_callbacks);
+    }
     #[cfg(feature = "location")]
     let location_gateway = match validate_location_callbacks(location_callbacks) {
         Ok(gateway) => gateway,
         Err(error) => {
+            free_location_callback_context(location_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -483,6 +575,8 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks(
         config_json,
         webbrowser_gateway,
         file_activity_callback,
+        #[cfg(feature = "calendar")]
+        calendar_activity_callback,
         #[cfg(feature = "location")]
         location_gateway,
     )
@@ -493,6 +587,7 @@ fn session_new_inner(
     #[cfg(feature = "webbrowser")] webbrowser_gateway: Option<Arc<dyn WebBrowserGateway>>,
     #[cfg(not(feature = "webbrowser"))] _webbrowser_gateway: Option<()>,
     file_activity_callback: Option<FileActivityCallback>,
+    #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
 ) -> *mut cpsl_session_t {
     ffi_result(|| {
@@ -503,6 +598,8 @@ fn session_new_inner(
             #[cfg(feature = "webbrowser")]
             webbrowser_gateway,
             file_activity_callback,
+            #[cfg(feature = "calendar")]
+            calendar_activity_callback,
             #[cfg(feature = "location")]
             location_gateway,
         )?;
@@ -668,6 +765,45 @@ fn validate_file_activity_callbacks(
     Ok(Some(callback))
 }
 
+fn free_calendar_activity_callback_context(callbacks: *const cpsl_calendar_activity_callbacks_t) {
+    if callbacks.is_null() {
+        return;
+    }
+    let callbacks = unsafe { &*callbacks };
+    if !callbacks.user_data.is_null() {
+        if let Some(user_data_free) = callbacks.user_data_free {
+            unsafe {
+                user_data_free(callbacks.user_data);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "calendar")]
+fn validate_calendar_activity_callbacks(
+    callbacks: *const cpsl_calendar_activity_callbacks_t,
+) -> Result<Option<CalendarActivityCallback>, String> {
+    if callbacks.is_null() {
+        return Ok(None);
+    }
+
+    let callbacks = unsafe { &*callbacks };
+    let handle_activity = callbacks.handle_activity.ok_or_else(|| {
+        "calendar activity callbacks.handle_activity must not be NULL".to_string()
+    })?;
+
+    let bridge = Arc::new(FfiCalendarActivityBridge {
+        user_data: callbacks.user_data,
+        handle_activity,
+        user_data_free: callbacks.user_data_free,
+        callback_lock: Mutex::new(()),
+    });
+    let callback: CalendarActivityCallback = Arc::new(move |operation| {
+        bridge.notify(operation);
+    });
+    Ok(Some(callback))
+}
+
 fn free_location_callback_context(callbacks: *const cpsl_location_callbacks_t) {
     if callbacks.is_null() {
         return;
@@ -779,6 +915,7 @@ fn create_runtime_sandbox(
     config: &ValidatedSessionConfig,
     #[cfg(feature = "webbrowser")] webbrowser_gateway: Option<Arc<dyn WebBrowserGateway>>,
     file_activity_callback: Option<FileActivityCallback>,
+    #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
 ) -> Result<Sandbox, String> {
     let mut mounts = MountTable::new();
@@ -796,6 +933,12 @@ fn create_runtime_sandbox(
         .auto_tmp(false);
     let builder = if let Some(callback) = file_activity_callback {
         builder.file_activity_callback(callback)
+    } else {
+        builder
+    };
+    #[cfg(feature = "calendar")]
+    let builder = if let Some(callback) = calendar_activity_callback {
+        builder.calendar_activity_callback(callback)
     } else {
         builder
     };
@@ -1461,6 +1604,10 @@ mod tests {
             &validated,
             #[cfg(feature = "webbrowser")]
             None,
+            None,
+            #[cfg(feature = "calendar")]
+            None,
+            #[cfg(feature = "location")]
             None,
         )
         .unwrap();

@@ -13,6 +13,8 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use mlua::{Lua, MultiValue, Table, Value};
 use std::sync::Arc;
 
+pub type CalendarActivityCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
 const QUERY_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
         name: "calendar_id",
@@ -274,15 +276,18 @@ pub(crate) static CALENDAR_DOC: ModuleDoc = ModuleDoc {
 pub(crate) fn register_calendar_globals(
     lua: &Lua,
     gateway: Arc<AppleCalendarGateway>,
+    activity_callback: Option<CalendarActivityCallback>,
 ) -> Result<(), mlua::Error> {
     let calendar = lua.create_table()?;
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "status",
             lua.create_function(move |lua, args: MultiValue| {
                 validate_no_args(&args, "calendar.status")?;
+                notify_calendar_activity(&activity_callback, "status");
                 status_to_table(lua, gateway.status().map_err(mlua::Error::external)?)
             })?,
         )?;
@@ -290,6 +295,7 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "request_access",
             lua.create_function(move |lua, args: MultiValue| {
@@ -305,6 +311,7 @@ pub(crate) fn register_calendar_globals(
                         access
                     )));
                 }
+                notify_calendar_activity(&activity_callback, "request_access");
                 access_to_table(
                     lua,
                     gateway
@@ -317,10 +324,12 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "calendars",
             lua.create_function(move |lua, args: MultiValue| {
                 validate_no_args(&args, "calendar.calendars")?;
+                notify_calendar_activity(&activity_callback, "calendars");
                 calendars_to_table(lua, gateway.calendars().map_err(mlua::Error::external)?)
             })?,
         )?;
@@ -328,10 +337,12 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "default_calendar",
             lua.create_function(move |lua, args: MultiValue| {
                 validate_no_args(&args, "calendar.default_calendar")?;
+                notify_calendar_activity(&activity_callback, "default_calendar");
                 calendar_to_table(
                     lua,
                     &gateway.default_calendar().map_err(mlua::Error::external)?,
@@ -342,6 +353,7 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "events",
             lua.create_function(move |lua, args: MultiValue| {
@@ -359,6 +371,7 @@ pub(crate) fn register_calendar_globals(
                     calendar_id: optional_string(&opts, "calendar.events", "calendar_id")?,
                     limit: optional_limit(&opts, "calendar.events", "limit")?,
                 };
+                notify_calendar_activity(&activity_callback, "events");
                 events_to_table(lua, gateway.events(query).map_err(mlua::Error::external)?)
             })?,
         )?;
@@ -366,11 +379,13 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "get",
             lua.create_function(move |lua, args: MultiValue| {
                 let validated = validate_args(&args, CALENDAR_DOC.params("get"), "calendar.get")?;
                 let event_id = value_string(&validated[0], "calendar.get", "event_id")?;
+                notify_calendar_activity(&activity_callback, "get");
                 event_to_table(lua, &gateway.get(&event_id).map_err(mlua::Error::external)?)
             })?,
         )?;
@@ -378,6 +393,7 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "create",
             lua.create_function(move |lua, args: MultiValue| {
@@ -400,6 +416,7 @@ pub(crate) fn register_calendar_globals(
                     url: optional_string(&opts, "calendar.create", "url")?,
                     all_day: optional_bool(&opts, "calendar.create", "all_day")?.unwrap_or(false),
                 };
+                notify_calendar_activity(&activity_callback, "create");
                 event_to_table(
                     lua,
                     &gateway.create(request).map_err(mlua::Error::external)?,
@@ -410,6 +427,7 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "update",
             lua.create_function(move |lua, args: MultiValue| {
@@ -430,6 +448,7 @@ pub(crate) fn register_calendar_globals(
                     url: optional_string(&opts, "calendar.update", "url")?,
                     all_day: optional_bool(&opts, "calendar.update", "all_day")?,
                 };
+                notify_calendar_activity(&activity_callback, "update");
                 event_to_table(
                     lua,
                     &gateway.update(request).map_err(mlua::Error::external)?,
@@ -440,12 +459,14 @@ pub(crate) fn register_calendar_globals(
 
     {
         let gateway = gateway.clone();
+        let activity_callback = activity_callback.clone();
         calendar.set(
             "delete",
             lua.create_function(move |_, args: MultiValue| {
                 let validated =
                     validate_args(&args, CALENDAR_DOC.params("delete"), "calendar.delete")?;
                 let event_id = value_string(&validated[0], "calendar.delete", "event_id")?;
+                notify_calendar_activity(&activity_callback, "delete");
                 gateway.delete(&event_id).map_err(mlua::Error::external)
             })?,
         )?;
@@ -456,6 +477,12 @@ pub(crate) fn register_calendar_globals(
     wrap_module_with_help_hints(lua, "calendar")?;
 
     Ok(())
+}
+
+fn notify_calendar_activity(callback: &Option<CalendarActivityCallback>, operation: &str) {
+    if let Some(callback) = callback {
+        callback(operation);
+    }
 }
 
 fn validate_no_args(args: &MultiValue, fn_name: &str) -> Result<(), mlua::Error> {

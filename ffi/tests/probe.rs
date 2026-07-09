@@ -20,6 +20,13 @@ type SessionNewWithHostCallbacks = unsafe extern "C" fn(
     *const std::ffi::c_void,
     *const std::ffi::c_void,
 ) -> *mut std::ffi::c_void;
+type SessionNewWithHostCallbacksV2 = unsafe extern "C" fn(
+    *const c_char,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+) -> *mut std::ffi::c_void;
 type SessionFree = unsafe extern "C" fn(*mut std::ffi::c_void);
 type Eval = unsafe extern "C" fn(*mut std::ffi::c_void, *const c_char) -> *mut c_char;
 type StringFree = unsafe extern "C" fn(*mut c_char);
@@ -53,6 +60,9 @@ fn probe_release_library_exports_contract_symbols() {
             library.get(b"cpsl_session_new_with_callbacks").unwrap();
         let _session_new_with_host_callbacks: Symbol<SessionNewWithHostCallbacks> = library
             .get(b"cpsl_session_new_with_host_callbacks")
+            .unwrap();
+        let _session_new_with_host_callbacks_v2: Symbol<SessionNewWithHostCallbacksV2> = library
+            .get(b"cpsl_session_new_with_host_callbacks_v2")
             .unwrap();
         let session_free: Symbol<SessionFree> = library.get(b"cpsl_session_free").unwrap();
         let eval: Symbol<Eval> = library.get(b"cpsl_eval").unwrap();

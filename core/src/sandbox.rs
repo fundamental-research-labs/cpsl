@@ -1,5 +1,7 @@
 //! Luau sandbox construction, execution, and global module registration.
 
+#[cfg(feature = "mod-apple-calendar")]
+use crate::calendar::CalendarActivityCallback;
 #[cfg(feature = "mod-location")]
 use crate::location::LocationGateway;
 use crate::mount::MountTable;
@@ -395,6 +397,8 @@ pub struct SandboxBuilder {
     http_gateway: Option<Arc<HttpGateway>>,
     #[cfg(feature = "mod-apple-calendar")]
     calendar_gateway: Option<Arc<AppleCalendarGateway>>,
+    #[cfg(feature = "mod-apple-calendar")]
+    calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "mod-webbrowser")]
     webbrowser_gateway: Option<Arc<dyn crate::webbrowser::WebBrowserGateway>>,
     #[cfg(feature = "mod-location")]
@@ -421,6 +425,8 @@ impl Default for SandboxBuilder {
             http_gateway: None,
             #[cfg(feature = "mod-apple-calendar")]
             calendar_gateway: None,
+            #[cfg(feature = "mod-apple-calendar")]
+            calendar_activity_callback: None,
             #[cfg(feature = "mod-webbrowser")]
             webbrowser_gateway: None,
             #[cfg(feature = "mod-location")]
@@ -460,6 +466,12 @@ impl SandboxBuilder {
     #[cfg(feature = "mod-apple-calendar")]
     pub fn calendar_gateway(mut self, gateway: Arc<AppleCalendarGateway>) -> Self {
         self.calendar_gateway = Some(gateway);
+        self
+    }
+
+    #[cfg(feature = "mod-apple-calendar")]
+    pub fn calendar_activity_callback(mut self, cb: CalendarActivityCallback) -> Self {
+        self.calendar_activity_callback = Some(cb);
         self
     }
 
@@ -679,14 +691,22 @@ impl SandboxBuilder {
             let gateway = self
                 .calendar_gateway
                 .unwrap_or_else(AppleCalendarGateway::shared_platform_default);
-            crate::calendar::register_calendar_globals(&lua, gateway)?;
+            crate::calendar::register_calendar_globals(
+                &lua,
+                gateway,
+                self.calendar_activity_callback.clone(),
+            )?;
         }
         #[cfg(all(
             feature = "mod-apple-calendar",
             not(any(target_os = "macos", target_os = "ios"))
         ))]
         if let Some(ref gateway) = self.calendar_gateway {
-            crate::calendar::register_calendar_globals(&lua, gateway.clone())?;
+            crate::calendar::register_calendar_globals(
+                &lua,
+                gateway.clone(),
+                self.calendar_activity_callback.clone(),
+            )?;
         }
         #[cfg(cpsl_experimental_sfae)]
         if let (Some(ref store), Some(ref prompt)) = (&self.sfae_store, &self.sfae_prompt) {

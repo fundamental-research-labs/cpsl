@@ -73,6 +73,8 @@ pub(crate) mod yfinance;
 
 #[cfg(feature = "mod-apple-calendar")]
 pub use apple_calendar::AppleCalendarGateway;
+#[cfg(feature = "mod-apple-calendar")]
+pub use calendar::CalendarActivityCallback;
 #[cfg(feature = "mod-location")]
 pub use location::LocationGateway;
 pub use mount::{MountError, MountPermission, MountTable};
