@@ -441,14 +441,17 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read the contents of a file. Supports partial reads with offset/limit (1-based line numbers).",
+            description: "Read the contents of a file. Default mode is UTF-8 text with line offset/limit. Use mode=\"binary\" for raw bytes or mode=\"base64\" for JSON-safe binary output.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
                 Param { name: "offset", short: Some('o'), typ: ParamType::Number, required: false, fields: None },
                 Param { name: "limit", short: Some('l'), typ: ParamType::Number, required: false, fields: None },
+                Param { name: "mode", short: Some('m'), typ: ParamType::String, required: false, fields: None },
+                Param { name: "byte_offset", short: None, typ: ParamType::Number, required: false, fields: None },
+                Param { name: "byte_limit", short: None, typ: ParamType::Number, required: false, fields: None },
             ],
             returns: ReturnType::String,
-            example: Some(r#"local text = fs.read("/workspace/data.txt", 10, 50)"#),
+            example: Some(r#"local wav_b64 = fs.read({path="/workspace/audio.wav", mode="base64"})"#),
         },
         FnDoc {
             name: "write",

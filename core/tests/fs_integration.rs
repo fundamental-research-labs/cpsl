@@ -382,6 +382,91 @@ fn test_fs_read_positional_with_offset_limit() {
     assert_eq!(result, "line 2\nline 3\nline 4");
 }
 
+#[test]
+fn test_fs_read_invalid_utf8_suggests_binary_modes() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0xff, 0xfe, 0xfd]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let err = sandbox
+        .exec(r#"return fs.read("/data/blob.bin")"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("not valid UTF-8"),
+        "got: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains(r#"mode="binary""#) && err.message.contains(r#"mode="base64""#),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_base64_mode_handles_binary_bytes() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(r#"return fs.read({path="/data/blob.bin", mode="base64"})"#)
+        .unwrap();
+    assert_eq!(result, "AAEC/w==");
+}
+
+#[test]
+fn test_fs_read_binary_mode_returns_raw_luau_string() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+            local data = fs.read({path="/data/blob.bin", mode="binary"})
+            fs.write("/data/copy.bin", data)
+            return #data, string.byte(data, 1), string.byte(data, 4)
+            "#,
+        )
+        .unwrap();
+    assert_eq!(result, "4\t0\t255");
+    assert_eq!(
+        fs::read(dir.path().join("copy.bin")).unwrap(),
+        [0, 1, 2, 255]
+    );
+}
+
+#[test]
+fn test_fs_read_base64_mode_supports_byte_slice() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"return fs.read({path="/data/blob.bin", mode="base64", byte_offset=1, byte_limit=2})"#,
+        )
+        .unwrap();
+    assert_eq!(result, "AQI=");
+}
+
+#[test]
+fn test_fs_read_binary_mode_rejects_line_slice_options() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let err = sandbox
+        .exec(r#"fs.read({path="/data/blob.bin", mode="binary", limit=1})"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("offset/limit are line-based"),
+        "got: {}",
+        err.message
+    );
+}
+
 // --- fs.grep tests ---
 
 #[cfg(feature = "mod-ripgrep")]

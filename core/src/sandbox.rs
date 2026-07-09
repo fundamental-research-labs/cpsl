@@ -912,6 +912,123 @@ fn slice_lines(content: &str, offset: Option<usize>, limit: Option<usize>) -> St
 }
 
 #[cfg(feature = "mod-fs")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FsReadMode {
+    Text,
+    Binary,
+    Base64,
+}
+
+#[cfg(feature = "mod-fs")]
+fn parse_fs_read_mode(value: &Value) -> Result<FsReadMode, mlua::Error> {
+    let Value::String(s) = value else {
+        return Ok(FsReadMode::Text);
+    };
+    match s.to_string_lossy().to_ascii_lowercase().as_str() {
+        "text" | "utf8" | "utf-8" => Ok(FsReadMode::Text),
+        "binary" | "bytes" => Ok(FsReadMode::Binary),
+        "base64" | "b64" => Ok(FsReadMode::Base64),
+        other => Err(mlua::Error::external(format!(
+            "fs.read: invalid mode '{}'; expected text, binary, or base64",
+            other
+        ))),
+    }
+}
+
+#[cfg(feature = "mod-fs")]
+fn nonnegative_usize(value: &Value) -> Option<usize> {
+    match value {
+        Value::Integer(n) => Some((*n).max(0) as usize),
+        Value::Number(n) => Some((*n).max(0.0) as usize),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "mod-fs")]
+fn slice_bytes(bytes: &[u8], offset: Option<usize>, limit: Option<usize>) -> &[u8] {
+    let start = offset.unwrap_or(0).min(bytes.len());
+    let end = match limit {
+        Some(limit) => start.saturating_add(limit).min(bytes.len()),
+        None => bytes.len(),
+    };
+    &bytes[start..end]
+}
+
+#[cfg(feature = "mod-fs")]
+const FS_BASE64_ENCODE_TABLE: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+#[cfg(feature = "mod-fs")]
+fn fs_base64_encode(data: &[u8]) -> String {
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        result.push(FS_BASE64_ENCODE_TABLE[((triple >> 18) & 0x3f) as usize] as char);
+        result.push(FS_BASE64_ENCODE_TABLE[((triple >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(FS_BASE64_ENCODE_TABLE[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(FS_BASE64_ENCODE_TABLE[(triple & 0x3f) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+#[cfg(feature = "mod-fs")]
+fn fs_read_result(
+    lua: &Lua,
+    path: &str,
+    bytes: Vec<u8>,
+    mode: FsReadMode,
+    line_offset: Option<usize>,
+    line_limit: Option<usize>,
+    byte_offset: Option<usize>,
+    byte_limit: Option<usize>,
+) -> Result<Value, mlua::Error> {
+    match mode {
+        FsReadMode::Text => {
+            if byte_offset.is_some() || byte_limit.is_some() {
+                return Err(mlua::Error::external(
+                    "fs.read: byte_offset/byte_limit require mode=\"binary\" or mode=\"base64\"",
+                ));
+            }
+            let text = String::from_utf8(bytes).map_err(|_| {
+                mlua::Error::external(format!(
+                    "fs.read: {} is not valid UTF-8; use mode=\"binary\" for raw bytes or mode=\"base64\" for JSON-safe output",
+                    path
+                ))
+            })?;
+            let sliced = slice_lines(&text, line_offset, line_limit);
+            lua.create_string(&sliced).map(Value::String)
+        }
+        FsReadMode::Binary | FsReadMode::Base64 => {
+            if line_offset.is_some() || line_limit.is_some() {
+                return Err(mlua::Error::external(
+                    "fs.read: offset/limit are line-based and only valid in text mode; use byte_offset/byte_limit",
+                ));
+            }
+            let sliced = slice_bytes(&bytes, byte_offset, byte_limit);
+            match mode {
+                FsReadMode::Binary => lua.create_string(sliced).map(Value::String),
+                FsReadMode::Base64 => {
+                    Ok(Value::String(lua.create_string(fs_base64_encode(sliced))?))
+                }
+                FsReadMode::Text => unreachable!(),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "mod-fs")]
 fn register_fs_globals(
     lua: &Lua,
     mounts: Arc<MountTable>,
@@ -1158,14 +1275,14 @@ fn register_fs_read_and_metadata(
     synthetic_files: Arc<std::collections::HashMap<String, String>>,
     file_activity_cb: Option<FileActivityCallback>,
 ) -> Result<(), mlua::Error> {
-    // fs.read(path [, offset, limit]) -> string
+    // fs.read(path [, offset, limit, mode, byte_offset, byte_limit]) -> string
     {
         let m = mounts.clone();
         let sf = synthetic_files.clone();
         let cb = file_activity_cb.clone();
         fs.set(
             "read",
-            lua.create_function(move |_, args: MultiValue| {
+            lua.create_function(move |lua, args: MultiValue| {
                 let validated = validate_args(&args, FS_DOC.params("read"), "fs.read")?;
                 let path = match &validated[0] {
                     Value::String(s) => s.to_string_lossy().to_string(),
@@ -1174,20 +1291,24 @@ fn register_fs_read_and_metadata(
 
                 // Extract optional offset/limit (1-based line numbers)
                 // Clamp negatives to 0 to avoid wrapping on the i64→usize cast.
-                let offset: Option<usize> = match &validated[1] {
-                    Value::Integer(n) => Some((*n).max(0) as usize),
-                    Value::Number(n) => Some((*n).max(0.0) as usize),
-                    _ => None,
-                };
-                let limit: Option<usize> = match &validated[2] {
-                    Value::Integer(n) => Some((*n).max(0) as usize),
-                    Value::Number(n) => Some((*n).max(0.0) as usize),
-                    _ => None,
-                };
+                let offset = nonnegative_usize(&validated[1]);
+                let limit = nonnegative_usize(&validated[2]);
+                let mode = parse_fs_read_mode(&validated[3])?;
+                let byte_offset = nonnegative_usize(&validated[4]);
+                let byte_limit = nonnegative_usize(&validated[5]);
 
                 // Handle synthetic special files
                 if let Some(content) = synthetic_file_content(&path, &sf) {
-                    return Ok(slice_lines(&content, offset, limit));
+                    return fs_read_result(
+                        lua,
+                        &path,
+                        content.into_bytes(),
+                        mode,
+                        offset,
+                        limit,
+                        byte_offset,
+                        byte_limit,
+                    );
                 }
                 if path.starts_with("/dev/") {
                     return match path.as_str() {
@@ -1205,11 +1326,20 @@ fn register_fs_read_and_metadata(
                     return Err(mlua::Error::external(crate::MountError::IsDirectory(path)));
                 }
                 let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let result = std::fs::read_to_string(&host_path).map_err(mlua::Error::external)?;
+                let bytes = std::fs::read(&host_path).map_err(mlua::Error::external)?;
                 if let Some(ref cb) = cb {
                     cb(&path, "read");
                 }
-                Ok(slice_lines(&result, offset, limit))
+                fs_read_result(
+                    lua,
+                    &path,
+                    bytes,
+                    mode,
+                    offset,
+                    limit,
+                    byte_offset,
+                    byte_limit,
+                )
             })?,
         )?;
     }
