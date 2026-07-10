@@ -188,16 +188,39 @@ impl FnDoc {
                 let flags: Vec<String> = self
                     .params
                     .iter()
-                    .map(|p| {
+                    .flat_map(|p| {
+                        if p.name == "opts" {
+                            if let Some(fields) = p.fields.filter(|fields| {
+                                fields.iter().all(|field| {
+                                    matches!(field.typ, "string" | "number" | "boolean")
+                                })
+                            }) {
+                                return fields
+                                    .iter()
+                                    .map(|field| {
+                                        let flag = format!("--{}", field.name.replace('_', "-"));
+                                        if field.typ == "boolean" && field.required {
+                                            flag
+                                        } else if field.typ == "boolean" {
+                                            format!("[{}]", flag)
+                                        } else if field.required {
+                                            format!("{} <{}>", flag, field.typ)
+                                        } else {
+                                            format!("[{} <{}>]", flag, field.typ)
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                            }
+                        }
                         let flag = match p.short {
                             Some(c) => format!("-{}/--{}", c, p.name),
                             None => format!("--{}", p.name),
                         };
-                        if p.required {
+                        vec![if p.required {
                             format!("{} <{}>", flag, p.typ.shell_label())
                         } else {
                             format!("[{} <{}>]", flag, p.typ.shell_label())
-                        }
+                        }]
                     })
                     .collect();
                 format!("{}{}", flags.join(" "), ret)
@@ -435,27 +458,57 @@ const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
 ];
 
 #[cfg(feature = "mod-fs")]
+const FS_READ_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "offset",
+        typ: "number",
+        required: false,
+        description: "1-based first line in text mode (0 also means the first line)",
+    },
+    FieldDoc {
+        name: "limit",
+        typ: "number",
+        required: false,
+        description: "Maximum number of lines in text mode",
+    },
+    FieldDoc {
+        name: "mode",
+        typ: "string",
+        required: false,
+        description: "Output mode: \"text\" (default), \"binary\", or \"base64\"",
+    },
+    FieldDoc {
+        name: "byte_offset",
+        typ: "number",
+        required: false,
+        description: "0-based byte offset in binary or base64 mode",
+    },
+    FieldDoc {
+        name: "byte_limit",
+        typ: "number",
+        required: false,
+        description: "Maximum bytes to read in binary or base64 mode",
+    },
+];
+
+#[cfg(feature = "mod-fs")]
 pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     name: "fs",
     summary: "sandboxed filesystem (read, write, list, mkdir, copy, grep, tree, ...)",
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read the contents of a file. Default mode is UTF-8 text with line offset/limit. Use mode=\"binary\" for raw bytes or mode=\"base64\" for JSON-safe binary output.",
+            description: "Read file contents. Text mode validates UTF-8, binary mode preserves raw bytes, and base64 mode is safe for text-only output channels.",
             params: &[
-                Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "offset", short: Some('o'), typ: ParamType::Number, required: false, fields: None },
-                Param { name: "limit", short: Some('l'), typ: ParamType::Number, required: false, fields: None },
-                Param { name: "mode", short: Some('m'), typ: ParamType::String, required: false, fields: None },
-                Param { name: "byte_offset", short: None, typ: ParamType::Number, required: false, fields: None },
-                Param { name: "byte_limit", short: None, typ: ParamType::Number, required: false, fields: None },
+                Param { name: "path", short: None, typ: ParamType::String, required: true, fields: None },
+                Param { name: "opts", short: None, typ: ParamType::Table, required: false, fields: Some(FS_READ_OPTS_FIELDS) },
             ],
             returns: ReturnType::String,
-            example: Some(r#"local wav_b64 = fs.read({path="/workspace/audio.wav", mode="base64"})"#),
+            example: Some(r#"local bytes = buffer.fromstring(fs.read("/workspace/audio.wav", {mode="binary", byte_limit=4096}))"#),
         },
         FnDoc {
             name: "write",
-            description: "Write content to a file.",
+            description: "Replace a file with the supplied bytes.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
                 Param { name: "content", short: Some('c'), typ: ParamType::String, required: true, fields: None },

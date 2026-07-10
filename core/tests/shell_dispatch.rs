@@ -192,6 +192,25 @@ fn shell_fs_read_dispatch() {
 }
 
 #[test]
+fn shell_fs_read_base64_options() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh(
+        "fs read --path /workspace/blob.bin --mode base64 --byte-offset 1 --byte-limit 2",
+    )
+    .unwrap()
+    .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "AQI=");
+}
+
+#[test]
 fn shell_xml_parse_file_dispatch() {
     let dir = tempfile::TempDir::new().unwrap();
     std::fs::write(dir.path().join("data.xml"), "<item>test</item>").unwrap();

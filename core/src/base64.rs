@@ -6,6 +6,7 @@
 //!
 //! Uses a pure-Rust implementation (no external dependencies).
 
+use crate::base64_codec::encode as base64_encode;
 use crate::lua_util::register_help_functions;
 use crate::sandbox::{
     validate_args, wrap_module_with_help_hints, FnDoc, ModuleDoc, Param, ParamType, ReturnType,
@@ -70,32 +71,6 @@ pub(crate) static BASE64_DOC: ModuleDoc = ModuleDoc {
         },
     ],
 };
-
-const ENCODE_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-fn base64_encode(data: &[u8]) -> String {
-    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        result.push(ENCODE_TABLE[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(ENCODE_TABLE[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(ENCODE_TABLE[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(ENCODE_TABLE[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-    result
-}
 
 fn base64_decode_byte(c: u8) -> Result<u8, ()> {
     match c {

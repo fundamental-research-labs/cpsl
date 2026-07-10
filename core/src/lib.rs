@@ -2,6 +2,8 @@
 
 #[cfg(feature = "mod-base64")]
 pub(crate) mod base64;
+#[cfg(any(feature = "mod-base64", feature = "mod-fs"))]
+mod base64_codec;
 #[cfg(feature = "mod-apple-calendar")]
 pub(crate) mod calendar;
 #[cfg(feature = "mod-compress")]

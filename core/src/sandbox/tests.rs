@@ -1318,6 +1318,12 @@ fn test_format_help_renders_field_docs() {
             required: false,
             description: "Chart title",
         },
+        FieldDoc {
+            name: "verbose",
+            typ: "boolean",
+            required: false,
+            description: "Show details",
+        },
     ];
     static PARAMS: &[Param] = &[Param {
         name: "opts",
@@ -1354,6 +1360,14 @@ fn test_format_help_renders_field_docs() {
         "help should contain field description: {}",
         help
     );
+
+    let shell_help = doc.format_help(HelpMode::Shell);
+    assert!(
+        shell_help.contains("test bar --width <number> [--title <string>] [--verbose]"),
+        "shell help should flatten scalar option fields: {}",
+        shell_help
+    );
+    assert!(!shell_help.contains("--opts"), "{shell_help}");
 }
 
 #[test]

@@ -83,17 +83,24 @@ No validation at transpile time. Runtime `__index` metatable catches unknown met
 
 ### fs
 
-All positional-only. Maps cleanly:
+Required paths and content are positional. `fs.read` uses an options table for
+text or byte ranges and binary-safe output modes:
 
 | Shell | Module |
 |---|---|
 | `fs read /path` | `fs.read("/path")` |
+| `fs read /path --mode base64 --byte-limit 4096` | `fs.read("/path", {mode="base64", byte_limit=4096})` |
 | `fs write /path "content"` | `fs.write("/path", "content")` |
 | `fs list /path` | `fs.list("/path")` |
 | `fs exists /path` | `fs.exists("/path")` |
 | `fs mkdir /path` | `fs.mkdir("/path")` |
 | `fs rename /a /b` | `fs.rename("/a", "/b")` |
 | `fs remove /path` | `fs.remove("/path")` |
+
+Binary mode returns a byte-safe string. Luau callers can pass it to
+`buffer.fromstring()` for typed binary reads and convert a buffer back with
+`buffer.tostring()` before `fs.write()`; use base64 mode when bytes must cross a
+text-only output boundary.
 
 ### http
 
