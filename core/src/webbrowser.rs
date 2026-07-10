@@ -12,8 +12,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 const DEFAULT_RESOURCE_MODE: &str = "lean";
-const DEFAULT_WINDOW_WIDTH: i64 = 800;
-const DEFAULT_WINDOW_HEIGHT: i64 = 600;
+const DEFAULT_WINDOW_WIDTH: i64 = 1200;
+const DEFAULT_WINDOW_HEIGHT: i64 = 900;
 
 pub trait WebBrowserGateway: Send + Sync {
     fn handle_json(&self, request_json: &str) -> Result<String, String>;
@@ -337,7 +337,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "resize",
-            description: "Resize the browser preview window.",
+            description: "Resize the browser automation viewport.",
             params: &[
                 Param {
                     name: "browser",
@@ -362,7 +362,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
                 },
             ],
             returns: ReturnType::Table,
-            example: Some(r#"webbrowser.resize(browser, 1024, 768)"#),
+            example: Some(r#"webbrowser.resize(browser, 1200, 900)"#),
         },
         FnDoc {
             name: "screenshot",
