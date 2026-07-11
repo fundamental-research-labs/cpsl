@@ -195,7 +195,7 @@ impl FnDoc {
                                     matches!(field.typ, "string" | "number" | "boolean")
                                 })
                             }) {
-                                return fields
+                                let mut flattened = fields
                                     .iter()
                                     .map(|field| {
                                         let flag = format!("--{}", field.name.replace('_', "-"));
@@ -210,6 +210,14 @@ impl FnDoc {
                                         }
                                     })
                                     .collect::<Vec<_>>();
+                                // A required opts table cannot be omitted in shell mode. When
+                                // none of its fields is individually required, keep each field
+                                // optional (and composable) while making the parent requirement
+                                // explicit.
+                                if p.required && fields.iter().all(|field| !field.required) {
+                                    flattened.push("(at least one option required)".to_string());
+                                }
+                                return flattened;
                             }
                         }
                         let flag = match p.short {
@@ -498,9 +506,9 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read file contents. Text mode validates UTF-8, binary mode preserves raw bytes, and base64 mode is safe for text-only output channels.",
+            description: "Read file contents. Text mode validates UTF-8, binary mode preserves raw bytes, and base64 mode is safe for text-only output channels. Legacy shell aliases: -p/--path, -o/--offset, and -l/--limit.",
             params: &[
-                Param { name: "path", short: None, typ: ParamType::String, required: true, fields: None },
+                Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
                 Param { name: "opts", short: None, typ: ParamType::Table, required: false, fields: Some(FS_READ_OPTS_FIELDS) },
             ],
             returns: ReturnType::String,

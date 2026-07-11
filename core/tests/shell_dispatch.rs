@@ -211,6 +211,118 @@ fn shell_fs_read_base64_options() {
 }
 
 #[test]
+fn shell_fs_read_legacy_short_aliases_in_any_order() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("lines.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh("fs read -l 2 -p /workspace/lines.txt -o 2")
+        .unwrap()
+        .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "two\nthree");
+}
+
+#[test]
+fn shell_fs_read_mixes_positional_path_and_named_ranges() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("lines.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh("fs read --limit 1 /workspace/lines.txt -o 3")
+        .unwrap()
+        .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "three");
+}
+
+#[test]
+fn shell_boolean_option_accepts_explicit_false_and_presence_true() {
+    let s = sb_with_shell();
+    let token = s
+        .exec(r#"return crypto.jwt_encode({sub="shell-user"}, "right-secret")"#)
+        .unwrap();
+
+    let false_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate false",
+        token
+    );
+    let false_luau = sh_transpile::transpile_sh(&false_command)
+        .unwrap()
+        .luau_source;
+    let decoded = s.exec(&false_luau).unwrap();
+    assert!(
+        decoded.contains("shell-user"),
+        "explicit false should disable JWT validation, got: {decoded}"
+    );
+
+    let explicit_true_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate true",
+        token
+    );
+    let explicit_true_luau = sh_transpile::transpile_sh(&explicit_true_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&explicit_true_luau).is_err(),
+        "explicit true should enable JWT validation"
+    );
+
+    let true_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate",
+        token
+    );
+    let true_luau = sh_transpile::transpile_sh(&true_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&true_luau).is_err(),
+        "a presence-only boolean flag must remain true"
+    );
+
+    let string_false_command = format!(
+        "crypto jwt_decode --token '{}' --secret right-secret --algorithm false",
+        token
+    );
+    let string_false_luau = sh_transpile::transpile_sh(&string_false_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&string_false_luau).is_err(),
+        "the literal 'false' must remain a string for string-typed options"
+    );
+}
+
+#[test]
+fn image_resize_shell_help_marks_required_options_group() {
+    let s = sb_with_shell();
+    let help = s.exec(r#"image.help("shell")"#).unwrap();
+    let resize_line = help
+        .lines()
+        .find(|line| line.contains("image resize"))
+        .expect("image resize help line");
+
+    assert!(
+        resize_line.contains(
+            "[--width <number>] [--height <number>] [--filter <string>] (at least one option required)"
+        ),
+        "required flattened opts should retain their parent requirement: {resize_line}"
+    );
+    assert!(
+        help.contains("At least one of width or height is required"),
+        "image.resize help should state its concrete size requirement: {help}"
+    );
+}
+
+#[test]
 fn shell_xml_parse_file_dispatch() {
     let dir = tempfile::TempDir::new().unwrap();
     std::fs::write(dir.path().join("data.xml"), "<item>test</item>").unwrap();

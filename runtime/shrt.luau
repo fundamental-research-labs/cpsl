@@ -1562,6 +1562,20 @@ local function available_commands_hint()
     return hint
 end
 
+--- Coerce a shell option according to its declared FieldDoc type.
+--- Values for string fields are deliberately left alone even when they look
+--- numeric or boolean.
+local function coerce_option_value(value, expected_type)
+    if type(value) ~= "string" then return value end
+    if expected_type == "number" then
+        return tonumber(value) or value
+    elseif expected_type == "boolean" then
+        if value == "true" then return true end
+        if value == "false" then return false end
+    end
+    return value
+end
+
 --- Runtime module dispatch: checks _G[name] at runtime.
 --- If the global is a table (module), dispatches to module.method(args).
 --- If method is nil, calls module.help() (bare module name).
@@ -1615,6 +1629,18 @@ function sh.run(name, method, args)
     -- __params maps method → ordered param names, so we can unpack.
     local call_args = args
     if type(args) == "table" then
+        -- fs.read historically exposed -p/-o/-l. Canonicalize these aliases
+        -- before generic named-argument unpacking so they work in any order and
+        -- are not accidentally interpreted through positional fallbacks.
+        if name == "fs" and method == "read" then
+            if args.path == nil then args.path = args.p end
+            if args.offset == nil then args.offset = args.o end
+            if args.limit == nil then args.limit = args.l end
+            args.p = nil
+            args.o = nil
+            args.l = nil
+        end
+
         local params = rawget(mod, "__params")
         if params then
             local param_order = params[method]
@@ -1628,9 +1654,10 @@ function sh.run(name, method, args)
                     end
                 end
                 if has_named then
-                    -- Coerce string numbers to actual numbers for numeric-looking values
                     local unpacked = {}
                     local param_names = {}
+                    local all_field_types = rawget(mod, "__field_types")
+                    local field_types = all_field_types and all_field_types[method]
                     for _, pname in ipairs(param_order) do
                         param_names[pname] = true
                     end
@@ -1644,7 +1671,12 @@ function sh.run(name, method, args)
                             local has_opts = false
                             for k, extra in pairs(args) do
                                 if type(k) == "string" and not param_names[k] then
-                                    if type(extra) == "string" then
+                                    local expected_type = field_types and field_types[k]
+                                    if expected_type ~= nil then
+                                        extra = coerce_option_value(extra, expected_type)
+                                    elseif type(extra) == "string" then
+                                        -- Preserve numeric coercion for undocumented legacy
+                                        -- option fields, where no type metadata is available.
                                         local n = tonumber(extra)
                                         if n then extra = n end
                                     end

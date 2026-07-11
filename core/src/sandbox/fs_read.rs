@@ -13,6 +13,12 @@ enum ReadMode {
     Base64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionsContext {
+    OptionsOnly,
+    CombinedArguments,
+}
+
 pub(super) struct ReadRequest {
     pub(super) path: String,
     mode: ReadMode,
@@ -32,7 +38,9 @@ impl ReadRequest {
             Value::String(path) => {
                 let path = path.to_string_lossy().to_string();
                 match args.get(1) {
-                    Some(Value::Table(opts)) => Self::from_options(path, opts)?,
+                    Some(Value::Table(opts)) => {
+                        Self::from_options(path, opts, OptionsContext::OptionsOnly)?
+                    }
                     Some(Value::Integer(_) | Value::Number(_) | Value::Nil) | None => {
                         Self::from_legacy_args(path, args.get(1), args.get(2))?
                     }
@@ -52,10 +60,10 @@ impl ReadRequest {
                 match table_value(&args, "opts", 2)? {
                     Value::Table(opts) => {
                         validate_wrapper_keys(&args)?;
-                        Self::from_options(path, &opts)?
+                        Self::from_options(path, &opts, OptionsContext::OptionsOnly)?
                     }
                     Value::Nil | Value::Integer(_) | Value::Number(_) => {
-                        Self::from_options(path, &args)?
+                        Self::from_options(path, &args, OptionsContext::CombinedArguments)?
                     }
                     value => return Err(type_error("opts", "table", &value)),
                 }
@@ -82,9 +90,13 @@ impl ReadRequest {
         })
     }
 
-    fn from_options(path: String, opts: &Table) -> Result<Self, mlua::Error> {
+    fn from_options(
+        path: String,
+        opts: &Table,
+        context: OptionsContext,
+    ) -> Result<Self, mlua::Error> {
         let opts = crate::pyrt_compat::unwrap_py_dict(opts)?;
-        validate_option_keys(&opts)?;
+        validate_option_keys(&opts, context)?;
         Ok(Self {
             path,
             mode: parse_mode(&opts.get::<Value>("mode")?)?,
@@ -121,6 +133,12 @@ impl ReadRequest {
 
         let mut file = File::open(path)?;
         if let Some(offset) = self.byte_offset {
+            let metadata = file.metadata()?;
+            // Some platforms reject offsets beyond their signed seek range. For a
+            // regular file, its known EOF lets us return the usual empty slice first.
+            if metadata.is_file() && offset >= metadata.len() {
+                return Ok(Vec::new());
+            }
             file.seek(SeekFrom::Start(offset))?;
         }
 
@@ -239,15 +257,19 @@ fn slice_bytes(bytes: &[u8], offset: Option<u64>, limit: Option<u64>) -> &[u8] {
     &bytes[start..end]
 }
 
-fn validate_option_keys(options: &Table) -> Result<(), mlua::Error> {
+fn validate_option_keys(options: &Table, context: OptionsContext) -> Result<(), mlua::Error> {
     for pair in options.clone().pairs::<Value, Value>() {
         let (key, _) = pair?;
         let known = match &key {
+            Value::String(key) if key.as_bytes() == b"path" => {
+                context == OptionsContext::CombinedArguments
+            }
             Value::String(key) => matches!(
                 key.as_bytes().as_ref(),
-                b"path" | b"offset" | b"limit" | b"mode" | b"byte_offset" | b"byte_limit"
+                b"offset" | b"limit" | b"mode" | b"byte_offset" | b"byte_limit"
             ),
-            Value::Integer(1..=3) => true,
+            Value::Integer(1) => context == OptionsContext::CombinedArguments,
+            Value::Integer(2..=3) => true,
             _ => false,
         };
         if !known {

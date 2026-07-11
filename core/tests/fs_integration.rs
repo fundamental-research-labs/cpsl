@@ -415,10 +415,11 @@ fn test_fs_read_help_documents_binary_options() {
     assert!(help.contains("buffer.fromstring("), "{help}");
 
     let shell_help = Sandbox::new().unwrap().exec(r#"fs.help("shell")"#).unwrap();
-    assert!(shell_help.contains("fs read --path"), "{shell_help}");
-    assert!(!shell_help.contains("fs read -p/--path"), "{shell_help}");
+    assert!(shell_help.contains("fs read -p/--path"), "{shell_help}");
+    assert!(shell_help.contains("-o/--offset"), "{shell_help}");
+    assert!(shell_help.contains("-l/--limit"), "{shell_help}");
     assert!(
-        !shell_help.contains("fs read --path <string> [--opts"),
+        !shell_help.contains("fs read -p/--path <string> [--opts"),
         "{shell_help}"
     );
     for flag in [
@@ -452,6 +453,7 @@ fn test_fs_read_supports_nested_dual_signature_options() {
 
     for code in [
         r#"return fs.read({path="/data/blob.bin", mode="base64", byte_limit=2})"#,
+        r#"return fs.read({[1]="/data/blob.bin", mode="base64", byte_limit=2})"#,
         r#"return fs.read({path="/data/blob.bin", opts={mode="base64", byte_limit=2}})"#,
         r#"return fs.read({[1]="/data/blob.bin", [2]={mode="base64", byte_limit=2}})"#,
     ] {
@@ -581,6 +583,39 @@ fn test_fs_read_rejects_unknown_options() {
 }
 
 #[test]
+fn test_fs_read_rejects_path_keys_inside_options_tables() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    for (code, key) in [
+        (
+            r#"fs.read("/data/blob.bin", {path="/data/missing", mode="binary"})"#,
+            "'path'",
+        ),
+        (
+            r#"fs.read("/data/blob.bin", {[1]="/data/missing", mode="binary"})"#,
+            "1",
+        ),
+        (
+            r#"fs.read({path="/data/blob.bin", opts={path="/data/missing", mode="binary"}})"#,
+            "'path'",
+        ),
+        (
+            r#"fs.read({path="/data/blob.bin", opts={[1]="/data/missing", mode="binary"}})"#,
+            "1",
+        ),
+    ] {
+        let err = sandbox.exec(code).unwrap_err();
+        assert!(
+            err.message.contains(&format!("unknown option {key}")),
+            "code {code}, got: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
 fn test_fs_read_byte_ranges_handle_empty_and_past_eof() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
@@ -595,6 +630,23 @@ fn test_fs_read_byte_ranges_handle_empty_and_past_eof() {
 
     assert_eq!(empty, "");
     assert_eq!(past_eof, "");
+}
+
+#[test]
+fn test_fs_read_huge_byte_offset_past_eof_is_empty() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    let host = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", byte_offset=1e19})"#)
+        .unwrap();
+    let synthetic = sandbox
+        .exec(r#"return fs.read("/etc/hostname", {mode="base64", byte_offset=1e19})"#)
+        .unwrap();
+
+    assert_eq!(host, "");
+    assert_eq!(synthetic, "");
 }
 
 #[test]

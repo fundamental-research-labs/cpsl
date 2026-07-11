@@ -1371,6 +1371,62 @@ fn test_format_help_renders_field_docs() {
 }
 
 #[test]
+fn test_shell_help_preserves_required_flattened_opts_group() {
+    static FIELDS: &[FieldDoc] = &[
+        FieldDoc {
+            name: "width",
+            typ: "number",
+            required: false,
+            description: "Target width",
+        },
+        FieldDoc {
+            name: "height",
+            typ: "number",
+            required: false,
+            description: "Target height",
+        },
+    ];
+    static PARAMS: &[Param] = &[Param {
+        name: "opts",
+        short: None,
+        typ: ParamType::Table,
+        required: true,
+        fields: Some(FIELDS),
+    }];
+    let f = FnDoc {
+        name: "resize",
+        description: "",
+        params: PARAMS,
+        returns: ReturnType::Void,
+        example: None,
+    };
+
+    assert_eq!(
+        f.generated_signature(HelpMode::Shell),
+        "[--width <number>] [--height <number>] (at least one option required)"
+    );
+}
+
+#[cfg(feature = "mod-fs")]
+#[test]
+fn test_fs_read_shell_help_keeps_legacy_aliases() {
+    let read = FS_DOC
+        .functions
+        .iter()
+        .find(|function| function.name == "read")
+        .unwrap();
+    let shell_help = FS_DOC.format_help(HelpMode::Shell);
+    assert!(
+        read.generated_signature(HelpMode::Shell)
+            .starts_with("-p/--path <string>"),
+        "{}",
+        read.generated_signature(HelpMode::Shell)
+    );
+    assert!(shell_help.contains("-o/--offset"), "{shell_help}");
+    assert!(shell_help.contains("-l/--limit"), "{shell_help}");
+}
+
+#[test]
 fn test_functions_with_3_plus_params_have_examples() {
     for (mod_name, doc) in all_module_docs() {
         for f in doc.functions {
