@@ -1449,22 +1449,22 @@ fn test_shell_help_preserves_required_flattened_opts_group() {
 
 #[cfg(feature = "mod-fs")]
 #[test]
-fn test_fs_read_shell_help_keeps_legacy_aliases() {
+fn test_fs_read_shell_help_includes_all_short_aliases() {
     let read = FS_DOC
         .functions
         .iter()
         .find(|function| function.name == "read")
         .unwrap();
     let shell_help = FS_DOC.format_help(HelpMode::Shell);
+    let shell_signature = read.generated_signature_for_module(HelpMode::Shell, Some(FS_DOC.name));
     assert!(
-        read.generated_signature(HelpMode::Shell)
-            .starts_with("-p/--path <string>"),
-        "{}",
-        read.generated_signature(HelpMode::Shell)
+        shell_signature.starts_with("-p/--path <string>"),
+        "{shell_signature}"
     );
+    assert!(shell_help.contains("-m/--mode"), "{shell_help}");
     assert!(shell_help.contains("-o/--offset"), "{shell_help}");
     assert!(shell_help.contains("-l/--limit"), "{shell_help}");
-    assert!(shell_help.contains("--count"), "{shell_help}");
+    assert!(shell_help.contains("-c/--count"), "{shell_help}");
     assert!(!shell_help.contains("--byte-offset"), "{shell_help}");
     assert!(!shell_help.contains("--byte-limit"), "{shell_help}");
     assert!(
@@ -1473,12 +1473,17 @@ fn test_fs_read_shell_help_keeps_legacy_aliases() {
         "{}",
         read.generated_signature(HelpMode::Lua)
     );
+    assert!(shell_signature.ends_with("-> string"), "{shell_signature}");
+
+    let error_help = read.format_shell_error_help(FS_DOC.name);
     assert!(
-        read.generated_signature(HelpMode::Shell)
-            .ends_with("-> string"),
-        "{}",
-        read.generated_signature(HelpMode::Shell)
+        error_help.starts_with("  Usage: fs read -p/--path"),
+        "{error_help}"
     );
+    assert!(error_help.contains("-m/--mode"), "{error_help}");
+    assert!(error_help.contains("-c/--count"), "{error_help}");
+    assert!(!error_help.contains("fs.read("), "{error_help}");
+    assert!(!error_help.contains("string | buffer"), "{error_help}");
 }
 
 #[test]

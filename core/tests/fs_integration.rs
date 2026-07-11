@@ -760,6 +760,126 @@ fn test_python_fs_read_kwargs_use_options_table() {
     assert_eq!(result, "AQI=");
 }
 
+#[test]
+fn test_python_fs_buffer_reads_map_to_bytearray_semantics() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    fs::write(dir.path().join("empty.bin"), []).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    sandbox
+        .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
+        .unwrap();
+
+    let transpiled = cpsl_core::transpile::transpile(
+        r#"
+data = fs.read("/data/blob.bin", mode="buffer")
+empty = fs.read("/data/empty.bin", mode="buffer")
+print(type(data), isinstance(data, bytearray))
+print(bool(data), bool(empty), len(data), len(empty), data[0], data[-1])
+data[1] = 42
+values = []
+for value in data:
+    values.append(value)
+print(values)
+piece = data[1:4:2]
+reverse = data[::-1]
+oversized_reverse = data[999999::-1]
+empty_reverse = empty[::-1]
+explicit_none = data[None:None:None]
+print(type(piece), len(piece), piece[0], piece[-1])
+print(reverse)
+print(oversized_reverse)
+print(type(empty_reverse), len(empty_reverse), empty_reverse)
+print(explicit_none)
+print([1, 2, 3][999999::-1], "abc"[999999::-1])
+print(list(data))
+print(data)
+fs.write("/data/copy.bin", data)
+fs.write("/data/piece.bin", piece)
+"#,
+    )
+    .unwrap();
+
+    let result = sandbox.exec(&transpiled.luau_source).unwrap();
+
+    assert_eq!(
+        result,
+        "<class 'bytearray'> True\n\
+True False 4 0 0 255\n\
+[0, 42, 2, 255]\n\
+<class 'bytearray'> 2 42 255\n\
+bytearray([255, 2, 42, 0])\n\
+bytearray([255, 2, 42, 0])\n\
+<class 'bytearray'> 0 bytearray([])\n\
+bytearray([0, 42, 2, 255])\n\
+[3, 2, 1] cba\n\
+[0, 42, 2, 255]\n\
+bytearray([0, 42, 2, 255])"
+    );
+    assert_eq!(
+        fs::read(dir.path().join("copy.bin")).unwrap(),
+        [0, 42, 2, 255]
+    );
+    assert_eq!(fs::read(dir.path().join("piece.bin")).unwrap(), [42, 255]);
+}
+
+#[test]
+fn test_python_fs_buffer_bytearray_validates_indices_and_assignments() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    sandbox
+        .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
+        .unwrap();
+
+    for (statement, expected) in [
+        ("data[0] = -1", "ValueError: byte must be in range(0, 256)"),
+        ("data[0] = 256", "ValueError: byte must be in range(0, 256)"),
+        (
+            "data[0] = 1.5",
+            "TypeError: 'float' object cannot be interpreted as an integer",
+        ),
+        ("print(data[3])", "IndexError: bytearray index out of range"),
+        (
+            "print(data[-4])",
+            "IndexError: bytearray index out of range",
+        ),
+        (
+            "print(data[1.5])",
+            "TypeError: bytearray indices must be integers or slices, not float",
+        ),
+        (
+            "print(data[float(\"1e309\")])",
+            "TypeError: bytearray indices must be integers or slices, not float",
+        ),
+        (
+            "data[0] = float(\"1e309\")",
+            "TypeError: 'float' object cannot be interpreted as an integer",
+        ),
+        (
+            "print(data[::1.5])",
+            "TypeError: slice indices must be integers or None or have an __index__ method",
+        ),
+        (
+            "print(data[1.5:])",
+            "TypeError: slice indices must be integers or None or have an __index__ method",
+        ),
+        (
+            "print(data[::False])",
+            "ValueError: slice step cannot be zero",
+        ),
+    ] {
+        let source = format!("data = fs.read(\"/data/blob.bin\", mode=\"buffer\")\n{statement}");
+        let transpiled = cpsl_core::transpile::transpile(&source).unwrap();
+        let err = sandbox.exec(&transpiled.luau_source).unwrap_err();
+        assert!(
+            err.message.contains(expected),
+            "statement {statement:?}: expected {expected:?}, got {:?}",
+            err.message
+        );
+    }
+}
+
 // --- fs.grep tests ---
 
 #[cfg(feature = "mod-ripgrep")]

@@ -15,6 +15,10 @@ local LIST_MT = {}
 local DICT_MT = {}
 local TUPLE_MT = {}
 
+local function is_luau_buffer(obj)
+    return type(obj) == "buffer"
+end
+
 -- ============================================================
 -- Float marker — tags a number as "Python float" for display.
 -- Not used in arithmetic/comparison — just carries format info
@@ -64,6 +68,11 @@ function py.list(t)
                     obj.data[i] = t.keys_order[i]
                     obj.length = i
                 end
+            end
+        elseif is_luau_buffer(t) then
+            for i = 0, buffer.len(t) - 1 do
+                obj.length = obj.length + 1
+                obj.data[obj.length] = buffer.readu8(t, i)
             end
         else
             for i = 1, #t do
@@ -124,14 +133,23 @@ local function is_py_type(obj, typename)
     return type(obj) == "table" and obj.__py_type == typename
 end
 
+local function is_finite_integer(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+        and value == math.floor(value)
+end
+
 function py.type(val)
     if val == nil or val == py.None then return "NoneType" end
     if type(val) == "boolean" then return "bool" end
     if type(val) == "number" then
-        if val == math.floor(val) then return "int" end
+        if is_finite_integer(val) then return "int" end
         return "float"
     end
     if type(val) == "string" then return "str" end
+    if is_luau_buffer(val) then return "bytearray" end
     if is_py_type(val, "list") then return "list" end
     if is_py_type(val, "dict") then return "dict" end
     if is_py_type(val, "tuple") then return "tuple" end
@@ -156,6 +174,21 @@ function py.isinstance(val, typename)
     return py.type(val) == typename
 end
 
+local function bytearray_index(obj, key)
+    if type(key) == "boolean" then
+        key = key and 1 or 0
+    elseif not is_finite_integer(key) then
+        error("TypeError: bytearray indices must be integers or slices, not " .. py.type(key), 0)
+    end
+
+    local len = buffer.len(obj)
+    if key < 0 then key = len + key end
+    if key < 0 or key >= len then
+        error("IndexError: bytearray index out of range", 0)
+    end
+    return key
+end
+
 -- ============================================================
 -- Truthiness (Python semantics)
 -- ============================================================
@@ -167,6 +200,7 @@ function py.bool(val)
     if is_py_type(val, "list") and val.length == 0 then return false end
     if is_py_type(val, "dict") and #val.keys_order == 0 then return false end
     if is_py_type(val, "tuple") and val.length == 0 then return false end
+    if is_luau_buffer(val) and buffer.len(val) == 0 then return false end
     return true
 end
 
@@ -198,6 +232,8 @@ function py.index(obj, key)
             error("IndexError: string index out of range", 0)
         end
         return string.sub(obj, idx, idx)
+    elseif is_luau_buffer(obj) then
+        return buffer.readu8(obj, bytearray_index(obj, key))
     end
     error("TypeError: object is not subscriptable", 0)
 end
@@ -227,18 +263,44 @@ function py.setindex(obj, key, val)
             end
             obj.data[key] = val
         end
+    elseif is_luau_buffer(obj) then
+        local idx = bytearray_index(obj, key)
+        if type(val) == "boolean" then
+            val = val and 1 or 0
+        elseif not is_finite_integer(val) then
+            error("TypeError: '" .. py.type(val) .. "' object cannot be interpreted as an integer", 0)
+        end
+        if val < 0 or val > 255 then
+            error("ValueError: byte must be in range(0, 256)", 0)
+        end
+        buffer.writeu8(obj, idx, val)
     else
         error("TypeError: object does not support item assignment", 0)
     end
 end
 
 function py.slice(obj, start, stop, step)
-    step = step or 1
+    local function normalize_index(value)
+        if value == nil or value == py.None then return nil end
+        if type(value) == "boolean" then return value and 1 or 0 end
+        if not is_finite_integer(value) then
+            error("TypeError: slice indices must be integers or None or have an __index__ method", 0)
+        end
+        return value
+    end
+
+    start = normalize_index(start)
+    stop = normalize_index(stop)
+    step = normalize_index(step)
+    if step == nil then step = 1 end
+    if step == 0 then error("ValueError: slice step cannot be zero", 0) end
     local len
     if is_py_type(obj, "list") or is_py_type(obj, "tuple") then
         len = obj.length
     elseif type(obj) == "string" then
         len = #obj
+    elseif is_luau_buffer(obj) then
+        len = buffer.len(obj)
     else
         error("TypeError: object is not subscriptable", 0)
     end
@@ -247,17 +309,42 @@ function py.slice(obj, start, stop, step)
     if start == nil then start = (step > 0) and 0 or (len - 1) end
     if stop == nil then stop = (step > 0) and len or (-len - 1) end
 
-    -- Normalize negative indices
-    if start < 0 then start = math.max(len + start, 0) end
+    -- Normalize negative indices. Negative-step slices use -1 as the
+    -- before-the-beginning sentinel, including when the sequence is empty.
+    if start < 0 then
+        local floor = (step < 0) and -1 or 0
+        start = math.max(len + start, floor)
+    end
     if stop < 0 then
         -- For negative step, stop=-1 means "include index 0" (before-the-beginning sentinel)
         local floor = (step < 0) and -1 or 0
         stop = math.max(len + stop, floor)
     end
 
-    -- Clamp
-    start = math.min(start, len)
-    stop = math.min(stop, len)
+    -- Clamp. For a negative step the largest valid starting index is len - 1;
+    -- using len would make the first buffer read immediately out of bounds.
+    local ceiling = (step < 0) and (len - 1) or len
+    start = math.min(start, ceiling)
+    stop = math.min(stop, ceiling)
+
+    if is_luau_buffer(obj) then
+        local count = 0
+        if step > 0 and start < stop then
+            count = math.ceil((stop - start) / step)
+        elseif step < 0 and start > stop then
+            count = math.ceil((start - stop) / -step)
+        end
+
+        local sliced = buffer.create(count)
+        local source_idx = start
+        local target_idx = 0
+        while (step > 0 and source_idx < stop) or (step < 0 and source_idx > stop) do
+            buffer.writeu8(sliced, target_idx, buffer.readu8(obj, source_idx))
+            source_idx = source_idx + step
+            target_idx = target_idx + 1
+        end
+        return sliced
+    end
 
     local result = {}
     local i = start
@@ -307,6 +394,17 @@ function py.iter(obj)
         return function()
             i = i + 1
             if i <= #obj then return string.sub(obj, i, i) end
+            return nil
+        end
+    elseif is_luau_buffer(obj) then
+        local i = 0
+        local len = buffer.len(obj)
+        return function()
+            if i < len then
+                local val = buffer.readu8(obj, i)
+                i = i + 1
+                return val
+            end
             return nil
         end
     elseif type(obj) == "table" then
@@ -601,6 +699,13 @@ function py.str(val)
     if type(val) == "boolean" then return val and "True" or "False" end
     if type(val) == "string" then return val end
     if type(val) == "number" then return tostring(val) end
+    if is_luau_buffer(val) then
+        local parts = {}
+        for i = 0, buffer.len(val) - 1 do
+            table.insert(parts, tostring(buffer.readu8(val, i)))
+        end
+        return "bytearray([" .. table.concat(parts, ", ") .. "])"
+    end
     if is_py_float(val) then
         local n = val.v
         if n ~= n then return "nan" end
@@ -821,6 +926,7 @@ end
 
 function py.len(obj)
     if type(obj) == "string" then return #obj end
+    if is_luau_buffer(obj) then return buffer.len(obj) end
     if is_py_type(obj, "list") or is_py_type(obj, "tuple") then return obj.length end
     if is_py_type(obj, "dict") then return #obj.keys_order end
     -- Plain Lua tables (e.g., arrays returned by sandbox modules like fuzzy.extract)

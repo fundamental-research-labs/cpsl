@@ -90,6 +90,7 @@ text or byte ranges and binary-safe output modes:
 |---|---|
 | `fs read /path` | `fs.read("/path")` |
 | `fs read /path --mode base64 --offset 0 --count 4096` | `fs.read("/path", {mode="base64", offset=0, count=4096})` |
+| `fs read -p /path -m base64 -o 0 -c 4096` | `fs.read("/path", {mode="base64", offset=0, count=4096})` |
 | `fs write /path "content"` | `fs.write("/path", "content")` |
 | `fs list /path` | `fs.list("/path")` |
 | `fs exists /path` | `fs.exists("/path")` |
@@ -110,10 +111,16 @@ print(buffer.readu8(bytes, 0))
 fs.write("/artifacts/chunk.bin", bytes)
 ```
 
+In Python mode, native buffers are presented as mutable, fixed-size
+`bytearray` values. They support truthiness, `len()`, integer indexing and
+assignment, iteration, slicing, `list()`, and direct `fs.write()` round trips;
+the Luau `buffer.*` functions remain an implementation detail.
+
 Shell, CLI, and FFI output channels are text-only. Use `mode="base64"` when
 bytes must cross those boundaries; shell dispatch rejects `mode="buffer"`
-with a corrective error. The legacy shell aliases `-p`, `-o`, and `-l` remain
-available for path and text line ranges.
+with a corrective error. Shell callers may use `-p`, `-m`, `-o`, `-l`, and
+`-c` for `path`, `mode`, `offset`, `limit`, and `count`, respectively; the
+legacy `-p`, `-o`, and `-l` forms remain compatible.
 
 ### http
 
@@ -271,6 +278,8 @@ let header = t.get::<bool>("header")
 | `height` | `h` | plot |
 | `legend` | `l` | plot |
 | `grid` | `g` | plot |
+| `mode` | `m` | fs.read |
+| `count` | `c` | fs.read |
 
 ## Description Writing Guidelines
 

@@ -8,6 +8,7 @@ use std::path::Path;
 
 const LUAU_BUFFER_MAX_BYTES: u64 = 1 << 30;
 const BASE64_MAX_INPUT_BYTES: u64 = (LUAU_BUFFER_MAX_BYTES / 4) * 3;
+const FILE_CHANGED_ERROR: &str = "fs.read: file changed size while reading; retry the operation";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReadMode {
@@ -214,28 +215,19 @@ impl ReadRequest {
                 let mut selected = (&mut file).take(selected_bytes);
                 std::io::copy(&mut selected, &mut cursor).map_err(mlua::Error::external)?
             };
-            if copied == selected_bytes {
-                let requested_more = self
-                    .byte_count
-                    .map(|count| count > selected_bytes)
-                    .unwrap_or(true);
-                if requested_more {
-                    let mut probe = [0_u8; 1];
-                    if file.read(&mut probe).map_err(mlua::Error::external)? != 0 {
-                        return Err(mlua::Error::external(
-                            "fs.read: file changed size while reading; retry the operation",
-                        ));
-                    }
-                }
-                return Ok(Value::Buffer(buffer));
-            }
+            ensure_complete_copy(copied, selected_bytes)?;
 
-            // If the file shrank after metadata was read, return only the bytes
-            // actually observed instead of exposing zero-filled tail bytes.
-            let bytes = buffer.to_vec();
-            return lua
-                .create_buffer(&bytes[..copied as usize])
-                .map(Value::Buffer);
+            let requested_more = self
+                .byte_count
+                .map(|count| count > selected_bytes)
+                .unwrap_or(true);
+            if requested_more {
+                let mut probe = [0_u8; 1];
+                if file.read(&mut probe).map_err(mlua::Error::external)? != 0 {
+                    return Err(mlua::Error::external(FILE_CHANGED_ERROR));
+                }
+            }
+            return Ok(Value::Buffer(buffer));
         }
 
         // Streams and dynamically-sized files cannot be pre-sized. Bound the
@@ -318,6 +310,14 @@ impl ReadRequest {
             std::io::ErrorKind::InvalidInput,
             message,
         ))
+    }
+}
+
+fn ensure_complete_copy(copied: u64, expected: u64) -> Result<(), mlua::Error> {
+    if copied == expected {
+        Ok(())
+    } else {
+        Err(mlua::Error::external(FILE_CHANGED_ERROR))
     }
 }
 
@@ -450,4 +450,17 @@ fn type_error(name: &str, expected: &str, value: &Value) -> mlua::Error {
         expected,
         value.type_name()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_complete_copy, FILE_CHANGED_ERROR};
+
+    #[test]
+    fn short_regular_file_copy_requires_retry_without_trimming() {
+        assert!(ensure_complete_copy(4, 4).is_ok());
+
+        let error = ensure_complete_copy(3, 4).unwrap_err();
+        assert!(error.to_string().contains(FILE_CHANGED_ERROR));
+    }
 }

@@ -14,6 +14,19 @@ local root = "/"
 sh.root = root
 local pipe_depth = 0  -- >0 means we're inside a pipe; suppress printing
 
+-- Run a callback while suppressing emitted output, restoring pipe_depth even
+-- when the callback raises. All capture/pipeline/redirection paths go through
+-- this helper so one failed command cannot poison a persistent shell session.
+local function with_output_suppressed(fn, ...)
+    pipe_depth = pipe_depth + 1
+    local results = table.pack(pcall(fn, ...))
+    pipe_depth = pipe_depth - 1
+    if not results[1] then
+        error(results[2], 0)
+    end
+    return table.unpack(results, 2, results.n)
+end
+
 -- Environment variables table — mirrors shell env
 sh.env = {
     HOME = "/",
@@ -1018,9 +1031,7 @@ end
 -- Suppresses stdout (captures output) and writes to file, creating it if needed.
 -- Adds trailing newline for non-empty output (matching print()/emit() behavior).
 function sh.redirect_write(path, fn)
-    pipe_depth = pipe_depth + 1
-    local result = fn()
-    pipe_depth = pipe_depth - 1
+    local result = with_output_suppressed(fn)
     if path == "/dev/null" then return end
     local resolved = resolve_path(path)
     if resolved == nil then return end
@@ -1034,9 +1045,7 @@ end
 -- Suppresses stdout (captures output) and appends to file, creating it if needed.
 -- Adds trailing newline for non-empty output (matching print()/emit() behavior).
 function sh.redirect_append(path, fn)
-    pipe_depth = pipe_depth + 1
-    local result = fn()
-    pipe_depth = pipe_depth - 1
+    local result = with_output_suppressed(fn)
     if path == "/dev/null" then return end
     local resolved = resolve_path(path)
     if resolved == nil then return end
@@ -1239,9 +1248,7 @@ end
 
 -- Capture command output without printing (for command substitution)
 function sh.capture(fn)
-    pipe_depth = pipe_depth + 1
-    local result = fn()
-    pipe_depth = pipe_depth - 1
+    local result = with_output_suppressed(fn)
     return result
 end
 
@@ -1250,17 +1257,19 @@ function sh.pipe(...)
     -- First: function() return sh.cmd(...) end (no stdin)
     -- Rest: function(_in) return sh.cmd(_in, ...) end (receives previous output)
     -- Suppress printing inside the pipeline; only emit the final result.
-    pipe_depth = pipe_depth + 1
-    local result = nil
-    for i = 1, select("#", ...) do
-        local fn_or_val = select(i, ...)
-        if type(fn_or_val) == "function" then
-            result = fn_or_val(result)
-        else
-            result = fn_or_val
+    local stages = table.pack(...)
+    local result = with_output_suppressed(function()
+        local value = nil
+        for i = 1, stages.n do
+            local fn_or_val = stages[i]
+            if type(fn_or_val) == "function" then
+                value = fn_or_val(value)
+            else
+                value = fn_or_val
+            end
         end
-    end
-    pipe_depth = pipe_depth - 1
+        return value
+    end)
     emit(result)
     return result
 end
@@ -1629,16 +1638,20 @@ function sh.run(name, method, args)
     -- __params maps method → ordered param names, so we can unpack.
     local call_args = args
     if type(args) == "table" then
-        -- fs.read historically exposed -p/-o/-l. Canonicalize these aliases
-        -- before generic named-argument unpacking so they work in any order and
-        -- are not accidentally interpreted through positional fallbacks.
+        -- Canonicalize fs.read's short aliases before generic named-argument
+        -- unpacking so they work in any order and are not accidentally
+        -- interpreted through positional fallbacks.
         if name == "fs" and method == "read" then
             if args.path == nil then args.path = args.p end
+            if args.mode == nil then args.mode = args.m end
             if args.offset == nil then args.offset = args.o end
             if args.limit == nil then args.limit = args.l end
+            if args.count == nil then args.count = args.c end
             args.p = nil
+            args.m = nil
             args.o = nil
             args.l = nil
+            args.c = nil
         end
 
         local params = rawget(mod, "__params")
@@ -1713,6 +1726,28 @@ function sh.run(name, method, args)
         local trace = string.find(err, "\nstack traceback:")
         if trace then err = string.sub(err, 1, trace - 1) end
 
+        -- The module wrapper appends Luau-oriented inline help for direct Luau
+        -- callers. Shell errors replace it with shell-native flag usage below.
+        local lua_help = string.find(err, "\n  Usage:", 1, true)
+        local had_inline_lua_help = lua_help ~= nil
+        if lua_help then err = string.sub(err, 1, lua_help - 1) end
+
+        local shell_usage = nil
+        local shell_help = rawget(mod, "__fn_help_shell")
+        if type(shell_help) == "table" then
+            shell_usage = rawget(shell_help, method)
+        end
+        local function with_shell_usage(message)
+            if type(shell_usage) == "string" and shell_usage ~= "" then
+                return message .. "\n" .. shell_usage
+            end
+            return message .. "\n  hint: run '" .. tostring(name) .. "' for usage"
+        end
+        local function rewrite_shell_error(message)
+            local shell_err = string.gsub(message, "^(%w+)%.(%w+):", "%1 %2:")
+            return string.gsub(shell_err, "string | buffer", "string")
+        end
+
         -- Detect argument errors and reformat for shell context
         if string.find(err, "missing required argument") then
             -- Reformat: 'name' (type) → --name <type>
@@ -1726,24 +1761,7 @@ function sh.run(name, method, args)
             -- Replace "module.method:" prefix → "module method:"
             shell_err = string.gsub(shell_err, "^(%w+)%.(%w+):", "%1 %2:")
 
-            -- Try to get shell-format help for this specific function
-            local fn_help = ""
-            local help_fn = rawget(mod, "help")
-            if type(help_fn) == "function" then
-                -- Capture the shell help output to extract the relevant line
-                pipe_depth = pipe_depth + 1
-                local help_text = help_fn("shell") or ""
-                pipe_depth = pipe_depth - 1
-                -- Find the line for this specific method
-                for line in string.gmatch(help_text, "[^\n]+") do
-                    if string.find(line, name .. " " .. method, 1, true) then
-                        fn_help = "\n  usage: " .. line
-                        break
-                    end
-                end
-            end
-
-            error(shell_err .. fn_help, 0)
+            error(with_shell_usage(shell_err), 0)
         elseif string.find(err, "expected string, got")
             or string.find(err, "expected string | buffer, got", 1, true)
             or string.find(err, "expected table, got")
@@ -1752,9 +1770,13 @@ function sh.run(name, method, args)
             or string.find(err, "bad argument")
         then
             -- Type mismatch errors — reformat module.method → module method
-            local shell_err = string.gsub(err, "^(%w+)%.(%w+):", "%1 %2:")
-            shell_err = string.gsub(shell_err, "string | buffer", "string")
-            error(shell_err .. "\n  hint: run '" .. tostring(name) .. "' for usage", 0)
+            error(with_shell_usage(rewrite_shell_error(err)), 0)
+        elseif had_inline_lua_help then
+            -- The module wrapper classifies broader usage errors by appending
+            -- inline help (for example, enum/value validation failures). Keep
+            -- that classification even when the message does not match one of
+            -- the narrow type patterns above.
+            error(with_shell_usage(rewrite_shell_error(err)), 0)
         else
             -- Runtime errors pass through as-is
             error(err, 0)

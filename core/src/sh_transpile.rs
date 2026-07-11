@@ -785,12 +785,11 @@ impl ShTranspiler {
     }
 
     /// Short flags whose following word is a value for a particular module
-    /// method. Module dispatch is otherwise runtime-driven, so keep this list
-    /// limited to compatibility aliases that cannot be derived by the generic
-    /// shell parser.
+    /// method. Module dispatch is otherwise runtime-driven, so this lists the
+    /// method-specific aliases that cannot be derived by the generic parser.
     fn module_value_flags(cmd: &str, method: &str) -> &'static [&'static str] {
         match (cmd, method) {
-            ("fs", "read") => &["p", "o", "l"],
+            ("fs", "read") => &["p", "m", "o", "l", "c"],
             _ => &[],
         }
     }

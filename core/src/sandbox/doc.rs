@@ -172,8 +172,32 @@ impl FnDoc {
         out
     }
 
+    /// Compact shell-native usage for argument errors raised through `sh.run()`.
+    ///
+    /// Lua examples are intentionally omitted: shell callers need the flattened
+    /// flag signature, and embedding a Luau call in a shell error is misleading.
+    pub fn format_shell_error_help(&self, module_name: &str) -> String {
+        let sig = self.generated_signature_for_module(HelpMode::Shell, Some(module_name));
+        if sig.is_empty() {
+            format!("  Usage: {} {}", module_name, self.name)
+        } else {
+            format!("  Usage: {} {} {}", module_name, self.name, sig)
+        }
+    }
+
     /// Generate signature from structured params + returns.
     pub fn generated_signature(&self, mode: HelpMode) -> String {
+        self.generated_signature_for_module(mode, None)
+    }
+
+    /// Generate a signature with module context for module-specific shell
+    /// compatibility aliases. Keeping the context here prevents aliases for
+    /// `fs.read` from leaking into unrelated functions such as `doc.read`.
+    pub(crate) fn generated_signature_for_module(
+        &self,
+        mode: HelpMode,
+        module_name: Option<&str>,
+    ) -> String {
         match mode {
             HelpMode::Lua => {
                 let ret = if self.returns == ReturnType::Void {
@@ -214,12 +238,15 @@ impl FnDoc {
                                     .iter()
                                     .map(|field| {
                                         let long = format!("--{}", field.name.replace('_', "-"));
-                                        let flag = match (self.name, field.name) {
+                                        let flag = match (module_name, self.name, field.name) {
                                             // Compatibility aliases from fs.read's historical
-                                            // positional range parameters. FieldDoc does not
-                                            // otherwise declare short aliases.
-                                            ("read", "offset") => format!("-o/{long}"),
-                                            ("read", "limit") => format!("-l/{long}"),
+                                            // positional range parameters plus the canonical
+                                            // short forms for its new mode/count options.
+                                            // FieldDoc does not otherwise declare short aliases.
+                                            (Some("fs"), "read", "mode") => format!("-m/{long}"),
+                                            (Some("fs"), "read", "offset") => format!("-o/{long}"),
+                                            (Some("fs"), "read", "limit") => format!("-l/{long}"),
+                                            (Some("fs"), "read", "count") => format!("-c/{long}"),
                                             _ => long,
                                         };
                                         if field.typ == "boolean" && field.required {
@@ -267,7 +294,7 @@ impl ModuleDoc {
         let mut sorted_fns: Vec<&FnDoc> = self.functions.iter().collect();
         sorted_fns.sort_by_key(|f| f.name);
         for f in sorted_fns {
-            let sig = f.generated_signature(mode);
+            let sig = f.generated_signature_for_module(mode, Some(self.name));
             match mode {
                 HelpMode::Lua => {
                     out.push_str(&format!(
@@ -524,7 +551,7 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read file contents. Text mode returns a UTF-8 string and uses line offset/limit. Buffer mode returns a native Luau buffer; buffer and base64 modes use byte offset/count. Shell callers must use base64 for byte output. Legacy shell aliases: -p/--path, -o/--offset, and -l/--limit.",
+            description: "Read file contents. Text mode returns a UTF-8 string and uses line offset/limit. Buffer mode returns a native Luau buffer; buffer and base64 modes use byte offset/count. Shell callers must use base64 for byte output. Shell aliases: -p/--path, -m/--mode, -o/--offset, -l/--limit, and -c/--count.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
                 Param { name: "opts", short: None, typ: ParamType::Table, required: false, fields: Some(FS_READ_OPTS_FIELDS) },

@@ -127,6 +127,15 @@ end"#
     }
     table.set("__fn_help", fn_help_table)?;
 
+    // __fn_help_shell — maps function names to compact shell-native usage.
+    // sh.run() uses this after removing the Luau-oriented inline help that the
+    // module wrapper adds for direct Luau callers.
+    let shell_fn_help_table = lua.create_table()?;
+    for f in doc.functions {
+        shell_fn_help_table.set(f.name, f.format_shell_error_help(doc.name))?;
+    }
+    table.set("__fn_help_shell", shell_fn_help_table)?;
+
     Ok(())
 }
 
@@ -218,5 +227,11 @@ mod tests {
             decode_types.get::<Value>("direct_flag").unwrap(),
             Value::Nil
         ));
+
+        let shell_help: mlua::Table = module.get("__fn_help_shell").unwrap();
+        assert_eq!(
+            shell_help.get::<String>("decode").unwrap(),
+            "  Usage: test decode --payload <JSON> [--validate] -> JSON"
+        );
     }
 }
