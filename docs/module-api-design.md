@@ -89,7 +89,7 @@ text or byte ranges and binary-safe output modes:
 | Shell | Module |
 |---|---|
 | `fs read /path` | `fs.read("/path")` |
-| `fs read /path --mode base64 --byte-limit 4096` | `fs.read("/path", {mode="base64", byte_limit=4096})` |
+| `fs read /path --mode base64 --offset 0 --count 4096` | `fs.read("/path", {mode="base64", offset=0, count=4096})` |
 | `fs write /path "content"` | `fs.write("/path", "content")` |
 | `fs list /path` | `fs.list("/path")` |
 | `fs exists /path` | `fs.exists("/path")` |
@@ -97,10 +97,23 @@ text or byte ranges and binary-safe output modes:
 | `fs rename /a /b` | `fs.rename("/a", "/b")` |
 | `fs remove /path` | `fs.remove("/path")` |
 
-Binary mode returns a byte-safe string. Luau callers can pass it to
-`buffer.fromstring()` for typed binary reads and convert a buffer back with
-`buffer.tostring()` before `fs.write()`; use base64 mode when bytes must cross a
-text-only output boundary.
+The modes are `text` (default), `buffer`, and `base64`. Text mode returns a
+UTF-8 string; `offset` and `limit` select lines. Buffer mode returns a native
+Luau buffer; buffer and base64 modes use a 0-based byte `offset` and byte
+`count`. `fs.write()` accepts either a string or native buffer, so binary data
+can round-trip without conversion. Native reads honor Luau's 1 GiB buffer
+ceiling:
+
+```lua
+local bytes = fs.read("/workspace/audio.wav", {mode="buffer", offset=0, count=4096})
+print(buffer.readu8(bytes, 0))
+fs.write("/artifacts/chunk.bin", bytes)
+```
+
+Shell, CLI, and FFI output channels are text-only. Use `mode="base64"` when
+bytes must cross those boundaries; shell dispatch rejects `mode="buffer"`
+with a corrective error. The legacy shell aliases `-p`, `-o`, and `-l` remain
+available for path and text line ranges.
 
 ### http
 

@@ -10,6 +10,8 @@ use mlua::{MultiValue, Value};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParamType {
     String,
+    /// A byte sequence accepted as either an immutable Luau string or a native buffer.
+    StringOrBuffer,
     Number,
     Table,
     #[allow(dead_code)]
@@ -22,6 +24,7 @@ impl ParamType {
     pub fn label(self) -> &'static str {
         match self {
             ParamType::String => "string",
+            ParamType::StringOrBuffer => "string | buffer",
             ParamType::Number => "number",
             ParamType::Table => "table",
             ParamType::Boolean => "boolean",
@@ -33,6 +36,9 @@ impl ParamType {
     pub fn shell_label(self) -> &'static str {
         match self {
             ParamType::Table => "JSON",
+            // Shell arguments and output are text-only. Native buffers are an
+            // in-sandbox Luau representation, not a shell transport format.
+            ParamType::StringOrBuffer => "string",
             _ => self.label(),
         }
     }
@@ -41,6 +47,9 @@ impl ParamType {
     pub fn matches(self, val: &mlua::Value) -> bool {
         match self {
             ParamType::String => matches!(val, mlua::Value::String(_)),
+            ParamType::StringOrBuffer => {
+                matches!(val, mlua::Value::String(_) | mlua::Value::Buffer(_))
+            }
             ParamType::Number => matches!(val, mlua::Value::Number(_) | mlua::Value::Integer(_)),
             ParamType::Table => matches!(val, mlua::Value::Table(_)),
             ParamType::Boolean => matches!(val, mlua::Value::Boolean(_)),
@@ -73,6 +82,8 @@ pub(crate) struct Param {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReturnType {
     String,
+    /// Mode-dependent bytes returned as either a Luau string or native buffer.
+    StringOrBuffer,
     Number,
     Table,
     Boolean,
@@ -88,6 +99,7 @@ impl ReturnType {
     pub fn label(self) -> &'static str {
         match self {
             ReturnType::String => "string",
+            ReturnType::StringOrBuffer => "string | buffer",
             ReturnType::Number => "number",
             ReturnType::Table => "table",
             ReturnType::Boolean => "boolean",
@@ -101,6 +113,9 @@ impl ReturnType {
     pub fn shell_label(self) -> &'static str {
         match self {
             ReturnType::Table => "JSON",
+            // Shell output is always textual; native buffers must be converted
+            // by selecting a transport-safe mode such as base64.
+            ReturnType::StringOrBuffer => "string",
             _ => self.label(),
         }
     }
@@ -198,7 +213,15 @@ impl FnDoc {
                                 let mut flattened = fields
                                     .iter()
                                     .map(|field| {
-                                        let flag = format!("--{}", field.name.replace('_', "-"));
+                                        let long = format!("--{}", field.name.replace('_', "-"));
+                                        let flag = match (self.name, field.name) {
+                                            // Compatibility aliases from fs.read's historical
+                                            // positional range parameters. FieldDoc does not
+                                            // otherwise declare short aliases.
+                                            ("read", "offset") => format!("-o/{long}"),
+                                            ("read", "limit") => format!("-l/{long}"),
+                                            _ => long,
+                                        };
                                         if field.typ == "boolean" && field.required {
                                             flag
                                         } else if field.typ == "boolean" {
@@ -468,10 +491,17 @@ const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
 #[cfg(feature = "mod-fs")]
 const FS_READ_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
+        name: "mode",
+        typ: "string",
+        required: false,
+        description: "Output mode: \"text\" (default), \"buffer\", or \"base64\"",
+    },
+    FieldDoc {
         name: "offset",
         typ: "number",
         required: false,
-        description: "1-based first line in text mode (0 also means the first line)",
+        description:
+            "Text: 1-based first line (0 also means first); buffer/base64: 0-based byte offset",
     },
     FieldDoc {
         name: "limit",
@@ -480,22 +510,10 @@ const FS_READ_OPTS_FIELDS: &[FieldDoc] = &[
         description: "Maximum number of lines in text mode",
     },
     FieldDoc {
-        name: "mode",
-        typ: "string",
-        required: false,
-        description: "Output mode: \"text\" (default), \"binary\", or \"base64\"",
-    },
-    FieldDoc {
-        name: "byte_offset",
+        name: "count",
         typ: "number",
         required: false,
-        description: "0-based byte offset in binary or base64 mode",
-    },
-    FieldDoc {
-        name: "byte_limit",
-        typ: "number",
-        required: false,
-        description: "Maximum bytes to read in binary or base64 mode",
+        description: "Maximum bytes to read in buffer or base64 mode",
     },
 ];
 
@@ -506,20 +524,20 @@ pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read file contents. Text mode validates UTF-8, binary mode preserves raw bytes, and base64 mode is safe for text-only output channels. Legacy shell aliases: -p/--path, -o/--offset, and -l/--limit.",
+            description: "Read file contents. Text mode returns a UTF-8 string and uses line offset/limit. Buffer mode returns a native Luau buffer; buffer and base64 modes use byte offset/count. Shell callers must use base64 for byte output. Legacy shell aliases: -p/--path, -o/--offset, and -l/--limit.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
                 Param { name: "opts", short: None, typ: ParamType::Table, required: false, fields: Some(FS_READ_OPTS_FIELDS) },
             ],
-            returns: ReturnType::String,
-            example: Some(r#"local bytes = buffer.fromstring(fs.read("/workspace/audio.wav", {mode="binary", byte_limit=4096}))"#),
+            returns: ReturnType::StringOrBuffer,
+            example: Some(r#"local bytes = fs.read("/workspace/audio.wav", {mode="buffer", count=4096}); print(buffer.readu8(bytes, 0))"#),
         },
         FnDoc {
             name: "write",
-            description: "Replace a file with the supplied bytes.",
+            description: "Replace a file with bytes supplied as a string or native Luau buffer.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "content", short: Some('c'), typ: ParamType::String, required: true, fields: None },
+                Param { name: "content", short: Some('c'), typ: ParamType::StringOrBuffer, required: true, fields: None },
             ],
             returns: ReturnType::Void,
             example: Some(r#"fs.write("/artifacts/out.txt", "hello")"#),

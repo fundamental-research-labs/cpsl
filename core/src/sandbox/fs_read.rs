@@ -6,10 +6,13 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+const LUAU_BUFFER_MAX_BYTES: u64 = 1 << 30;
+const BASE64_MAX_INPUT_BYTES: u64 = (LUAU_BUFFER_MAX_BYTES / 4) * 3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReadMode {
     Text,
-    Binary,
+    Buffer,
     Base64,
 }
 
@@ -25,7 +28,7 @@ pub(super) struct ReadRequest {
     line_offset: Option<usize>,
     line_limit: Option<usize>,
     byte_offset: Option<u64>,
-    byte_limit: Option<u64>,
+    byte_count: Option<u64>,
 }
 
 impl ReadRequest {
@@ -71,7 +74,6 @@ impl ReadRequest {
             value => return Err(type_error("path", "string", value)),
         };
 
-        request.validate()?;
         Ok(request)
     }
 
@@ -86,7 +88,7 @@ impl ReadRequest {
             line_offset: parse_line_range(offset, "offset")?,
             line_limit: parse_line_range(limit, "limit")?,
             byte_offset: None,
-            byte_limit: None,
+            byte_count: None,
         })
     }
 
@@ -97,62 +99,162 @@ impl ReadRequest {
     ) -> Result<Self, mlua::Error> {
         let opts = crate::pyrt_compat::unwrap_py_dict(opts)?;
         validate_option_keys(&opts, context)?;
-        Ok(Self {
-            path,
-            mode: parse_mode(&opts.get::<Value>("mode")?)?,
-            line_offset: parse_line_range(Some(&table_value(&opts, "offset", 2)?), "offset")?,
-            line_limit: parse_line_range(Some(&table_value(&opts, "limit", 3)?), "limit")?,
-            byte_offset: parse_byte_range(&opts.get::<Value>("byte_offset")?, "byte_offset")?,
-            byte_limit: parse_byte_range(&opts.get::<Value>("byte_limit")?, "byte_limit")?,
-        })
-    }
+        let mode = parse_mode(&opts.get::<Value>("mode")?)?;
+        let offset = table_value(&opts, "offset", 2)?;
 
-    fn validate(&self) -> Result<(), mlua::Error> {
-        match self.mode {
-            ReadMode::Text if self.byte_offset.is_some() || self.byte_limit.is_some() => {
-                Err(mlua::Error::external(
-                    "fs.read: byte_offset/byte_limit require mode=\"binary\" or mode=\"base64\"",
-                ))
+        match mode {
+            ReadMode::Text => {
+                if !matches!(opts.get::<Value>("count")?, Value::Nil) {
+                    return Err(mlua::Error::external(
+                        "fs.read: count is byte-based and requires mode=\"buffer\" or mode=\"base64\"; use limit for text lines",
+                    ));
+                }
+                Ok(Self {
+                    path,
+                    mode,
+                    line_offset: parse_line_range(Some(&offset), "offset")?,
+                    line_limit: parse_line_range(Some(&table_value(&opts, "limit", 3)?), "limit")?,
+                    byte_offset: None,
+                    byte_count: None,
+                })
             }
-            ReadMode::Binary | ReadMode::Base64
-                if self.line_offset.is_some() || self.line_limit.is_some() =>
-            {
-                Err(mlua::Error::external(
-                    "fs.read: offset/limit are line-based and only valid in text mode; use byte_offset/byte_limit",
-                ))
+            ReadMode::Buffer | ReadMode::Base64 => {
+                if !matches!(opts.get::<Value>("limit")?, Value::Nil) {
+                    return Err(mlua::Error::external(
+                        "fs.read: limit is line-based and only valid in text mode; use count for bytes",
+                    ));
+                }
+                Ok(Self {
+                    path,
+                    mode,
+                    line_offset: None,
+                    line_limit: None,
+                    byte_offset: parse_byte_range(&offset, "offset")?,
+                    byte_count: parse_byte_range(&table_value(&opts, "count", 3)?, "count")?,
+                })
             }
-            _ => Ok(()),
         }
     }
 
-    /// Read host-backed data, applying byte ranges at the I/O layer.
-    pub(super) fn read_host(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+    /// Read host-backed data and convert it to the requested Luau representation.
+    pub(super) fn read_host_value(&self, lua: &Lua, path: &Path) -> Result<Value, mlua::Error> {
+        if self.mode == ReadMode::Buffer {
+            return self.read_host_buffer(lua, path);
+        }
+
+        let bytes = self.read_host_bytes(path).map_err(mlua::Error::external)?;
+        self.to_lua(lua, &bytes)
+    }
+
+    fn read_host_bytes(&self, path: &Path) -> std::io::Result<Vec<u8>> {
         if self.mode == ReadMode::Text {
             return std::fs::read(path);
         }
 
         let mut file = File::open(path)?;
-        if let Some(offset) = self.byte_offset {
-            let metadata = file.metadata()?;
+        let metadata = file.metadata()?;
+        let offset = self.byte_offset.unwrap_or(0);
+        if metadata.is_file() && offset != 0 && offset >= metadata.len() {
             // Some platforms reject offsets beyond their signed seek range. For a
             // regular file, its known EOF lets us return the usual empty slice first.
-            if metadata.is_file() && offset >= metadata.len() {
-                return Ok(Vec::new());
-            }
+            return Ok(Vec::new());
+        }
+        if metadata.is_file() && metadata.len() > 0 {
+            let selected_bytes = self
+                .byte_count
+                .map(|count| count.min(metadata.len().saturating_sub(offset)))
+                .unwrap_or_else(|| metadata.len().saturating_sub(offset));
+            self.ensure_mode_input_size(selected_bytes)?;
+        }
+        if offset != 0 {
             file.seek(SeekFrom::Start(offset))?;
         }
 
         let mut bytes = Vec::new();
-        match self.byte_limit {
-            Some(limit) => file.take(limit).read_to_end(&mut bytes)?,
-            None => file.read_to_end(&mut bytes)?,
-        };
+        let read_limit = self
+            .mode_input_limit()
+            .map(|limit| limit.saturating_add(1))
+            .unwrap_or(u64::MAX);
+        let read_limit = self
+            .byte_count
+            .map(|count| count.min(read_limit))
+            .unwrap_or(read_limit);
+        file.take(read_limit).read_to_end(&mut bytes)?;
+        self.ensure_mode_input_size(bytes.len() as u64)?;
         Ok(bytes)
     }
 
-    /// Convert host data whose byte range was already applied by `read_host`.
-    pub(super) fn host_value(&self, lua: &Lua, bytes: &[u8]) -> Result<Value, mlua::Error> {
-        self.to_lua(lua, bytes)
+    fn read_host_buffer(&self, lua: &Lua, path: &Path) -> Result<Value, mlua::Error> {
+        let mut file = File::open(path).map_err(mlua::Error::external)?;
+        let metadata = file.metadata().map_err(mlua::Error::external)?;
+        let offset = self.byte_offset.unwrap_or(0);
+
+        if metadata.is_file() && offset != 0 && offset >= metadata.len() {
+            return lua.create_buffer([]).map(Value::Buffer);
+        }
+
+        // A regular file with a known non-zero length can be streamed directly
+        // into its final Luau buffer, avoiding a second full-size allocation.
+        if metadata.is_file() && metadata.len() > 0 {
+            let selected_bytes = self
+                .byte_count
+                .map(|count| count.min(metadata.len().saturating_sub(offset)))
+                .unwrap_or_else(|| metadata.len().saturating_sub(offset));
+            self.ensure_mode_input_size(selected_bytes)
+                .map_err(mlua::Error::external)?;
+            if offset != 0 {
+                file.seek(SeekFrom::Start(offset))
+                    .map_err(mlua::Error::external)?;
+            }
+
+            let selected_len = usize::try_from(selected_bytes).map_err(mlua::Error::external)?;
+            let buffer = lua.create_buffer_with_capacity(selected_len)?;
+            let copied = {
+                let mut cursor = buffer.clone().cursor();
+                let mut selected = (&mut file).take(selected_bytes);
+                std::io::copy(&mut selected, &mut cursor).map_err(mlua::Error::external)?
+            };
+            if copied == selected_bytes {
+                let requested_more = self
+                    .byte_count
+                    .map(|count| count > selected_bytes)
+                    .unwrap_or(true);
+                if requested_more {
+                    let mut probe = [0_u8; 1];
+                    if file.read(&mut probe).map_err(mlua::Error::external)? != 0 {
+                        return Err(mlua::Error::external(
+                            "fs.read: file changed size while reading; retry the operation",
+                        ));
+                    }
+                }
+                return Ok(Value::Buffer(buffer));
+            }
+
+            // If the file shrank after metadata was read, return only the bytes
+            // actually observed instead of exposing zero-filled tail bytes.
+            let bytes = buffer.to_vec();
+            return lua
+                .create_buffer(&bytes[..copied as usize])
+                .map(Value::Buffer);
+        }
+
+        // Streams and dynamically-sized files cannot be pre-sized. Bound the
+        // actual read with one sentinel byte so growth cannot bypass the limit.
+        if offset != 0 {
+            file.seek(SeekFrom::Start(offset))
+                .map_err(mlua::Error::external)?;
+        }
+        let read_limit = self
+            .byte_count
+            .map(|count| count.min(LUAU_BUFFER_MAX_BYTES + 1))
+            .unwrap_or(LUAU_BUFFER_MAX_BYTES + 1);
+        let mut bytes = Vec::new();
+        file.take(read_limit)
+            .read_to_end(&mut bytes)
+            .map_err(mlua::Error::external)?;
+        self.ensure_mode_input_size(bytes.len() as u64)
+            .map_err(mlua::Error::external)?;
+        lua.create_buffer(bytes).map(Value::Buffer)
     }
 
     /// Convert synthetic data, applying its byte range in memory first.
@@ -160,29 +262,62 @@ impl ReadRequest {
         let bytes = if self.mode == ReadMode::Text {
             bytes
         } else {
-            slice_bytes(bytes, self.byte_offset, self.byte_limit)
+            slice_bytes(bytes, self.byte_offset, self.byte_count)
         };
         self.to_lua(lua, bytes)
     }
 
     fn to_lua(&self, lua: &Lua, bytes: &[u8]) -> Result<Value, mlua::Error> {
+        self.ensure_mode_input_size(bytes.len() as u64)
+            .map_err(mlua::Error::external)?;
         match self.mode {
             ReadMode::Text => {
                 let text = std::str::from_utf8(bytes).map_err(|_| {
                     mlua::Error::external(format!(
-                        "fs.read: {} is not valid UTF-8; use mode=\"binary\" for in-sandbox bytes or mode=\"base64\" for safe output",
+                        "fs.read: {} is not valid UTF-8; use mode=\"buffer\" for in-sandbox bytes or mode=\"base64\" for safe output",
                         self.path
                     ))
                 })?;
                 let sliced = slice_lines(text, self.line_offset, self.line_limit);
                 lua.create_string(&sliced).map(Value::String)
             }
-            ReadMode::Binary => lua.create_string(bytes).map(Value::String),
+            ReadMode::Buffer => lua.create_buffer(bytes).map(Value::Buffer),
             ReadMode::Base64 => {
                 let encoded = crate::base64_codec::encode(bytes);
                 lua.create_string(encoded).map(Value::String)
             }
         }
+    }
+
+    fn mode_input_limit(&self) -> Option<u64> {
+        match self.mode {
+            ReadMode::Text => None,
+            ReadMode::Buffer => Some(LUAU_BUFFER_MAX_BYTES),
+            ReadMode::Base64 => Some(BASE64_MAX_INPUT_BYTES),
+        }
+    }
+
+    fn ensure_mode_input_size(&self, size: u64) -> std::io::Result<()> {
+        let Some(limit) = self.mode_input_limit() else {
+            return Ok(());
+        };
+        if size <= limit {
+            return Ok(());
+        }
+
+        let message = match self.mode {
+            ReadMode::Buffer => {
+                "fs.read: selected range exceeds Luau's 1 GiB buffer limit; use count to read a smaller range"
+            }
+            ReadMode::Base64 => {
+                "fs.read: selected range is too large for base64 output in a Luau string; use count to read at most 805306368 bytes"
+            }
+            ReadMode::Text => unreachable!(),
+        };
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            message,
+        ))
     }
 }
 
@@ -199,10 +334,10 @@ fn parse_mode(value: &Value) -> Result<ReadMode, mlua::Error> {
     match value {
         Value::Nil => Ok(ReadMode::Text),
         Value::String(mode) if mode.as_bytes() == b"text" => Ok(ReadMode::Text),
-        Value::String(mode) if mode.as_bytes() == b"binary" => Ok(ReadMode::Binary),
+        Value::String(mode) if mode.as_bytes() == b"buffer" => Ok(ReadMode::Buffer),
         Value::String(mode) if mode.as_bytes() == b"base64" => Ok(ReadMode::Base64),
         Value::String(mode) => Err(mlua::Error::external(format!(
-            "fs.read: invalid mode '{}'; expected text, binary, or base64",
+            "fs.read: invalid mode '{}'; expected text, buffer, or base64",
             mode.to_string_lossy()
         ))),
         value => Err(type_error("mode", "string", value)),
@@ -245,15 +380,15 @@ fn parse_byte_range(value: &Value, name: &str) -> Result<Option<u64>, mlua::Erro
     Ok(Some(parsed))
 }
 
-fn slice_bytes(bytes: &[u8], offset: Option<u64>, limit: Option<u64>) -> &[u8] {
+fn slice_bytes(bytes: &[u8], offset: Option<u64>, count: Option<u64>) -> &[u8] {
     let start = offset
         .and_then(|value| usize::try_from(value).ok())
         .unwrap_or(if offset.is_some() { usize::MAX } else { 0 })
         .min(bytes.len());
-    let limit = limit
+    let count = count
         .and_then(|value| usize::try_from(value).ok())
         .unwrap_or(usize::MAX);
-    let end = start.saturating_add(limit).min(bytes.len());
+    let end = start.saturating_add(count).min(bytes.len());
     &bytes[start..end]
 }
 
@@ -266,7 +401,7 @@ fn validate_option_keys(options: &Table, context: OptionsContext) -> Result<(), 
             }
             Value::String(key) => matches!(
                 key.as_bytes().as_ref(),
-                b"offset" | b"limit" | b"mode" | b"byte_offset" | b"byte_limit"
+                b"offset" | b"limit" | b"count" | b"mode"
             ),
             Value::Integer(1) => context == OptionsContext::CombinedArguments,
             Value::Integer(2..=3) => true,

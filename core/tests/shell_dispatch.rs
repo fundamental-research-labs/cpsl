@@ -200,7 +200,7 @@ fn shell_fs_read_base64_options() {
         .unwrap();
     let s = sb_with_shell_and_mounts(mt);
     let luau = sh_transpile::transpile_sh(
-        "fs read --path /workspace/blob.bin --mode base64 --byte-offset 1 --byte-limit 2",
+        "fs read --path /workspace/blob.bin --mode base64 --offset 1 --count 2",
     )
     .unwrap()
     .luau_source;
@@ -208,6 +208,50 @@ fn shell_fs_read_base64_options() {
     let result = s.exec(&luau).unwrap();
 
     assert_eq!(result, "AQI=");
+}
+
+#[test]
+fn shell_fs_read_buffer_rejects_text_output_boundaries() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    for command in [
+        "fs read /workspace/blob.bin --mode buffer",
+        "fs read /workspace/blob.bin --mode buffer | wc -c",
+        "fs read /workspace/blob.bin --mode buffer > /workspace/copy.bin",
+    ] {
+        let mut mt = MountTable::new();
+        mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+            .unwrap();
+        let s = sb_with_shell_and_mounts(mt);
+        let luau = sh_transpile::transpile_sh(command).unwrap().luau_source;
+        let err = s.exec(&luau).unwrap_err();
+
+        assert!(
+            err.message
+                .contains("native buffer output cannot cross the shell boundary"),
+            "command {command:?}: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("use --mode base64"),
+            "command {command:?}: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn shell_fs_write_missing_content_uses_the_shell_string_type() {
+    let s = sb_with_shell();
+    let luau = sh_transpile::transpile_sh("fs write --path /workspace/out.bin")
+        .unwrap()
+        .luau_source;
+    let err = s.exec(&luau).unwrap_err();
+    let shell_error = err.message.lines().next().unwrap_or_default();
+
+    assert!(shell_error.contains("--content <string>"), "{err}");
+    assert!(!shell_error.contains("string | buffer"), "{err}");
 }
 
 #[test]

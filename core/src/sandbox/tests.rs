@@ -267,6 +267,31 @@ fn test_print_multiple_args() {
 }
 
 #[test]
+fn test_native_buffers_cannot_cross_host_text_output_boundary() {
+    let sandbox = Sandbox::new().unwrap();
+
+    let returned = sandbox.exec("return buffer.create(4)").unwrap_err();
+    assert!(
+        returned
+            .message
+            .contains("native buffer output cannot cross")
+            && returned.message.contains(r#"mode="base64""#),
+        "{}",
+        returned.message
+    );
+
+    let printed = sandbox.exec("print(buffer.create(4))").unwrap_err();
+    assert!(
+        printed
+            .message
+            .contains("print: native buffer output cannot cross")
+            && printed.message.contains("base64/hex text"),
+        "{}",
+        printed.message
+    );
+}
+
+#[test]
 fn test_print_and_return() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("print('printed')\nreturn 42").unwrap();
@@ -783,11 +808,26 @@ fn test_format_help_empty_params() {
 #[test]
 fn test_return_type_labels() {
     assert_eq!(ReturnType::String.label(), "string");
+    assert_eq!(ReturnType::StringOrBuffer.label(), "string | buffer");
+    assert_eq!(ReturnType::StringOrBuffer.shell_label(), "string");
     assert_eq!(ReturnType::Number.label(), "number");
     assert_eq!(ReturnType::Table.label(), "table");
     assert_eq!(ReturnType::Boolean.label(), "boolean");
     assert_eq!(ReturnType::Value.label(), "any");
     assert_eq!(ReturnType::Void.label(), "");
+}
+
+#[test]
+fn test_string_or_buffer_param_type_accepts_both_luau_byte_representations() {
+    let lua = Lua::new();
+    let string = Value::String(lua.create_string([0_u8, 1, 255]).unwrap());
+    let buffer = Value::Buffer(lua.create_buffer([0_u8, 1, 255]).unwrap());
+
+    assert_eq!(ParamType::StringOrBuffer.label(), "string | buffer");
+    assert_eq!(ParamType::StringOrBuffer.shell_label(), "string");
+    assert!(ParamType::StringOrBuffer.matches(&string));
+    assert!(ParamType::StringOrBuffer.matches(&buffer));
+    assert!(!ParamType::StringOrBuffer.matches(&Value::Integer(1)));
 }
 
 // -- generated_signature unit tests --
@@ -1424,6 +1464,21 @@ fn test_fs_read_shell_help_keeps_legacy_aliases() {
     );
     assert!(shell_help.contains("-o/--offset"), "{shell_help}");
     assert!(shell_help.contains("-l/--limit"), "{shell_help}");
+    assert!(shell_help.contains("--count"), "{shell_help}");
+    assert!(!shell_help.contains("--byte-offset"), "{shell_help}");
+    assert!(!shell_help.contains("--byte-limit"), "{shell_help}");
+    assert!(
+        read.generated_signature(HelpMode::Lua)
+            .ends_with("-> string | buffer"),
+        "{}",
+        read.generated_signature(HelpMode::Lua)
+    );
+    assert!(
+        read.generated_signature(HelpMode::Shell)
+            .ends_with("-> string"),
+        "{}",
+        read.generated_signature(HelpMode::Shell)
+    );
 }
 
 #[test]

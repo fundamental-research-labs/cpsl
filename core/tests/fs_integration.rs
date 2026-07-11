@@ -383,7 +383,7 @@ fn test_fs_read_positional_with_offset_limit() {
 }
 
 #[test]
-fn test_fs_read_invalid_utf8_suggests_binary_modes() {
+fn test_fs_read_invalid_utf8_suggests_buffer_modes() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0xff, 0xfe, 0xfd]).unwrap();
 
@@ -397,14 +397,14 @@ fn test_fs_read_invalid_utf8_suggests_binary_modes() {
         err.message
     );
     assert!(
-        err.message.contains(r#"mode="binary""#) && err.message.contains(r#"mode="base64""#),
+        err.message.contains(r#"mode="buffer""#) && err.message.contains(r#"mode="base64""#),
         "got: {}",
         err.message
     );
 }
 
 #[test]
-fn test_fs_read_help_documents_binary_options() {
+fn test_fs_read_help_documents_buffer_options() {
     let help = Sandbox::new().unwrap().exec("fs.help()").unwrap();
 
     assert!(
@@ -412,7 +412,8 @@ fn test_fs_read_help_documents_binary_options() {
         "{help}"
     );
     assert!(help.contains("0-based byte offset"), "{help}");
-    assert!(help.contains("buffer.fromstring("), "{help}");
+    assert!(help.contains(r#"mode="buffer""#), "{help}");
+    assert!(!help.contains("buffer.fromstring("), "{help}");
 
     let shell_help = Sandbox::new().unwrap().exec(r#"fs.help("shell")"#).unwrap();
     assert!(shell_help.contains("fs read -p/--path"), "{shell_help}");
@@ -422,15 +423,11 @@ fn test_fs_read_help_documents_binary_options() {
         !shell_help.contains("fs read -p/--path <string> [--opts"),
         "{shell_help}"
     );
-    for flag in [
-        "--offset",
-        "--limit",
-        "--mode",
-        "--byte-offset",
-        "--byte-limit",
-    ] {
+    for flag in ["--offset", "--limit", "--count", "--mode"] {
         assert!(shell_help.contains(flag), "missing {flag}: {shell_help}");
     }
+    assert!(!shell_help.contains("--byte-offset"), "{shell_help}");
+    assert!(!shell_help.contains("--byte-limit"), "{shell_help}");
 }
 
 #[test]
@@ -452,17 +449,17 @@ fn test_fs_read_supports_nested_dual_signature_options() {
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
 
     for code in [
-        r#"return fs.read({path="/data/blob.bin", mode="base64", byte_limit=2})"#,
-        r#"return fs.read({[1]="/data/blob.bin", mode="base64", byte_limit=2})"#,
-        r#"return fs.read({path="/data/blob.bin", opts={mode="base64", byte_limit=2}})"#,
-        r#"return fs.read({[1]="/data/blob.bin", [2]={mode="base64", byte_limit=2}})"#,
+        r#"return fs.read({path="/data/blob.bin", mode="base64", count=2})"#,
+        r#"return fs.read({[1]="/data/blob.bin", mode="base64", count=2})"#,
+        r#"return fs.read({path="/data/blob.bin", opts={mode="base64", count=2}})"#,
+        r#"return fs.read({[1]="/data/blob.bin", [2]={mode="base64", count=2}})"#,
     ] {
         assert_eq!(sandbox.exec(code).unwrap(), "AAE=");
     }
 }
 
 #[test]
-fn test_fs_read_binary_mode_returns_raw_luau_string() {
+fn test_fs_read_buffer_mode_returns_mutable_luau_buffer_and_writes_it() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
 
@@ -470,43 +467,83 @@ fn test_fs_read_binary_mode_returns_raw_luau_string() {
     let result = sandbox
         .exec(
             r#"
-            local data = fs.read("/data/blob.bin", {mode="binary"})
-            local bytes = buffer.fromstring(data)
-            fs.write("/data/copy.bin", data)
-            return #data, buffer.readu8(bytes, 0), buffer.readu8(bytes, 3)
+            local bytes = fs.read("/data/blob.bin", {mode="buffer"})
+            local first = buffer.readu8(bytes, 0)
+            buffer.writeu8(bytes, 1, 42)
+            fs.write("/data/copy.bin", bytes)
+            fs.write({path="/data/table-copy.bin", content=bytes})
+            return type(bytes), buffer.len(bytes), first, buffer.readu8(bytes, 3)
             "#,
         )
         .unwrap();
-    assert_eq!(result, "4\t0\t255");
+    assert_eq!(result, "buffer\t4\t0\t255");
     assert_eq!(
         fs::read(dir.path().join("copy.bin")).unwrap(),
-        [0, 1, 2, 255]
+        [0, 42, 2, 255]
+    );
+    assert_eq!(
+        fs::read(dir.path().join("table-copy.bin")).unwrap(),
+        [0, 42, 2, 255]
     );
 }
 
 #[test]
-fn test_fs_read_base64_mode_supports_byte_slice() {
+fn test_fs_read_buffer_and_base64_modes_support_byte_ranges() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
 
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
-    let result = sandbox
-        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", byte_offset=1, byte_limit=2})"#)
+    let buffer_result = sandbox
+        .exec(
+            r#"
+            local bytes = fs.read("/data/blob.bin", {mode="buffer", offset=1, count=2})
+            return type(bytes), buffer.len(bytes), buffer.readu8(bytes, 0), buffer.readu8(bytes, 1)
+            "#,
+        )
         .unwrap();
-    assert_eq!(result, "AQI=");
+    assert_eq!(buffer_result, "buffer\t2\t1\t2");
+
+    let base64_result = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=1, count=2})"#)
+        .unwrap();
+    assert_eq!(base64_result, "AQI=");
 }
 
 #[test]
-fn test_fs_read_binary_mode_rejects_line_slice_options() {
+fn test_fs_read_buffer_mode_supports_synthetic_files() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local bytes = fs.read("/etc/hostname", {mode="buffer", offset=1, count=2})
+            return type(bytes), buffer.len(bytes)
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(result, "buffer\t2");
+}
+
+#[test]
+fn test_fs_read_modes_reject_the_other_modes_range_option() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
 
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
     let err = sandbox
-        .exec(r#"fs.read("/data/blob.bin", {mode="binary", limit=1})"#)
+        .exec(r#"fs.read("/data/blob.bin", {mode="buffer", limit=1})"#)
         .unwrap_err();
     assert!(
-        err.message.contains("offset/limit are line-based"),
+        err.message.contains("limit is line-based") && err.message.contains("use count"),
+        "got: {}",
+        err.message
+    );
+
+    let err = sandbox
+        .exec(r#"fs.read("/data/blob.bin", {count=1})"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("count is byte-based") && err.message.contains("use limit"),
         "got: {}",
         err.message
     );
@@ -518,26 +555,26 @@ fn test_fs_read_rejects_invalid_mode() {
     fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
 
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
-    let err = sandbox
-        .exec(r#"fs.read("/data/blob.bin", {mode="bytes"})"#)
-        .unwrap_err();
-
-    assert!(
-        err.message.contains("expected text, binary, or base64"),
-        "got: {}",
-        err.message
-    );
+    for mode in ["binary", "bytes"] {
+        let code = format!(r#"fs.read("/data/blob.bin", {{mode="{mode}"}})"#);
+        let err = sandbox.exec(&code).unwrap_err();
+        assert!(
+            err.message.contains("expected text, buffer, or base64"),
+            "mode {mode}, got: {}",
+            err.message
+        );
+    }
 }
 
 #[test]
-fn test_fs_read_validates_mode_options_before_file_access() {
+fn test_fs_read_validates_range_options_before_file_access() {
     let sandbox = Sandbox::new().unwrap();
     let err = sandbox
-        .exec(r#"fs.read("/not-mounted", {byte_limit=1})"#)
+        .exec(r#"fs.read("/not-mounted", {count=1})"#)
         .unwrap_err();
 
     assert!(
-        err.message.contains("byte_offset/byte_limit require"),
+        err.message.contains("count is byte-based"),
         "got: {}",
         err.message
     );
@@ -554,32 +591,34 @@ fn test_fs_read_rejects_invalid_byte_ranges() {
     fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
 
-    for value in ["-1", "1.5", "math.huge", "0/0"] {
-        let code = format!(r#"fs.read("/data/blob.bin", {{mode="binary", byte_offset={value}}})"#);
-        let err = sandbox.exec(&code).unwrap_err();
-        assert!(
-            err.message.contains("must be a non-negative integer"),
-            "value {value}, got: {}",
-            err.message
-        );
+    for option in ["offset", "count"] {
+        for value in ["-1", "1.5", "math.huge", "0/0"] {
+            let code = format!(r#"fs.read("/data/blob.bin", {{mode="buffer", {option}={value}}})"#);
+            let err = sandbox.exec(&code).unwrap_err();
+            assert!(
+                err.message.contains("must be a non-negative integer"),
+                "option {option}, value {value}, got: {}",
+                err.message
+            );
+        }
     }
 }
 
 #[test]
-fn test_fs_read_rejects_unknown_options() {
+fn test_fs_read_rejects_unknown_and_old_range_options() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
 
-    let err = sandbox
-        .exec(r#"fs.read("/data/blob.bin", {mode="binary", byte_limti=1})"#)
-        .unwrap_err();
-
-    assert!(
-        err.message.contains("unknown option 'byte_limti'"),
-        "got: {}",
-        err.message
-    );
+    for option in ["byte_offset", "byte_limit", "byte_limti"] {
+        let code = format!(r#"fs.read("/data/blob.bin", {{mode="buffer", {option}=1}})"#);
+        let err = sandbox.exec(&code).unwrap_err();
+        assert!(
+            err.message.contains(&format!("unknown option '{option}'")),
+            "option {option}, got: {}",
+            err.message
+        );
+    }
 }
 
 #[test]
@@ -590,19 +629,19 @@ fn test_fs_read_rejects_path_keys_inside_options_tables() {
 
     for (code, key) in [
         (
-            r#"fs.read("/data/blob.bin", {path="/data/missing", mode="binary"})"#,
+            r#"fs.read("/data/blob.bin", {path="/data/missing", mode="buffer"})"#,
             "'path'",
         ),
         (
-            r#"fs.read("/data/blob.bin", {[1]="/data/missing", mode="binary"})"#,
+            r#"fs.read("/data/blob.bin", {[1]="/data/missing", mode="buffer"})"#,
             "1",
         ),
         (
-            r#"fs.read({path="/data/blob.bin", opts={path="/data/missing", mode="binary"}})"#,
+            r#"fs.read({path="/data/blob.bin", opts={path="/data/missing", mode="buffer"}})"#,
             "'path'",
         ),
         (
-            r#"fs.read({path="/data/blob.bin", opts={[1]="/data/missing", mode="binary"}})"#,
+            r#"fs.read({path="/data/blob.bin", opts={[1]="/data/missing", mode="buffer"}})"#,
             "1",
         ),
     ] {
@@ -622,14 +661,24 @@ fn test_fs_read_byte_ranges_handle_empty_and_past_eof() {
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
 
     let empty = sandbox
-        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", byte_limit=0})"#)
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", count=0})"#)
         .unwrap();
     let past_eof = sandbox
-        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", byte_offset=99})"#)
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=99})"#)
+        .unwrap();
+    let buffers = sandbox
+        .exec(
+            r#"
+            local empty = fs.read("/data/blob.bin", {mode="buffer", count=0})
+            local past = fs.read("/data/blob.bin", {mode="buffer", offset=99})
+            return type(empty), buffer.len(empty), type(past), buffer.len(past)
+            "#,
+        )
         .unwrap();
 
     assert_eq!(empty, "");
     assert_eq!(past_eof, "");
+    assert_eq!(buffers, "buffer\t0\tbuffer\t0");
 }
 
 #[test]
@@ -639,14 +688,50 @@ fn test_fs_read_huge_byte_offset_past_eof_is_empty() {
     let sandbox = sandbox_with_dir(&dir, "/data", "rw");
 
     let host = sandbox
-        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", byte_offset=1e19})"#)
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=1e19})"#)
         .unwrap();
     let synthetic = sandbox
-        .exec(r#"return fs.read("/etc/hostname", {mode="base64", byte_offset=1e19})"#)
+        .exec(r#"return fs.read("/etc/hostname", {mode="base64", offset=1e19})"#)
         .unwrap();
 
     assert_eq!(host, "");
     assert_eq!(synthetic, "");
+}
+
+#[test]
+fn test_fs_read_buffer_rejects_ranges_above_luau_limit_before_reading() {
+    let dir = TempDir::new().unwrap();
+    let file = fs::File::create(dir.path().join("huge.bin")).unwrap();
+    file.set_len((1_u64 << 30) + 1).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "ro");
+    let err = sandbox
+        .exec(r#"fs.read("/data/huge.bin", {mode="buffer"})"#)
+        .unwrap_err();
+
+    assert!(
+        err.message.contains("Luau's 1 GiB buffer limit") && err.message.contains("use count"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_base64_rejects_ranges_that_cannot_fit_a_luau_string() {
+    let dir = TempDir::new().unwrap();
+    let file = fs::File::create(dir.path().join("huge.bin")).unwrap();
+    file.set_len(805_306_369).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "ro");
+    let err = sandbox
+        .exec(r#"fs.read("/data/huge.bin", {mode="base64"})"#)
+        .unwrap_err();
+
+    assert!(
+        err.message.contains("too large for base64 output") && err.message.contains("805306368"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
@@ -658,7 +743,7 @@ fn test_python_fs_read_kwargs_use_options_table() {
         .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
         .unwrap();
     let transpiled = cpsl_core::transpile::transpile(
-        r#"print(fs.read("/data/blob.bin", mode="base64", byte_offset=1, byte_limit=2))"#,
+        r#"print(fs.read("/data/blob.bin", mode="base64", offset=1, count=2))"#,
     )
     .unwrap();
 
@@ -667,7 +752,7 @@ fn test_python_fs_read_kwargs_use_options_table() {
     assert_eq!(result, "AQI=");
 
     let transpiled = cpsl_core::transpile::transpile(
-        r#"print(fs.read("/data/blob.bin", {"mode": "base64", "byte_offset": 1, "byte_limit": 2}))"#,
+        r#"print(fs.read("/data/blob.bin", {"mode": "base64", "offset": 1, "count": 2}))"#,
     )
     .unwrap();
     let result = sandbox.exec(&transpiled.luau_source).unwrap();

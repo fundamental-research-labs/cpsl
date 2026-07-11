@@ -1716,7 +1716,11 @@ function sh.run(name, method, args)
         -- Detect argument errors and reformat for shell context
         if string.find(err, "missing required argument") then
             -- Reformat: 'name' (type) → --name <type>
-            local shell_err = string.gsub(err, "'([%w_]+)' %((%w+)%)", "--%1 <%2>")
+            local shell_err = string.gsub(err, "'([%w_]+)' %(([^%)]+)%)", function(param, expected)
+                -- Native buffers cannot be supplied by a shell argument.
+                if expected == "string | buffer" then expected = "string" end
+                return "--" .. param .. " <" .. expected .. ">"
+            end)
             -- Replace "missing required argument" → "missing"
             shell_err = string.gsub(shell_err, "missing required arguments? ", "missing ")
             -- Replace "module.method:" prefix → "module method:"
@@ -1741,6 +1745,7 @@ function sh.run(name, method, args)
 
             error(shell_err .. fn_help, 0)
         elseif string.find(err, "expected string, got")
+            or string.find(err, "expected string | buffer, got", 1, true)
             or string.find(err, "expected table, got")
             or string.find(err, "expected number, got")
             or string.find(err, "expected boolean, got")
@@ -1748,11 +1753,23 @@ function sh.run(name, method, args)
         then
             -- Type mismatch errors — reformat module.method → module method
             local shell_err = string.gsub(err, "^(%w+)%.(%w+):", "%1 %2:")
+            shell_err = string.gsub(shell_err, "string | buffer", "string")
             error(shell_err .. "\n  hint: run '" .. tostring(name) .. "' for usage", 0)
         else
             -- Runtime errors pass through as-is
             error(err, 0)
         end
+    end
+
+    -- The shell, its pipelines, and the host execution APIs are text-only.
+    -- Never stringify a native Luau buffer: tostring(buffer) exposes an opaque
+    -- identity rather than its bytes, while raw bytes may not be valid UTF-8.
+    if type(result) == "buffer" then
+        if name == "fs" and method == "read" then
+            error("fs read: native buffer output cannot cross the shell boundary; use --mode base64", 0)
+        end
+        error(tostring(name) .. " " .. tostring(method)
+            .. ": native buffer output cannot cross the shell boundary; convert it to text first", 0)
     end
 
     -- Auto-serialize: if result is a table, emit as pretty JSON; strings/numbers as-is;

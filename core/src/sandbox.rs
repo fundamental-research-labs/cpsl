@@ -34,6 +34,8 @@ use fs_read::ReadRequest;
 
 pub use errors::{clean_lua_error, humanize_error, ExecError, SandboxError};
 
+const BUFFER_TEXT_BOUNDARY_ERROR: &str = "native buffer output cannot cross the host text boundary; use mode=\"base64\" for fs.read or encode the buffer as base64/hex text inside Luau";
+
 pub struct Sandbox {
     lua: Lua,
     /// Buffer that captures print() output. Shared with the Lua print function.
@@ -94,6 +96,13 @@ impl Sandbox {
             .set_name("input")
             .eval()
             .map_err(|e| clean_lua_error(&e))?;
+        if result.iter().any(|value| matches!(value, Value::Buffer(_))) {
+            return Err(ExecError {
+                line: None,
+                column: None,
+                message: BUFFER_TEXT_BOUNDARY_ERROR.to_string(),
+            });
+        }
         let return_val = format_multi_value(&result);
 
         // Drain captured print output
@@ -1070,6 +1079,11 @@ fn register_print(
     let buf2 = buf.clone();
 
     let print_fn = lua.create_function(move |_, values: MultiValue| {
+        if values.iter().any(|value| matches!(value, Value::Buffer(_))) {
+            return Err(mlua::Error::external(format!(
+                "print: {BUFFER_TEXT_BOUNDARY_ERROR}"
+            )));
+        }
         let line: Vec<String> = values.iter().map(format_value).collect();
         let Ok(mut b) = buf.lock() else { return Ok(()) };
         let Ok(mut nl) = needs_nl_print.lock() else {
@@ -1146,6 +1160,7 @@ fn format_value(value: &Value) -> String {
             }
         }
         Value::String(s) => s.to_string_lossy().to_string(),
+        Value::Buffer(buffer) => format!("buffer({} bytes)", buffer.len()),
         Value::Table(_) => "table".to_string(),
         Value::Function(_) => "function".to_string(),
         _ => format!("{:?}", value),
@@ -1163,7 +1178,7 @@ fn register_fs_read_and_metadata(
     synthetic_files: Arc<std::collections::HashMap<String, String>>,
     file_activity_cb: Option<FileActivityCallback>,
 ) -> Result<(), mlua::Error> {
-    // fs.read(path [, opts]) -> string
+    // fs.read(path [, opts]) -> string | buffer
     {
         let m = mounts.clone();
         let sf = synthetic_files.clone();
@@ -1203,13 +1218,11 @@ fn register_fs_read_and_metadata(
                         path.to_string(),
                     )));
                 }
-                let bytes = request
-                    .read_host(&host_path)
-                    .map_err(mlua::Error::external)?;
+                let value = request.read_host_value(lua, &host_path)?;
                 if let Some(ref cb) = cb {
                     cb(path, "read");
                 }
-                request.host_value(lua, &bytes)
+                Ok(value)
             })?,
         )?;
     }
@@ -1252,12 +1265,20 @@ fn register_fs_mutations(
                 if m.synthetic_dir_for(&path).is_some() {
                     return Err(mlua::Error::external(crate::MountError::ReadOnly(path)));
                 }
-                let content = match &validated[1] {
-                    Value::String(s) => s.as_bytes(),
-                    _ => unreachable!("validate_args ensures string"),
-                };
                 let host_path = m.resolve_write(&path).map_err(mlua::Error::external)?;
-                std::fs::write(&host_path, content).map_err(mlua::Error::external)?;
+                match &validated[1] {
+                    Value::String(content) => {
+                        std::fs::write(&host_path, content.as_bytes())
+                            .map_err(mlua::Error::external)?;
+                    }
+                    Value::Buffer(content) => {
+                        let mut file =
+                            std::fs::File::create(&host_path).map_err(mlua::Error::external)?;
+                        let mut content = content.clone().cursor();
+                        std::io::copy(&mut content, &mut file).map_err(mlua::Error::external)?;
+                    }
+                    _ => unreachable!("validate_args ensures string or buffer"),
+                }
                 if let Some(ref cb) = cb {
                     cb(&path, "write");
                 }
