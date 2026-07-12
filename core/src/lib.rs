@@ -36,6 +36,8 @@ pub(crate) mod http;
 pub(crate) mod image;
 #[cfg(feature = "mod-json")]
 pub(crate) mod json;
+#[cfg(feature = "mod-location")]
+pub(crate) mod location;
 pub(crate) mod lua_util;
 mod mount;
 #[cfg(feature = "mod-numpy")]
@@ -71,14 +73,18 @@ pub(crate) mod yfinance;
 
 #[cfg(feature = "mod-apple-calendar")]
 pub use apple_calendar::AppleCalendarGateway;
+#[cfg(feature = "mod-apple-calendar")]
+pub use calendar::CalendarActivityCallback;
+#[cfg(feature = "mod-location")]
+pub use location::LocationGateway;
 pub use mount::{MountError, MountPermission, MountTable};
 #[cfg(feature = "mod-http")]
 pub use native_http::HttpGateway;
 #[cfg(feature = "pdfium-render")]
 pub use pdfium_engine::PdfiumEngine;
 pub use sandbox::{
-    clean_lua_error, humanize_error, DocReadCallback, ExecError, Sandbox, SandboxBuilder,
-    SandboxError, VisionCallback,
+    clean_lua_error, humanize_error, DocReadCallback, ExecError, FileActivityCallback, Sandbox,
+    SandboxBuilder, SandboxError, VisionCallback,
 };
 #[cfg(cpsl_experimental_sfae)]
 pub use sfae::{BrowserOpener, CredentialPrompt};

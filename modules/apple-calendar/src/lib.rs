@@ -120,7 +120,7 @@ pub enum AppleCalendarError {
     #[error("calendar: full access required")]
     FullAccessRequired,
 
-    #[error("calendar: access denied")]
+    #[error("calendar: access denied; enable Calendar access for Herm in iOS Settings or macOS System Settings")]
     AccessDenied,
 
     #[error("calendar: access restricted")]
@@ -388,35 +388,33 @@ mod eventkit {
         let store = unsafe { EKEventStore::init(EKEventStore::alloc()) };
         let worker = Worker { store };
         while let Ok(command) = rx.recv() {
-            autoreleasepool(|_| {
-                match command {
-                    Command::Status(tx) => {
-                        let _ = tx.send(worker.status());
-                    }
-                    Command::RequestFullAccess(tx) => {
-                        let _ = tx.send(worker.request_full_access());
-                    }
-                    Command::Calendars(tx) => {
-                        let _ = tx.send(worker.calendars());
-                    }
-                    Command::DefaultCalendar(tx) => {
-                        let _ = tx.send(worker.default_calendar());
-                    }
-                    Command::Events(query, tx) => {
-                        let _ = tx.send(worker.events(query));
-                    }
-                    Command::Get(event_id, tx) => {
-                        let _ = tx.send(worker.get(&event_id));
-                    }
-                    Command::Create(request, tx) => {
-                        let _ = tx.send(worker.create(request));
-                    }
-                    Command::Update(request, tx) => {
-                        let _ = tx.send(worker.update(request));
-                    }
-                    Command::Delete(event_id, tx) => {
-                        let _ = tx.send(worker.delete(&event_id));
-                    }
+            autoreleasepool(|_| match command {
+                Command::Status(tx) => {
+                    let _ = tx.send(worker.status());
+                }
+                Command::RequestFullAccess(tx) => {
+                    let _ = tx.send(worker.request_full_access());
+                }
+                Command::Calendars(tx) => {
+                    let _ = tx.send(worker.calendars());
+                }
+                Command::DefaultCalendar(tx) => {
+                    let _ = tx.send(worker.default_calendar());
+                }
+                Command::Events(query, tx) => {
+                    let _ = tx.send(worker.events(query));
+                }
+                Command::Get(event_id, tx) => {
+                    let _ = tx.send(worker.get(&event_id));
+                }
+                Command::Create(request, tx) => {
+                    let _ = tx.send(worker.create(request));
+                }
+                Command::Update(request, tx) => {
+                    let _ = tx.send(worker.update(request));
+                }
+                Command::Delete(event_id, tx) => {
+                    let _ = tx.send(worker.delete(&event_id));
                 }
             });
         }
@@ -428,9 +426,10 @@ mod eventkit {
 
     impl Worker {
         fn status(&self) -> Result<CalendarStatus> {
+            let access = access_status();
             Ok(CalendarStatus {
-                access: access_status(),
-                full_access: access_status().has_full_access(),
+                access,
+                full_access: access.has_full_access(),
                 supported: os_supported(),
                 platform: platform_name().to_string(),
             })
@@ -462,14 +461,14 @@ mod eventkit {
                     .requestFullAccessToEventsWithCompletion(block2::RcBlock::as_ptr(&block));
             }
 
-            rx.recv()
-                .map_err(|_| AppleCalendarError::BackendUnavailable("access callback dropped".into()))?
+            rx.recv().map_err(|_| {
+                AppleCalendarError::BackendUnavailable("access callback dropped".into())
+            })?
         }
 
         fn calendars(&self) -> Result<Vec<CalendarInfo>> {
             self.require_full_access()?;
-            let calendars =
-                unsafe { self.store.calendarsForEntityType(EKEntityType::Event) };
+            let calendars = unsafe { self.store.calendarsForEntityType(EKEntityType::Event) };
             Ok(calendars
                 .to_vec()
                 .iter()
@@ -496,11 +495,12 @@ mod eventkit {
             let end = nsdate_from_unix_millis(query.end_time);
             let calendar_array = self.calendar_filter(query.calendar_id.as_deref())?;
             let predicate = unsafe {
-                self.store.predicateForEventsWithStartDate_endDate_calendars(
-                    &start,
-                    &end,
-                    calendar_array.as_deref(),
-                )
+                self.store
+                    .predicateForEventsWithStartDate_endDate_calendars(
+                        &start,
+                        &end,
+                        calendar_array.as_deref(),
+                    )
             };
             let events = unsafe { self.store.eventsMatchingPredicate(&predicate) };
             let mut snapshots = Vec::new();
@@ -642,7 +642,11 @@ mod eventkit {
             if !os_supported() {
                 return Err(AppleCalendarError::UnsupportedOs);
             }
-            ensure_full_access(access_status())
+            let status = access_status();
+            if status == AccessStatus::NotDetermined {
+                return ensure_full_access(self.request_full_access()?.access);
+            }
+            ensure_full_access(status)
         }
 
         fn find_event(&self, event_id: &str) -> Result<Retained<EKEvent>> {
@@ -673,8 +677,7 @@ mod eventkit {
     }
 
     fn access_status() -> AccessStatus {
-        let status =
-            unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
+        let status = unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
         if status == EKAuthorizationStatus::NotDetermined {
             AccessStatus::NotDetermined
         } else if status == EKAuthorizationStatus::Restricted {

@@ -1,5 +1,9 @@
 //! Luau sandbox construction, execution, and global module registration.
 
+#[cfg(feature = "mod-apple-calendar")]
+use crate::calendar::CalendarActivityCallback;
+#[cfg(feature = "mod-location")]
+use crate::location::LocationGateway;
 use crate::mount::MountTable;
 #[cfg(feature = "mod-apple-calendar")]
 use apple_calendar::AppleCalendarGateway;
@@ -393,8 +397,12 @@ pub struct SandboxBuilder {
     http_gateway: Option<Arc<HttpGateway>>,
     #[cfg(feature = "mod-apple-calendar")]
     calendar_gateway: Option<Arc<AppleCalendarGateway>>,
+    #[cfg(feature = "mod-apple-calendar")]
+    calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "mod-webbrowser")]
     webbrowser_gateway: Option<Arc<dyn crate::webbrowser::WebBrowserGateway>>,
+    #[cfg(feature = "mod-location")]
+    location_gateway: Option<Arc<dyn LocationGateway>>,
     #[cfg(cpsl_experimental_sfae)]
     sfae_store: Option<Arc<Mutex<dyn SecretStore + Send>>>,
     #[cfg(cpsl_experimental_sfae)]
@@ -417,8 +425,12 @@ impl Default for SandboxBuilder {
             http_gateway: None,
             #[cfg(feature = "mod-apple-calendar")]
             calendar_gateway: None,
+            #[cfg(feature = "mod-apple-calendar")]
+            calendar_activity_callback: None,
             #[cfg(feature = "mod-webbrowser")]
             webbrowser_gateway: None,
+            #[cfg(feature = "mod-location")]
+            location_gateway: None,
             #[cfg(cpsl_experimental_sfae)]
             sfae_store: None,
             #[cfg(cpsl_experimental_sfae)]
@@ -457,12 +469,24 @@ impl SandboxBuilder {
         self
     }
 
+    #[cfg(feature = "mod-apple-calendar")]
+    pub fn calendar_activity_callback(mut self, cb: CalendarActivityCallback) -> Self {
+        self.calendar_activity_callback = Some(cb);
+        self
+    }
+
     #[cfg(feature = "mod-webbrowser")]
     pub fn webbrowser_gateway(
         mut self,
         gateway: Arc<dyn crate::webbrowser::WebBrowserGateway>,
     ) -> Self {
         self.webbrowser_gateway = Some(gateway);
+        self
+    }
+
+    #[cfg(feature = "mod-location")]
+    pub fn location_gateway(mut self, gateway: Arc<dyn LocationGateway>) -> Self {
+        self.location_gateway = Some(gateway);
         self
     }
 
@@ -647,6 +671,10 @@ impl SandboxBuilder {
         if let Some(ref gateway) = self.webbrowser_gateway {
             crate::webbrowser::register_webbrowser_globals(&lua, gateway.clone(), mounts.clone())?;
         }
+        #[cfg(feature = "mod-location")]
+        if let Some(ref gateway) = self.location_gateway {
+            crate::location::register_location_globals(&lua, gateway.clone())?;
+        }
         #[cfg(feature = "mod-http")]
         if let Some(ref gw) = self.http_gateway {
             crate::http::register_http_globals(&lua, gw.clone())?;
@@ -663,14 +691,24 @@ impl SandboxBuilder {
             let gateway = self
                 .calendar_gateway
                 .unwrap_or_else(AppleCalendarGateway::shared_platform_default);
-            crate::calendar::register_calendar_globals(&lua, gateway)?;
+            crate::calendar::register_calendar_globals(
+                &lua,
+                gateway,
+                mounts.clone(),
+                self.calendar_activity_callback.clone(),
+            )?;
         }
         #[cfg(all(
             feature = "mod-apple-calendar",
             not(any(target_os = "macos", target_os = "ios"))
         ))]
         if let Some(ref gateway) = self.calendar_gateway {
-            crate::calendar::register_calendar_globals(&lua, gateway.clone())?;
+            crate::calendar::register_calendar_globals(
+                &lua,
+                gateway.clone(),
+                mounts.clone(),
+                self.calendar_activity_callback.clone(),
+            )?;
         }
         #[cfg(cpsl_experimental_sfae)]
         if let (Some(ref store), Some(ref prompt)) = (&self.sfae_store, &self.sfae_prompt) {
@@ -980,7 +1018,7 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
     // global names and includes only those that are actually registered.
     let code = r#"
         function help()
-            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xml","yaml","yfinance"}
+            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","location","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xml","yaml","yfinance"}
             local lines = {}
             for _, name in ipairs(known) do
                 local m = rawget(_G, name)

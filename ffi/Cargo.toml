@@ -18,6 +18,8 @@ ffi-minimal = [
     "cpsl-core/mod-ripgrep",
 ]
 webbrowser = ["ffi-minimal", "cpsl-core/mod-webbrowser"]
+location = ["ffi-minimal", "cpsl-core/mod-location"]
+calendar = ["ffi-minimal", "cpsl-core/mod-apple-calendar"]
 embedded-agent = [
     "ffi-minimal",
     "cpsl-core/mod-yaml",
@@ -34,15 +36,17 @@ embedded-agent = [
     "cpsl-core/mod-image",
     "cpsl-core/mod-base64",
     "cpsl-core/mod-fin",
+    "calendar",
     "cpsl-core/mod-regex",
     "cpsl-core/mod-html",
     "cpsl-core/mod-url",
     "cpsl-core/mod-qr",
     "webbrowser",
+    "location",
     "pdfium-render",
 ]
 pdfium-render = ["cpsl-core/pdfium-render"]
-all = ["cpsl-core/all", "pdfium-render", "webbrowser"]
+all = ["cpsl-core/all", "pdfium-render", "webbrowser", "location", "calendar"]
 
 [dependencies]
 cpsl-core = { path = "../core", default-features = false }

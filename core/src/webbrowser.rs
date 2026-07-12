@@ -11,9 +11,19 @@ use serde_json::{Map, Number};
 use std::path::Path;
 use std::sync::Arc;
 
+#[path = "webbrowser_upload.rs"]
+mod webbrowser_upload;
+use webbrowser_upload::{
+    parse_arm_upload_args, parse_upload_args, resolve_upload_paths, validate_control_key,
+};
+
+#[cfg(test)]
+#[path = "webbrowser_tests.rs"]
+mod tests;
+
 const DEFAULT_RESOURCE_MODE: &str = "lean";
-const DEFAULT_WINDOW_WIDTH: i64 = 800;
-const DEFAULT_WINDOW_HEIGHT: i64 = 600;
+const DEFAULT_WINDOW_WIDTH: i64 = 1200;
+const DEFAULT_WINDOW_HEIGHT: i64 = 900;
 
 pub trait WebBrowserGateway: Send + Sync {
     fn handle_json(&self, request_json: &str) -> Result<String, String>;
@@ -107,7 +117,7 @@ const TYPE_OPTS_FIELDS: &[FieldDoc] = &[
         name: "backend",
         typ: "string",
         required: false,
-        description: "Typing backend: \"native\" (default) or \"js\"",
+        description: "Typing backend: \"auto\" (default), \"native\", or \"js\"; typing.backendUsed reports native, nativeTextInput, or js",
     },
     FieldDoc {
         name: "rhythm",
@@ -159,7 +169,7 @@ const SCREENSHOT_OPTS_FIELDS: &[FieldDoc] = &[
 
 pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
     name: "webbrowser",
-    summary: "native WebKit browser automation for search and browsing",
+    summary: "native WebKit automation for browsing, authenticated site interaction, and file transfers",
     functions: &[
         FnDoc {
             name: "click",
@@ -337,7 +347,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "resize",
-            description: "Resize the browser preview window.",
+            description: "Resize the browser automation viewport.",
             params: &[
                 Param {
                     name: "browser",
@@ -362,7 +372,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
                 },
             ],
             returns: ReturnType::Table,
-            example: Some(r#"webbrowser.resize(browser, 1024, 768)"#),
+            example: Some(r#"webbrowser.resize(browser, 1200, 900)"#),
         },
         FnDoc {
             name: "screenshot",
@@ -468,7 +478,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "type",
-            description: "Type text into an action using natural native events by default.",
+            description: "Focus an action and append text with natural pacing; native host text input is used when available.",
             params: &[
                 Param {
                     name: "browser",
@@ -501,6 +511,90 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
             ],
             returns: ReturnType::Table,
             example: Some(r#"webbrowser.type(browser, "a2", "hello", {speed=4.0})"#),
+        },
+        FnDoc {
+            name: "key_press",
+            description: "Send one supported control key to an action without changing its text first. Use exact names such as Enter or Escape, not modifier combinations. The returned keyPress.pageConsumed flag reports whether a DOM handler prevented the key's default behavior.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "action",
+                    short: Some('a'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "key",
+                    short: Some('k'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(r#"webbrowser.key_press(browser, "a2", "Enter")"#),
+        },
+        FnDoc {
+            name: "arm_upload",
+            description: "Advanced fallback: arm sandbox files for the next native file chooser; prefer upload() when the final chooser action is discoverable.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "paths",
+                    short: Some('p'),
+                    typ: ParamType::Value,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(
+                r#"webbrowser.arm_upload(browser, {"/attachments/conversation/photo.jpg"})"#,
+            ),
+        },
+        FnDoc {
+            name: "upload",
+            description: "Atomically click a chooser-opening action and provide sandbox files; success confirms WebKit consumed the selection.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "action",
+                    short: Some('a'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "paths",
+                    short: Some('p'),
+                    typ: ParamType::Value,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(
+                r#"webbrowser.upload(browser, "a3", {"/attachments/conversation/photo.jpg"})"#,
+            ),
         },
         FnDoc {
             name: "wait_resources",
@@ -738,6 +832,67 @@ pub(crate) fn register_webbrowser_globals(
 
     register_text_action(lua, &webbrowser, "fill", "fill", gateway.clone(), false)?;
     register_text_action(lua, &webbrowser, "type", "type", gateway.clone(), true)?;
+    register_text_action(
+        lua,
+        &webbrowser,
+        "key_press",
+        "keyPress",
+        gateway.clone(),
+        false,
+    )?;
+
+    {
+        let gateway = gateway.clone();
+        let mounts = mounts.clone();
+        webbrowser.set(
+            "arm_upload",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, paths) = parse_arm_upload_args(&args)?;
+                let host_paths = resolve_upload_paths(&mounts, &paths, "webbrowser.arm_upload")?;
+
+                let mut request = request("armUpload");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert(
+                    "sourcePaths".to_string(),
+                    serde_json::Value::Array(host_paths),
+                );
+                request.insert(
+                    "virtualSourcePaths".to_string(),
+                    serde_json::Value::Array(
+                        paths.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
+
+    {
+        let gateway = gateway.clone();
+        let mounts = mounts.clone();
+        webbrowser.set(
+            "upload",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, action, paths) = parse_upload_args(&args)?;
+                let host_paths = resolve_upload_paths(&mounts, &paths, "webbrowser.upload")?;
+
+                let mut request = request("upload");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert("action".to_string(), serde_json::Value::String(action));
+                request.insert(
+                    "sourcePaths".to_string(),
+                    serde_json::Value::Array(host_paths),
+                );
+                request.insert(
+                    "virtualSourcePaths".to_string(),
+                    serde_json::Value::Array(
+                        paths.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
 
     {
         let gateway = gateway.clone();
@@ -870,6 +1025,9 @@ fn register_text_action(
         lua.create_function(move |lua, args: MultiValue| {
             let (browser, action, text, opts) =
                 parse_text_action_args(&args, &format!("webbrowser.{lua_name}"))?;
+            if command == "keyPress" {
+                validate_control_key(&text)?;
+            }
             let mut request = request(command);
             request.insert("browser".to_string(), serde_json::Value::String(browser));
             request.insert("action".to_string(), serde_json::Value::String(action));
@@ -1816,149 +1974,5 @@ fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
             "cannot encode {} as JSON",
             value_type_name(other)
         ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{MountPermission, Sandbox};
-    use std::sync::Mutex;
-
-    #[derive(Default)]
-    struct RecordingGateway {
-        requests: Mutex<Vec<serde_json::Value>>,
-    }
-
-    impl WebBrowserGateway for RecordingGateway {
-        fn handle_json(&self, request_json: &str) -> Result<String, String> {
-            let value: serde_json::Value = serde_json::from_str(request_json).unwrap();
-            self.requests.lock().unwrap().push(value);
-            Ok(
-                r#"{"ok":true,"browser":"abc123ef","result":{"ok":true,"browser":"abc123ef"}}"#
-                    .to_string(),
-            )
-        }
-    }
-
-    fn sandbox(gateway: Arc<RecordingGateway>) -> Sandbox {
-        Sandbox::builder()
-            .webbrowser_gateway(gateway)
-            .build()
-            .unwrap()
-    }
-
-    #[test]
-    fn open_defaults_to_lean_resource_mode() {
-        let gateway = Arc::new(RecordingGateway::default());
-        let sandbox = sandbox(gateway.clone());
-
-        let result = sandbox
-            .exec(r#"local r = webbrowser.open("https://example.com"); return r.browser"#)
-            .unwrap();
-
-        assert_eq!(result, "abc123ef");
-        let requests = gateway.requests.lock().unwrap();
-        assert_eq!(requests[0]["command"], "open");
-        assert_eq!(requests[0]["url"], "https://example.com");
-        assert_eq!(requests[0]["resourceMode"], "lean");
-    }
-
-    #[test]
-    fn help_documents_eval_value_and_open_without_resource_wait() {
-        let gateway = Arc::new(RecordingGateway::default());
-        let sandbox = sandbox(gateway);
-
-        let help = sandbox.exec("return webbrowser.help()").unwrap();
-
-        assert!(
-            help.contains("read the JavaScript result from the value field"),
-            "eval help should document result.value: {help}"
-        );
-        assert!(
-            help.contains(r#"local title = webbrowser.eval(browser, "return document.title", {function_body=true}).value"#),
-            "eval example should read .value: {help}"
-        );
-        assert!(
-            help.contains(r#"local browser = webbrowser.open("https://example.com").browser"#),
-            "open example should avoid initial resource wait: {help}"
-        );
-    }
-
-    #[test]
-    fn screenshot_maps_virtual_destination_to_host_path() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mut mounts = MountTable::new();
-        mounts
-            .add_mount(
-                tempdir.path().to_path_buf(),
-                "/tmp",
-                MountPermission::ReadWrite,
-            )
-            .unwrap();
-        let gateway = Arc::new(RecordingGateway::default());
-        let sandbox = Sandbox::builder()
-            .mounts(mounts)
-            .auto_tmp(false)
-            .webbrowser_gateway(gateway.clone())
-            .build()
-            .unwrap();
-
-        sandbox
-            .exec(r#"webbrowser.screenshot("abc123ef", "/tmp/nested/page.png")"#)
-            .unwrap();
-
-        let requests = gateway.requests.lock().unwrap();
-        let destination = requests[0]["destinationPath"].as_str().unwrap();
-        assert!(destination.starts_with(tempdir.path().to_str().unwrap()));
-        assert!(destination.ends_with("nested/page.png"));
-        assert_eq!(
-            requests[0]["virtualDestinationPath"],
-            "/tmp/nested/page.png"
-        );
-        assert_eq!(requests[0]["waitForResources"], true);
-    }
-
-    #[test]
-    fn show_dispatches_handoff_request() {
-        let gateway = Arc::new(RecordingGateway::default());
-        let sandbox = sandbox(gateway.clone());
-
-        sandbox.exec(r#"webbrowser.show("abc123ef")"#).unwrap();
-
-        let requests = gateway.requests.lock().unwrap();
-        assert_eq!(requests[0]["command"], "browserShow");
-        assert_eq!(requests[0]["browser"], "abc123ef");
-    }
-
-    #[test]
-    fn type_forwards_natural_typing_options() {
-        let gateway = Arc::new(RecordingGateway::default());
-        let sandbox = sandbox(gateway.clone());
-
-        sandbox
-            .exec(
-                r#"
-                webbrowser.type("abc123ef", "a2", "hello", {
-                    backend = "native",
-                    rhythm = "natural",
-                    speed = 4.5,
-                    delay_min = 0.01,
-                    delay_max = 0.2,
-                })
-                "#,
-            )
-            .unwrap();
-
-        let requests = gateway.requests.lock().unwrap();
-        assert_eq!(requests[0]["command"], "type");
-        assert_eq!(requests[0]["browser"], "abc123ef");
-        assert_eq!(requests[0]["action"], "a2");
-        assert_eq!(requests[0]["value"], "hello");
-        assert_eq!(requests[0]["typingBackend"], "native");
-        assert_eq!(requests[0]["typingRhythm"], "natural");
-        assert_eq!(requests[0]["typingSpeed"].as_f64(), Some(4.5));
-        assert_eq!(requests[0]["typingDelayMin"].as_f64(), Some(0.01));
-        assert_eq!(requests[0]["typingDelayMax"].as_f64(), Some(0.2));
     }
 }

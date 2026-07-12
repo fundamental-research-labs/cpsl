@@ -60,6 +60,7 @@ metadata, not a single static API promised by all platforms.
 ```text
 calendar.status() -> table
 calendar.request_access("full") -> table
+calendar.attach(event_id, paths) -> table
 calendar.calendars() -> table
 calendar.default_calendar() -> table
 calendar.events(start_time, end_time, opts?) -> table
@@ -108,6 +109,7 @@ Example calls:
 
 ```lua
 calendar.request_access("full")
+calendar.attach(event_id, {"/home/herm/report.pdf"})
 calendar.events("2026-07-01T00:00:00Z", "2026-07-08T00:00:00Z", {
   calendar_id = id,
   limit = 50
@@ -143,6 +145,10 @@ calendar create "Dentist" 2026-07-01T15:00:00Z 2026-07-01T16:00:00Z --location "
   `calendar: full access required` style error.
 - Recurring event mutations are rejected in V1. Fetching occurrences is allowed
   as normal EventKit query output.
+- EventKit has no public native file-attachment API. `calendar.attach` is a
+  Herm-managed association: it copies files to durable sandbox storage and
+  records their virtual paths in a delimited notes block. Event results expose
+  those paths as `attachments`; hosts may render them as openable files.
 - EventKit change notifications and stale native objects are handled by
   returning snapshots only. V1 never exposes native handles.
 
