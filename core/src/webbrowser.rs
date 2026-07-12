@@ -107,7 +107,7 @@ const TYPE_OPTS_FIELDS: &[FieldDoc] = &[
         name: "backend",
         typ: "string",
         required: false,
-        description: "Typing backend: \"native\" (default) or \"js\"",
+        description: "Typing backend: \"auto\" (default), \"native\", or \"js\"; typing.backendUsed reports native, nativeTextInput, or js",
     },
     FieldDoc {
         name: "rhythm",
@@ -159,7 +159,7 @@ const SCREENSHOT_OPTS_FIELDS: &[FieldDoc] = &[
 
 pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
     name: "webbrowser",
-    summary: "native WebKit browser automation for search and browsing",
+    summary: "native WebKit automation for browsing, authenticated site interaction, and file transfers",
     functions: &[
         FnDoc {
             name: "click",
@@ -468,7 +468,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "type",
-            description: "Type text into an action using natural native events by default.",
+            description: "Focus an action and append text with natural pacing; native host text input is used when available.",
             params: &[
                 Param {
                     name: "browser",
@@ -501,6 +501,90 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
             ],
             returns: ReturnType::Table,
             example: Some(r#"webbrowser.type(browser, "a2", "hello", {speed=4.0})"#),
+        },
+        FnDoc {
+            name: "key_press",
+            description: "Send one supported control key to an action without changing its text first. Use exact names such as Enter or Escape, not modifier combinations. The returned keyPress.pageConsumed flag reports whether a DOM handler prevented the key's default behavior.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "action",
+                    short: Some('a'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "key",
+                    short: Some('k'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(r#"webbrowser.key_press(browser, "a2", "Enter")"#),
+        },
+        FnDoc {
+            name: "arm_upload",
+            description: "Advanced fallback: arm sandbox files for the next native file chooser; prefer upload() when the final chooser action is discoverable.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "paths",
+                    short: Some('p'),
+                    typ: ParamType::Value,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(
+                r#"webbrowser.arm_upload(browser, {"/attachments/conversation/photo.jpg"})"#,
+            ),
+        },
+        FnDoc {
+            name: "upload",
+            description: "Atomically click a chooser-opening action and provide sandbox files; success confirms WebKit consumed the selection.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "action",
+                    short: Some('a'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "paths",
+                    short: Some('p'),
+                    typ: ParamType::Value,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(
+                r#"webbrowser.upload(browser, "a3", {"/attachments/conversation/photo.jpg"})"#,
+            ),
         },
         FnDoc {
             name: "wait_resources",
@@ -738,6 +822,67 @@ pub(crate) fn register_webbrowser_globals(
 
     register_text_action(lua, &webbrowser, "fill", "fill", gateway.clone(), false)?;
     register_text_action(lua, &webbrowser, "type", "type", gateway.clone(), true)?;
+    register_text_action(
+        lua,
+        &webbrowser,
+        "key_press",
+        "keyPress",
+        gateway.clone(),
+        false,
+    )?;
+
+    {
+        let gateway = gateway.clone();
+        let mounts = mounts.clone();
+        webbrowser.set(
+            "arm_upload",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, paths) = parse_arm_upload_args(&args)?;
+                let host_paths = resolve_upload_paths(&mounts, &paths, "webbrowser.arm_upload")?;
+
+                let mut request = request("armUpload");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert(
+                    "sourcePaths".to_string(),
+                    serde_json::Value::Array(host_paths),
+                );
+                request.insert(
+                    "virtualSourcePaths".to_string(),
+                    serde_json::Value::Array(
+                        paths.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
+
+    {
+        let gateway = gateway.clone();
+        let mounts = mounts.clone();
+        webbrowser.set(
+            "upload",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, action, paths) = parse_upload_args(&args)?;
+                let host_paths = resolve_upload_paths(&mounts, &paths, "webbrowser.upload")?;
+
+                let mut request = request("upload");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert("action".to_string(), serde_json::Value::String(action));
+                request.insert(
+                    "sourcePaths".to_string(),
+                    serde_json::Value::Array(host_paths),
+                );
+                request.insert(
+                    "virtualSourcePaths".to_string(),
+                    serde_json::Value::Array(
+                        paths.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
 
     {
         let gateway = gateway.clone();
@@ -870,6 +1015,9 @@ fn register_text_action(
         lua.create_function(move |lua, args: MultiValue| {
             let (browser, action, text, opts) =
                 parse_text_action_args(&args, &format!("webbrowser.{lua_name}"))?;
+            if command == "keyPress" {
+                validate_control_key(&text)?;
+            }
             let mut request = request(command);
             request.insert("browser".to_string(), serde_json::Value::String(browser));
             request.insert("action".to_string(), serde_json::Value::String(action));
@@ -880,6 +1028,32 @@ fn register_text_action(
             dispatch(lua, &*gateway, request)
         })?,
     )
+}
+
+const SUPPORTED_CONTROL_KEYS: &[&str] = &[
+    "Enter",
+    "Escape",
+    "Tab",
+    "Backspace",
+    "Delete",
+    "ArrowLeft",
+    "ArrowUp",
+    "ArrowRight",
+    "ArrowDown",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+];
+
+fn validate_control_key(key: &str) -> Result<(), mlua::Error> {
+    if SUPPORTED_CONTROL_KEYS.contains(&key) {
+        return Ok(());
+    }
+    Err(mlua::Error::external(format!(
+        "webbrowser.key_press: unsupported control key {key:?}; use one of: {}",
+        SUPPORTED_CONTROL_KEYS.join(", ")
+    )))
 }
 
 fn request(command: &str) -> Map<String, serde_json::Value> {
@@ -1168,6 +1342,88 @@ fn parse_submit_args(args: &MultiValue) -> Result<(String, String), mlua::Error>
         value_string(&args[0], "webbrowser.submit", "browser")?,
         value_string(&args[1], "webbrowser.submit", "action")?,
     ))
+}
+
+fn parse_upload_args(args: &MultiValue) -> Result<(String, String, Vec<String>), mlua::Error> {
+    if let Some(table) = single_table_arg(args) {
+        let mut paths: Value = table.get("paths")?;
+        if matches!(paths, Value::Nil) {
+            paths = table.get("path")?;
+        }
+        return Ok((
+            required_string(&table, "webbrowser.upload", &["browser"])?,
+            required_string(&table, "webbrowser.upload", &["action"])?,
+            string_or_array(&paths, "webbrowser.upload", "paths")?,
+        ));
+    }
+    if args.len() != 3 {
+        return Err(arg_error(
+            "webbrowser.upload",
+            WEBBROWSER_DOC.params("upload"),
+        ));
+    }
+    Ok((
+        value_string(&args[0], "webbrowser.upload", "browser")?,
+        value_string(&args[1], "webbrowser.upload", "action")?,
+        string_or_array(&args[2], "webbrowser.upload", "paths")?,
+    ))
+}
+
+fn parse_arm_upload_args(args: &MultiValue) -> Result<(String, Vec<String>), mlua::Error> {
+    if let Some(table) = single_table_arg(args) {
+        let mut paths: Value = table.get("paths")?;
+        if matches!(paths, Value::Nil) {
+            paths = table.get("path")?;
+        }
+        return Ok((
+            required_string(&table, "webbrowser.arm_upload", &["browser"])?,
+            string_or_array(&paths, "webbrowser.arm_upload", "paths")?,
+        ));
+    }
+    if args.len() != 2 {
+        return Err(arg_error(
+            "webbrowser.arm_upload",
+            WEBBROWSER_DOC.params("arm_upload"),
+        ));
+    }
+    Ok((
+        value_string(&args[0], "webbrowser.arm_upload", "browser")?,
+        string_or_array(&args[1], "webbrowser.arm_upload", "paths")?,
+    ))
+}
+
+fn resolve_upload_paths(
+    mounts: &MountTable,
+    paths: &[String],
+    function_name: &str,
+) -> Result<Vec<serde_json::Value>, mlua::Error> {
+    let mut host_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let host_path = mounts.resolve_read(path).map_err(mlua::Error::external)?;
+        if !host_path.is_file() {
+            return Err(mlua::Error::external(format!(
+                "{function_name}: path is not a file: {path}"
+            )));
+        }
+        host_paths.push(serde_json::Value::String(
+            host_path.to_string_lossy().to_string(),
+        ));
+    }
+    Ok(host_paths)
+}
+
+fn string_or_array(value: &Value, fn_name: &str, name: &str) -> Result<Vec<String>, mlua::Error> {
+    match value {
+        Value::String(value) => Ok(vec![value.to_string_lossy().to_string()]),
+        Value::Table(table) => string_array(table, fn_name, name),
+        Value::Nil => Err(mlua::Error::external(format!(
+            "{fn_name}: missing required argument '{name}' (string or array table)"
+        ))),
+        other => Err(mlua::Error::external(format!(
+            "{fn_name}: argument '{name}' expected string or array table, got {}",
+            other.type_name()
+        ))),
+    }
 }
 
 fn parse_eval_args(args: &MultiValue) -> Result<(String, String, Option<Table>), mlua::Error> {
@@ -1960,5 +2216,33 @@ mod tests {
         assert_eq!(requests[0]["typingSpeed"].as_f64(), Some(4.5));
         assert_eq!(requests[0]["typingDelayMin"].as_f64(), Some(0.01));
         assert_eq!(requests[0]["typingDelayMax"].as_f64(), Some(0.2));
+    }
+
+    #[test]
+    fn key_press_accepts_documented_control_keys() {
+        let gateway = Arc::new(RecordingGateway::default());
+        let sandbox = sandbox(gateway.clone());
+
+        sandbox
+            .exec(r#"webbrowser.key_press("abc123ef", "a2", "Enter")"#)
+            .unwrap();
+
+        let requests = gateway.requests.lock().unwrap();
+        assert_eq!(requests[0]["command"], "keyPress");
+        assert_eq!(requests[0]["value"], "Enter");
+    }
+
+    #[test]
+    fn key_press_rejects_modifier_combinations() {
+        let gateway = Arc::new(RecordingGateway::default());
+        let sandbox = sandbox(gateway.clone());
+
+        let error = sandbox
+            .exec(r#"webbrowser.key_press("abc123ef", "a2", "Control+Enter")"#)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("unsupported control key"), "{error}");
+        assert!(gateway.requests.lock().unwrap().is_empty());
     }
 }
