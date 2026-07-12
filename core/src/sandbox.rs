@@ -694,6 +694,7 @@ impl SandboxBuilder {
             crate::calendar::register_calendar_globals(
                 &lua,
                 gateway,
+                mounts.clone(),
                 self.calendar_activity_callback.clone(),
             )?;
         }
@@ -705,6 +706,7 @@ impl SandboxBuilder {
             crate::calendar::register_calendar_globals(
                 &lua,
                 gateway.clone(),
+                mounts.clone(),
                 self.calendar_activity_callback.clone(),
             )?;
         }

@@ -1,6 +1,7 @@
 //! Lua-facing Apple Calendar module backed by an injectable EventKit gateway.
 
-use crate::lua_util::register_help_functions;
+use crate::lua_util::{is_lua_array, register_help_functions};
+use crate::mount::MountTable;
 use crate::sandbox::{
     arg_error, validate_args, wrap_module_with_help_hints, FieldDoc, FnDoc, ModuleDoc, Param,
     ParamType, ReturnType,
@@ -11,9 +12,16 @@ use apple_calendar::{
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use mlua::{Lua, MultiValue, Table, Value};
+use std::collections::{hash_map::DefaultHasher, HashSet};
+use std::hash::{Hash, Hasher};
+use std::path::Path;
 use std::sync::Arc;
 
 pub type CalendarActivityCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
+const ATTACHMENT_BLOCK_START: &str = "[Herm attachments]";
+const ATTACHMENT_BLOCK_END: &str = "[/Herm attachments]";
+const CALENDAR_ATTACHMENT_ROOT: &str = "/home/herm/calendar-attachments";
 
 const QUERY_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
@@ -137,6 +145,30 @@ pub(crate) static CALENDAR_DOC: ModuleDoc = ModuleDoc {
             }],
             returns: ReturnType::Table,
             example: Some(r#"calendar.request_access("full")"#),
+        },
+        FnDoc {
+            name: "attach",
+            description: "Associate sandbox files with an event in Herm. Files are copied to durable storage and referenced from event notes because EventKit has no native file-attachment API.",
+            params: &[
+                Param {
+                    name: "event_id",
+                    short: Some('i'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "paths",
+                    short: Some('p'),
+                    typ: ParamType::Value,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(
+                r#"calendar.attach(event.id, {"/home/herm/report.pdf", "/attachments/conversation/photo.jpg"})"#,
+            ),
         },
         FnDoc {
             name: "calendars",
@@ -276,6 +308,7 @@ pub(crate) static CALENDAR_DOC: ModuleDoc = ModuleDoc {
 pub(crate) fn register_calendar_globals(
     lua: &Lua,
     gateway: Arc<AppleCalendarGateway>,
+    mounts: Arc<MountTable>,
     activity_callback: Option<CalendarActivityCallback>,
 ) -> Result<(), mlua::Error> {
     let calendar = lua.create_table()?;
@@ -289,6 +322,46 @@ pub(crate) fn register_calendar_globals(
                 validate_no_args(&args, "calendar.status")?;
                 notify_calendar_activity(&activity_callback, "status");
                 status_to_table(lua, gateway.status().map_err(mlua::Error::external)?)
+            })?,
+        )?;
+    }
+
+    {
+        let gateway = gateway.clone();
+        let mounts = mounts.clone();
+        let activity_callback = activity_callback.clone();
+        calendar.set(
+            "attach",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (event_id, paths) = parse_attach_args(&args)?;
+                let event = gateway.get(&event_id).map_err(mlua::Error::external)?;
+                let existing_paths = attachment_paths(event.notes.as_deref());
+                let copied =
+                    copy_calendar_attachments(&mounts, &event_id, &paths, &existing_paths)?;
+                let notes = notes_with_attachments(event.notes.as_deref(), &copied);
+                let request = UpdateEventRequest {
+                    event_id,
+                    title: None,
+                    start_time: None,
+                    end_time: None,
+                    calendar_id: None,
+                    notes: Some(notes),
+                    location: None,
+                    url: None,
+                    all_day: None,
+                };
+                notify_calendar_activity(&activity_callback, "attach");
+                match gateway.update(request) {
+                    Ok(event) => event_to_table(lua, &event),
+                    Err(error) => {
+                        let new_paths: Vec<String> = copied
+                            .into_iter()
+                            .filter(|path| !existing_paths.contains(path))
+                            .collect();
+                        cleanup_copied_attachments(&mounts, &new_paths);
+                        Err(mlua::Error::external(error))
+                    }
+                }
             })?,
         )?;
     }
@@ -437,13 +510,21 @@ pub(crate) fn register_calendar_globals(
                 if let (Some(start_time), Some(end_time)) = (start_time, end_time) {
                     validate_range(start_time, end_time, "calendar.update")?;
                 }
+                let notes = optional_string(&opts, "calendar.update", "notes")?;
+                let notes = if let Some(notes) = notes {
+                    let existing = gateway.get(&event_id).map_err(mlua::Error::external)?;
+                    let attachments = attachment_paths(existing.notes.as_deref());
+                    Some(notes_with_attachments(Some(&notes), &attachments))
+                } else {
+                    None
+                };
                 let request = UpdateEventRequest {
                     event_id,
                     title: optional_string(&opts, "calendar.update", "title")?,
                     start_time,
                     end_time,
                     calendar_id: optional_string(&opts, "calendar.update", "calendar_id")?,
-                    notes: optional_string(&opts, "calendar.update", "notes")?,
+                    notes,
                     location: optional_string(&opts, "calendar.update", "location")?,
                     url: optional_string(&opts, "calendar.update", "url")?,
                     all_day: optional_bool(&opts, "calendar.update", "all_day")?,
@@ -460,14 +541,24 @@ pub(crate) fn register_calendar_globals(
     {
         let gateway = gateway.clone();
         let activity_callback = activity_callback.clone();
+        let mounts = mounts.clone();
         calendar.set(
             "delete",
             lua.create_function(move |_, args: MultiValue| {
                 let validated =
                     validate_args(&args, CALENDAR_DOC.params("delete"), "calendar.delete")?;
                 let event_id = value_string(&validated[0], "calendar.delete", "event_id")?;
+                let attachments = gateway
+                    .get(&event_id)
+                    .ok()
+                    .map(|event| attachment_paths(event.notes.as_deref()))
+                    .unwrap_or_default();
                 notify_calendar_activity(&activity_callback, "delete");
-                gateway.delete(&event_id).map_err(mlua::Error::external)
+                let deleted = gateway.delete(&event_id).map_err(mlua::Error::external)?;
+                if deleted {
+                    cleanup_copied_attachments(&mounts, &attachments);
+                }
+                Ok(deleted)
             })?,
         )?;
     }
@@ -532,9 +623,10 @@ fn opts_table(value: &Value, table_form: Option<Table>) -> Result<Option<Table>,
 
 fn parse_update_args(args: &MultiValue) -> Result<(String, Option<Table>), mlua::Error> {
     if let Some(table) = single_table_arg(args) {
-        let event_id = table
-            .get::<Value>("event_id")
-            .or_else(|_| table.get::<Value>(1))?;
+        let mut event_id = table.get::<Value>("event_id")?;
+        if matches!(event_id, Value::Nil) {
+            event_id = table.get::<Value>(1)?;
+        }
         let event_id = value_string(&event_id, "calendar.update", "event_id")?;
         let opts = match table.get::<Value>("opts")? {
             Value::Table(opts) => Some(opts),
@@ -562,6 +654,259 @@ fn parse_update_args(args: &MultiValue) -> Result<(String, Option<Table>), mlua:
         }
     };
     Ok((event_id, opts))
+}
+
+fn parse_attach_args(args: &MultiValue) -> Result<(String, Vec<String>), mlua::Error> {
+    if let Some(table) = single_table_arg(args) {
+        let mut event_id = table.get::<Value>("event_id")?;
+        if matches!(event_id, Value::Nil) {
+            event_id = table.get::<Value>(1)?;
+        }
+        let mut paths = table.get::<Value>("paths")?;
+        if matches!(paths, Value::Nil) {
+            paths = table.get::<Value>(2)?;
+        }
+        return Ok((
+            value_string(&event_id, "calendar.attach", "event_id")?,
+            string_or_array(&paths, "calendar.attach", "paths")?,
+        ));
+    }
+    let validated = validate_args(args, CALENDAR_DOC.params("attach"), "calendar.attach")?;
+    Ok((
+        value_string(&validated[0], "calendar.attach", "event_id")?,
+        string_or_array(&validated[1], "calendar.attach", "paths")?,
+    ))
+}
+
+fn string_or_array(value: &Value, fn_name: &str, name: &str) -> Result<Vec<String>, mlua::Error> {
+    match value {
+        Value::String(value) => Ok(vec![value.to_string_lossy().to_string()]),
+        Value::Table(table) => {
+            let len = table.raw_len();
+            if len == 0 || !is_lua_array(table, len) {
+                return Err(mlua::Error::external(format!(
+                    "{fn_name}: argument '{name}' expected a non-empty array table"
+                )));
+            }
+            let mut paths = Vec::with_capacity(len);
+            for index in 1..=len {
+                let value: Value = table.raw_get(index)?;
+                paths.push(value_string(&value, fn_name, name)?);
+            }
+            Ok(paths)
+        }
+        Value::Nil => Err(mlua::Error::external(format!(
+            "{fn_name}: missing required argument '{name}' (string or array table)"
+        ))),
+        other => Err(mlua::Error::external(format!(
+            "{fn_name}: argument '{name}' expected string or array table, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn copy_calendar_attachments(
+    mounts: &MountTable,
+    event_id: &str,
+    source_paths: &[String],
+    existing_paths: &[String],
+) -> Result<Vec<String>, mlua::Error> {
+    let scope = calendar_attachment_scope(event_id);
+    let virtual_directory = format!("{CALENDAR_ATTACHMENT_ROOT}/{scope}");
+    let mut created = Vec::with_capacity(source_paths.len());
+    let result = (|| {
+        let mut copied = Vec::with_capacity(source_paths.len());
+
+        for source_path in source_paths {
+            if existing_paths.contains(source_path) {
+                let source = mounts
+                    .resolve_read(source_path)
+                    .map_err(mlua::Error::external)?;
+                if !source.is_file() {
+                    return Err(mlua::Error::external(format!(
+                        "calendar.attach: path is not a file: {source_path}"
+                    )));
+                }
+                copied.push(source_path.clone());
+                continue;
+            }
+
+            let source = mounts
+                .resolve_read(source_path)
+                .map_err(mlua::Error::external)?;
+            if !source.is_file() {
+                return Err(mlua::Error::external(format!(
+                    "calendar.attach: path is not a file: {source_path}"
+                )));
+            }
+            let name = safe_attachment_name(
+                Path::new(source_path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("attachment"),
+            );
+            let virtual_destination = unique_attachment_path(mounts, &virtual_directory, &name)?;
+            let destination = mounts
+                .resolve_write_deep(&virtual_destination)
+                .map_err(mlua::Error::external)?;
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+            }
+            created.push(virtual_destination.clone());
+            std::fs::copy(&source, &destination).map_err(mlua::Error::external)?;
+            copied.push(virtual_destination);
+        }
+        Ok(copied)
+    })();
+    if result.is_err() {
+        cleanup_copied_attachments(mounts, &created);
+    }
+    result
+}
+
+fn calendar_attachment_scope(event_id: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    event_id.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn safe_attachment_name(value: &str) -> String {
+    let name: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let name = name.trim_matches(|character| character == '.' || character == '-');
+    if name.is_empty() {
+        "attachment".to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+fn unique_attachment_path(
+    mounts: &MountTable,
+    virtual_directory: &str,
+    name: &str,
+) -> Result<String, mlua::Error> {
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("attachment");
+    let extension = path.extension().and_then(|value| value.to_str());
+    let mut suffix = 1;
+    loop {
+        let candidate = if suffix == 1 {
+            name.to_string()
+        } else if let Some(extension) = extension {
+            format!("{stem}-{suffix}.{extension}")
+        } else {
+            format!("{stem}-{suffix}")
+        };
+        let virtual_path = format!("{virtual_directory}/{candidate}");
+        match mounts.resolve_read(&virtual_path) {
+            Ok(host_path) if host_path.exists() => suffix += 1,
+            Ok(_) | Err(_) => return Ok(virtual_path),
+        }
+    }
+}
+
+fn notes_with_attachments(notes: Option<&str>, new_paths: &[String]) -> String {
+    let (plain_notes, mut paths) = split_attachment_notes(notes);
+    for path in new_paths {
+        if !paths.contains(path) {
+            paths.push(path.clone());
+        }
+    }
+    if paths.is_empty() {
+        return plain_notes;
+    }
+    let block = format!(
+        "{ATTACHMENT_BLOCK_START}\n{}\n{ATTACHMENT_BLOCK_END}",
+        paths.join("\n")
+    );
+    if plain_notes.is_empty() {
+        block
+    } else {
+        format!("{plain_notes}\n\n{block}")
+    }
+}
+
+fn attachment_paths(notes: Option<&str>) -> Vec<String> {
+    split_attachment_notes(notes).1
+}
+
+fn split_attachment_notes(notes: Option<&str>) -> (String, Vec<String>) {
+    let notes = notes.unwrap_or("");
+    let Some(start) = notes.find(ATTACHMENT_BLOCK_START) else {
+        return (notes.trim().to_string(), Vec::new());
+    };
+    let paths_start = start + ATTACHMENT_BLOCK_START.len();
+    let Some(relative_end) = notes[paths_start..].find(ATTACHMENT_BLOCK_END) else {
+        return (notes.trim().to_string(), Vec::new());
+    };
+    let end = paths_start + relative_end;
+    let mut seen = HashSet::new();
+    let paths = notes[paths_start..end]
+        .lines()
+        .map(str::trim)
+        .filter(|line| is_managed_attachment_path(line))
+        .map(str::to_string)
+        .filter(|path| seen.insert(path.clone()))
+        .collect();
+    let plain_notes = format!(
+        "{}{}",
+        &notes[..start],
+        &notes[end + ATTACHMENT_BLOCK_END.len()..]
+    )
+    .trim()
+    .to_string();
+    (plain_notes, paths)
+}
+
+fn is_managed_attachment_path(path: &str) -> bool {
+    let Some(relative) = path.strip_prefix(&format!("{CALENDAR_ATTACHMENT_ROOT}/")) else {
+        return false;
+    };
+    let mut components = relative.split('/');
+    matches!(
+        (components.next(), components.next(), components.next()),
+        (Some(scope), Some(name), None)
+            if !scope.is_empty()
+                && !name.is_empty()
+                && scope != "."
+                && scope != ".."
+                && name != "."
+                && name != ".."
+    )
+}
+
+fn cleanup_copied_attachments(mounts: &MountTable, paths: &[String]) {
+    let Ok(root) = mounts.resolve_write_deep(CALENDAR_ATTACHMENT_ROOT) else {
+        return;
+    };
+    for path in paths {
+        if !is_managed_attachment_path(path) {
+            continue;
+        }
+        if let Ok(host_path) = mounts.resolve_write(path) {
+            if !host_path.starts_with(&root) {
+                continue;
+            }
+            let _ = std::fs::remove_file(&host_path);
+            if let Some(parent) = host_path.parent() {
+                if parent != root && parent.starts_with(&root) {
+                    let _ = std::fs::remove_dir(parent);
+                }
+            }
+        }
+    }
 }
 
 fn value_string(value: &Value, fn_name: &str, name: &str) -> Result<String, mlua::Error> {
@@ -763,12 +1108,18 @@ fn event_to_table(lua: &Lua, event: &EventInfo) -> Result<Table, mlua::Error> {
     if let Some(location) = &event.location {
         table.set("location", location.as_str())?;
     }
-    if let Some(notes) = &event.notes {
-        table.set("notes", notes.as_str())?;
+    let (notes, attachment_paths) = split_attachment_notes(event.notes.as_deref());
+    if !notes.is_empty() {
+        table.set("notes", notes)?;
     }
     if let Some(url) = &event.url {
         table.set("url", url.as_str())?;
     }
+    let attachments = lua.create_table()?;
+    for (index, path) in attachment_paths.iter().enumerate() {
+        attachments.set(index + 1, path.as_str())?;
+    }
+    table.set("attachments", attachments)?;
     Ok(table)
 }
 
