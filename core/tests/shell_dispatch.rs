@@ -192,6 +192,279 @@ fn shell_fs_read_dispatch() {
 }
 
 #[test]
+fn shell_fs_read_base64_options() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh(
+        "fs read --path /workspace/blob.bin --mode base64 --offset 1 --count 2",
+    )
+    .unwrap()
+    .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "AQI=");
+
+    let short_luau =
+        sh_transpile::transpile_sh("fs read -c 2 -m base64 -p /workspace/blob.bin -o 1")
+            .unwrap()
+            .luau_source;
+    let short_result = s.exec(&short_luau).unwrap();
+
+    assert_eq!(short_result, "AQI=");
+}
+
+#[test]
+fn shell_fs_read_buffer_rejects_text_output_boundaries() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    for command in [
+        "fs read /workspace/blob.bin --mode buffer",
+        "fs read /workspace/blob.bin --mode buffer | wc -c",
+        "fs read /workspace/blob.bin --mode buffer > /workspace/copy.bin",
+    ] {
+        let mut mt = MountTable::new();
+        mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+            .unwrap();
+        let s = sb_with_shell_and_mounts(mt);
+        let luau = sh_transpile::transpile_sh(command).unwrap().luau_source;
+        let err = s.exec(&luau).unwrap_err();
+
+        assert!(
+            err.message
+                .contains("native buffer output cannot cross the shell boundary"),
+            "command {command:?}: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("use --mode base64"),
+            "command {command:?}: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn shell_fs_read_invalid_mode_uses_shell_native_usage() {
+    let s = sb_with_shell();
+    let luau = sh_transpile::transpile_sh("fs read /workspace/blob.bin --mode bogus")
+        .unwrap()
+        .luau_source;
+    let err = s.exec(&luau).unwrap_err();
+
+    assert!(
+        err.message
+            .contains("fs read: invalid mode 'bogus'; expected text, buffer, or base64"),
+        "{err}"
+    );
+    assert!(
+        err.message
+            .contains("Usage: fs read -p/--path <string> [-m/--mode <string>]"),
+        "{err}"
+    );
+    assert!(!err.message.contains("fs.read("), "{err}");
+    assert!(!err.message.contains("Example:"), "{err}");
+    assert!(!err.message.contains("string | buffer"), "{err}");
+}
+
+#[test]
+fn shell_buffer_errors_restore_output_after_pipe_capture_and_redirects() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+
+    for (label, command) in [
+        ("pipe", "fs read /workspace/blob.bin --mode buffer | wc -c"),
+        (
+            "capture",
+            "echo $(fs read /workspace/blob.bin --mode buffer)",
+        ),
+        (
+            "redirect-write",
+            "fs read /workspace/blob.bin --mode buffer > /workspace/copy.bin",
+        ),
+        (
+            "redirect-append",
+            "fs read /workspace/blob.bin --mode buffer >> /workspace/copy.bin",
+        ),
+    ] {
+        let failing = sh_transpile::transpile_sh(command).unwrap().luau_source;
+        let err = s.exec(&failing).unwrap_err();
+        assert!(
+            err.message
+                .contains("native buffer output cannot cross the shell boundary"),
+            "{label}: {}",
+            err.message
+        );
+
+        let marker = format!("recovered-{label}");
+        let follow_up = sh_transpile::transpile_sh(&format!("echo {marker}"))
+            .unwrap()
+            .luau_source;
+        assert_eq!(s.exec(&follow_up).unwrap(), marker, "{label}");
+    }
+}
+
+#[test]
+fn shell_fs_write_missing_content_uses_the_shell_string_type() {
+    let s = sb_with_shell();
+    let luau = sh_transpile::transpile_sh("fs write --path /workspace/out.bin")
+        .unwrap()
+        .luau_source;
+    let err = s.exec(&luau).unwrap_err();
+    assert!(err.message.contains("--content <string>"), "{err}");
+    assert!(
+        err.message
+            .contains("Usage: fs write -p/--path <string> -c/--content <string>"),
+        "{err}"
+    );
+    assert!(!err.message.contains("string | buffer"), "{err}");
+    assert!(!err.message.contains("fs.write("), "{err}");
+    assert!(!err.message.contains("Example:"), "{err}");
+}
+
+#[test]
+fn shell_fs_write_type_error_uses_shell_native_usage() {
+    let s = sb_with_shell();
+    let luau = sh_transpile::transpile_sh("fs write --path /workspace/out.bin --content")
+        .unwrap()
+        .luau_source;
+    let err = s.exec(&luau).unwrap_err();
+
+    assert!(
+        err.message.contains("expected string, got boolean"),
+        "{err}"
+    );
+    assert!(
+        err.message
+            .contains("Usage: fs write -p/--path <string> -c/--content <string>"),
+        "{err}"
+    );
+    assert!(!err.message.contains("string | buffer"), "{err}");
+    assert!(!err.message.contains("fs.write("), "{err}");
+}
+
+#[test]
+fn shell_fs_read_legacy_short_aliases_in_any_order() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("lines.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh("fs read -l 2 -p /workspace/lines.txt -o 2")
+        .unwrap()
+        .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "two\nthree");
+}
+
+#[test]
+fn shell_fs_read_mixes_positional_path_and_named_ranges() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("lines.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+    let mut mt = MountTable::new();
+    mt.parse_and_add(&format!("{}:/workspace", dir.path().display()))
+        .unwrap();
+    let s = sb_with_shell_and_mounts(mt);
+    let luau = sh_transpile::transpile_sh("fs read --limit 1 /workspace/lines.txt -o 3")
+        .unwrap()
+        .luau_source;
+
+    let result = s.exec(&luau).unwrap();
+
+    assert_eq!(result, "three");
+}
+
+#[test]
+fn shell_boolean_option_accepts_explicit_false_and_presence_true() {
+    let s = sb_with_shell();
+    let token = s
+        .exec(r#"return crypto.jwt_encode({sub="shell-user"}, "right-secret")"#)
+        .unwrap();
+
+    let false_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate false",
+        token
+    );
+    let false_luau = sh_transpile::transpile_sh(&false_command)
+        .unwrap()
+        .luau_source;
+    let decoded = s.exec(&false_luau).unwrap();
+    assert!(
+        decoded.contains("shell-user"),
+        "explicit false should disable JWT validation, got: {decoded}"
+    );
+
+    let explicit_true_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate true",
+        token
+    );
+    let explicit_true_luau = sh_transpile::transpile_sh(&explicit_true_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&explicit_true_luau).is_err(),
+        "explicit true should enable JWT validation"
+    );
+
+    let true_command = format!(
+        "crypto jwt_decode --token '{}' --secret wrong-secret --validate",
+        token
+    );
+    let true_luau = sh_transpile::transpile_sh(&true_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&true_luau).is_err(),
+        "a presence-only boolean flag must remain true"
+    );
+
+    let string_false_command = format!(
+        "crypto jwt_decode --token '{}' --secret right-secret --algorithm false",
+        token
+    );
+    let string_false_luau = sh_transpile::transpile_sh(&string_false_command)
+        .unwrap()
+        .luau_source;
+    assert!(
+        s.exec(&string_false_luau).is_err(),
+        "the literal 'false' must remain a string for string-typed options"
+    );
+}
+
+#[test]
+fn image_resize_shell_help_marks_required_options_group() {
+    let s = sb_with_shell();
+    let help = s.exec(r#"image.help("shell")"#).unwrap();
+    let resize_line = help
+        .lines()
+        .find(|line| line.contains("image resize"))
+        .expect("image resize help line");
+
+    assert!(
+        resize_line.contains(
+            "[--width <number>] [--height <number>] [--filter <string>] (at least one option required)"
+        ),
+        "required flattened opts should retain their parent requirement: {resize_line}"
+    );
+    assert!(
+        help.contains("At least one of width or height is required"),
+        "image.resize help should state its concrete size requirement: {help}"
+    );
+}
+
+#[test]
 fn shell_xml_parse_file_dispatch() {
     let dir = tempfile::TempDir::new().unwrap();
     std::fs::write(dir.path().join("data.xml"), "<item>test</item>").unwrap();

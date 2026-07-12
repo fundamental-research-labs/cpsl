@@ -776,6 +776,50 @@ fn test_module_fs_read() {
 }
 
 #[test]
+fn test_module_fs_read_legacy_short_flags_take_values() {
+    let result = transpile("fs read -l 1 -p /data/file.txt -o 2");
+    assert!(
+        result.contains("sh.run(\"fs\", \"read\", {l=\"1\", p=\"/data/file.txt\", o=\"2\"})"),
+        "short fs.read aliases must consume their values, got: {}",
+        result
+    );
+    assert!(
+        !result.contains("[1]="),
+        "short flag values must not leak into positional arguments: {}",
+        result
+    );
+}
+
+#[test]
+fn test_module_fs_read_mode_and_count_short_flags_take_values() {
+    let result = transpile("fs read -c 2 -m base64 -p /data/file.bin -o 1");
+    assert!(
+        result.contains(
+            "sh.run(\"fs\", \"read\", {c=\"2\", m=\"base64\", p=\"/data/file.bin\", o=\"1\"})"
+        ),
+        "all fs.read short flags must consume their values, got: {}",
+        result
+    );
+    assert!(
+        !result.contains("[1]="),
+        "short flag values must not leak into positional arguments: {}",
+        result
+    );
+}
+
+#[test]
+fn test_module_fs_read_mixes_short_and_long_flags() {
+    let result = transpile("fs read --limit 1 -p /data/file.txt --offset 2");
+    assert!(
+        result.contains(
+            "sh.run(\"fs\", \"read\", {limit=\"1\", p=\"/data/file.txt\", offset=\"2\"})"
+        ),
+        "mixed fs.read flags should preserve each named value, got: {}",
+        result
+    );
+}
+
+#[test]
 fn test_module_compress_zip() {
     let result = transpile("compress zip /src /dst.zip");
     assert!(

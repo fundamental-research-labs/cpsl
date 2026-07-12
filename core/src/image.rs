@@ -171,7 +171,7 @@ pub(crate) static IMAGE_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "resize",
-            description: "Resize an image.",
+            description: "Resize an image. At least one of width or height is required.",
             params: &[
                 Param {
                     name: "input",

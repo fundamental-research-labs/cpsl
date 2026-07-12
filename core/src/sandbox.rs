@@ -27,7 +27,14 @@ pub(crate) use doc::{
 
 mod errors;
 
+#[cfg(feature = "mod-fs")]
+mod fs_read;
+#[cfg(feature = "mod-fs")]
+use fs_read::ReadRequest;
+
 pub use errors::{clean_lua_error, humanize_error, ExecError, SandboxError};
+
+const BUFFER_TEXT_BOUNDARY_ERROR: &str = "native buffer output cannot cross the host text boundary; use mode=\"base64\" for fs.read or encode the buffer as base64/hex text inside Luau";
 
 pub struct Sandbox {
     lua: Lua,
@@ -89,6 +96,13 @@ impl Sandbox {
             .set_name("input")
             .eval()
             .map_err(|e| clean_lua_error(&e))?;
+        if result.iter().any(|value| matches!(value, Value::Buffer(_))) {
+            return Err(ExecError {
+                line: None,
+                column: None,
+                message: BUFFER_TEXT_BOUNDARY_ERROR.to_string(),
+            });
+        }
         let return_val = format_multi_value(&result);
 
         // Drain captured print output
@@ -1065,6 +1079,11 @@ fn register_print(
     let buf2 = buf.clone();
 
     let print_fn = lua.create_function(move |_, values: MultiValue| {
+        if values.iter().any(|value| matches!(value, Value::Buffer(_))) {
+            return Err(mlua::Error::external(format!(
+                "print: {BUFFER_TEXT_BOUNDARY_ERROR}"
+            )));
+        }
         let line: Vec<String> = values.iter().map(format_value).collect();
         let Ok(mut b) = buf.lock() else { return Ok(()) };
         let Ok(mut nl) = needs_nl_print.lock() else {
@@ -1141,6 +1160,7 @@ fn format_value(value: &Value) -> String {
             }
         }
         Value::String(s) => s.to_string_lossy().to_string(),
+        Value::Buffer(buffer) => format!("buffer({} bytes)", buffer.len()),
         Value::Table(_) => "table".to_string(),
         Value::Function(_) => "function".to_string(),
         _ => format!("{:?}", value),
@@ -1158,58 +1178,51 @@ fn register_fs_read_and_metadata(
     synthetic_files: Arc<std::collections::HashMap<String, String>>,
     file_activity_cb: Option<FileActivityCallback>,
 ) -> Result<(), mlua::Error> {
-    // fs.read(path [, offset, limit]) -> string
+    // fs.read(path [, opts]) -> string | buffer
     {
         let m = mounts.clone();
         let sf = synthetic_files.clone();
         let cb = file_activity_cb.clone();
         fs.set(
             "read",
-            lua.create_function(move |_, args: MultiValue| {
-                let validated = validate_args(&args, FS_DOC.params("read"), "fs.read")?;
-                let path = match &validated[0] {
-                    Value::String(s) => s.to_string_lossy().to_string(),
-                    _ => unreachable!("validate_args ensures string"),
-                };
-
-                // Extract optional offset/limit (1-based line numbers)
-                // Clamp negatives to 0 to avoid wrapping on the i64→usize cast.
-                let offset: Option<usize> = match &validated[1] {
-                    Value::Integer(n) => Some((*n).max(0) as usize),
-                    Value::Number(n) => Some((*n).max(0.0) as usize),
-                    _ => None,
-                };
-                let limit: Option<usize> = match &validated[2] {
-                    Value::Integer(n) => Some((*n).max(0) as usize),
-                    Value::Number(n) => Some((*n).max(0.0) as usize),
-                    _ => None,
-                };
+            lua.create_function(move |lua, args: MultiValue| {
+                let request = ReadRequest::parse(&args)?;
+                let path = request.path.as_str();
 
                 // Handle synthetic special files
-                if let Some(content) = synthetic_file_content(&path, &sf) {
-                    return Ok(slice_lines(&content, offset, limit));
+                if let Some(content) = synthetic_file_content(path, &sf) {
+                    return request.synthetic_value(lua, content.as_bytes());
                 }
                 if path.starts_with("/dev/") {
-                    return match path.as_str() {
+                    return match path {
                         "/dev/stdin" | "/dev/stdout" | "/dev/stderr" => Err(mlua::Error::external(
                             format!("{}: not a regular file in sandbox", path),
                         )),
-                        _ if m.is_synthetic_entry(&path) => Err(mlua::Error::external(format!(
+                        _ if m.is_synthetic_entry(path) => Err(mlua::Error::external(format!(
                             "{}: not readable in sandbox",
                             path
                         ))),
-                        _ => Err(mlua::Error::external(crate::MountError::NotFound(path))),
+                        _ => Err(mlua::Error::external(crate::MountError::NotFound(
+                            path.to_string(),
+                        ))),
                     };
                 }
-                if m.is_virtual_dir(&path) {
-                    return Err(mlua::Error::external(crate::MountError::IsDirectory(path)));
+                if m.is_virtual_dir(path) {
+                    return Err(mlua::Error::external(crate::MountError::IsDirectory(
+                        path.to_string(),
+                    )));
                 }
-                let host_path = m.resolve_read(&path).map_err(mlua::Error::external)?;
-                let result = std::fs::read_to_string(&host_path).map_err(mlua::Error::external)?;
+                let host_path = m.resolve_read(path).map_err(mlua::Error::external)?;
+                if host_path.is_dir() {
+                    return Err(mlua::Error::external(crate::MountError::IsDirectory(
+                        path.to_string(),
+                    )));
+                }
+                let value = request.read_host_value(lua, &host_path)?;
                 if let Some(ref cb) = cb {
-                    cb(&path, "read");
+                    cb(path, "read");
                 }
-                Ok(slice_lines(&result, offset, limit))
+                Ok(value)
             })?,
         )?;
     }
@@ -1252,12 +1265,20 @@ fn register_fs_mutations(
                 if m.synthetic_dir_for(&path).is_some() {
                     return Err(mlua::Error::external(crate::MountError::ReadOnly(path)));
                 }
-                let content = match &validated[1] {
-                    Value::String(s) => s.as_bytes().to_vec(),
-                    _ => unreachable!("validate_args ensures string"),
-                };
                 let host_path = m.resolve_write(&path).map_err(mlua::Error::external)?;
-                std::fs::write(&host_path, &content).map_err(mlua::Error::external)?;
+                match &validated[1] {
+                    Value::String(content) => {
+                        std::fs::write(&host_path, content.as_bytes())
+                            .map_err(mlua::Error::external)?;
+                    }
+                    Value::Buffer(content) => {
+                        let mut file =
+                            std::fs::File::create(&host_path).map_err(mlua::Error::external)?;
+                        let mut content = content.clone().cursor();
+                        std::io::copy(&mut content, &mut file).map_err(mlua::Error::external)?;
+                    }
+                    _ => unreachable!("validate_args ensures string or buffer"),
+                }
                 if let Some(ref cb) = cb {
                     cb(&path, "write");
                 }

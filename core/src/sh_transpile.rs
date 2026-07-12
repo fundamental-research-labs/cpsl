@@ -747,8 +747,10 @@ impl ShTranspiler {
         let method = &args[0];
         let remaining = &args[1..];
         let remaining_exprs = &arg_exprs[1..];
+        let value_flags = Self::module_value_flags(cmd, method);
 
-        let table = self.build_flag_table_inner(remaining, remaining_exprs, &[], None, false, true);
+        let table =
+            self.build_flag_table_inner(remaining, remaining_exprs, value_flags, None, false, true);
         if table.is_empty() {
             format!("sh.run(\"{}\", \"{}\", nil)", cmd, method)
         } else {
@@ -769,10 +771,27 @@ impl ShTranspiler {
         let method = &args[0];
         let remaining = &args[1..];
         let remaining_exprs = &arg_exprs[1..];
+        let value_flags = Self::module_value_flags(cmd, method);
 
-        let table =
-            self.build_flag_table_inner(remaining, remaining_exprs, &[], Some("_in"), false, true);
+        let table = self.build_flag_table_inner(
+            remaining,
+            remaining_exprs,
+            value_flags,
+            Some("_in"),
+            false,
+            true,
+        );
         format!("sh.run(\"{}\", \"{}\", {})", cmd, method, table)
+    }
+
+    /// Short flags whose following word is a value for a particular module
+    /// method. Module dispatch is otherwise runtime-driven, so this lists the
+    /// method-specific aliases that cannot be derived by the generic parser.
+    fn module_value_flags(cmd: &str, method: &str) -> &'static [&'static str] {
+        match (cmd, method) {
+            ("fs", "read") => &["p", "m", "o", "l", "c"],
+            _ => &[],
+        }
     }
 
     /// Generic flag parser that returns a Lua table expression.

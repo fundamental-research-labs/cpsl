@@ -382,6 +382,504 @@ fn test_fs_read_positional_with_offset_limit() {
     assert_eq!(result, "line 2\nline 3\nline 4");
 }
 
+#[test]
+fn test_fs_read_invalid_utf8_suggests_buffer_modes() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0xff, 0xfe, 0xfd]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let err = sandbox
+        .exec(r#"return fs.read("/data/blob.bin")"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("not valid UTF-8"),
+        "got: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains(r#"mode="buffer""#) && err.message.contains(r#"mode="base64""#),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_help_documents_buffer_options() {
+    let help = Sandbox::new().unwrap().exec("fs.help()").unwrap();
+
+    assert!(
+        help.contains("fs.read(path: string, opts?: table)"),
+        "{help}"
+    );
+    assert!(help.contains("0-based byte offset"), "{help}");
+    assert!(help.contains(r#"mode="buffer""#), "{help}");
+    assert!(!help.contains("buffer.fromstring("), "{help}");
+
+    let shell_help = Sandbox::new().unwrap().exec(r#"fs.help("shell")"#).unwrap();
+    assert!(shell_help.contains("fs read -p/--path"), "{shell_help}");
+    assert!(shell_help.contains("-o/--offset"), "{shell_help}");
+    assert!(shell_help.contains("-l/--limit"), "{shell_help}");
+    assert!(
+        !shell_help.contains("fs read -p/--path <string> [--opts"),
+        "{shell_help}"
+    );
+    for flag in ["--offset", "--limit", "--count", "--mode"] {
+        assert!(shell_help.contains(flag), "missing {flag}: {shell_help}");
+    }
+    assert!(!shell_help.contains("--byte-offset"), "{shell_help}");
+    assert!(!shell_help.contains("--byte-limit"), "{shell_help}");
+}
+
+#[test]
+fn test_fs_read_base64_mode_handles_binary_bytes() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64"})"#)
+        .unwrap();
+    assert_eq!(result, "AAEC/w==");
+}
+
+#[test]
+fn test_fs_read_supports_nested_dual_signature_options() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    for code in [
+        r#"return fs.read({path="/data/blob.bin", mode="base64", count=2})"#,
+        r#"return fs.read({[1]="/data/blob.bin", mode="base64", count=2})"#,
+        r#"return fs.read({path="/data/blob.bin", opts={mode="base64", count=2}})"#,
+        r#"return fs.read({[1]="/data/blob.bin", [2]={mode="base64", count=2}})"#,
+    ] {
+        assert_eq!(sandbox.exec(code).unwrap(), "AAE=");
+    }
+}
+
+#[test]
+fn test_fs_read_buffer_mode_returns_mutable_luau_buffer_and_writes_it() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let result = sandbox
+        .exec(
+            r#"
+            local bytes = fs.read("/data/blob.bin", {mode="buffer"})
+            local first = buffer.readu8(bytes, 0)
+            buffer.writeu8(bytes, 1, 42)
+            fs.write("/data/copy.bin", bytes)
+            fs.write({path="/data/table-copy.bin", content=bytes})
+            return type(bytes), buffer.len(bytes), first, buffer.readu8(bytes, 3)
+            "#,
+        )
+        .unwrap();
+    assert_eq!(result, "buffer\t4\t0\t255");
+    assert_eq!(
+        fs::read(dir.path().join("copy.bin")).unwrap(),
+        [0, 42, 2, 255]
+    );
+    assert_eq!(
+        fs::read(dir.path().join("table-copy.bin")).unwrap(),
+        [0, 42, 2, 255]
+    );
+}
+
+#[test]
+fn test_fs_read_buffer_and_base64_modes_support_byte_ranges() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let buffer_result = sandbox
+        .exec(
+            r#"
+            local bytes = fs.read("/data/blob.bin", {mode="buffer", offset=1, count=2})
+            return type(bytes), buffer.len(bytes), buffer.readu8(bytes, 0), buffer.readu8(bytes, 1)
+            "#,
+        )
+        .unwrap();
+    assert_eq!(buffer_result, "buffer\t2\t1\t2");
+
+    let base64_result = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=1, count=2})"#)
+        .unwrap();
+    assert_eq!(base64_result, "AQI=");
+}
+
+#[test]
+fn test_fs_read_buffer_mode_supports_synthetic_files() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local bytes = fs.read("/etc/hostname", {mode="buffer", offset=1, count=2})
+            return type(bytes), buffer.len(bytes)
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(result, "buffer\t2");
+}
+
+#[test]
+fn test_fs_read_modes_reject_the_other_modes_range_option() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    let err = sandbox
+        .exec(r#"fs.read("/data/blob.bin", {mode="buffer", limit=1})"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("limit is line-based") && err.message.contains("use count"),
+        "got: {}",
+        err.message
+    );
+
+    let err = sandbox
+        .exec(r#"fs.read("/data/blob.bin", {count=1})"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("count is byte-based") && err.message.contains("use limit"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_rejects_invalid_mode() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    for mode in ["binary", "bytes"] {
+        let code = format!(r#"fs.read("/data/blob.bin", {{mode="{mode}"}})"#);
+        let err = sandbox.exec(&code).unwrap_err();
+        assert!(
+            err.message.contains("expected text, buffer, or base64"),
+            "mode {mode}, got: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn test_fs_read_validates_range_options_before_file_access() {
+    let sandbox = Sandbox::new().unwrap();
+    let err = sandbox
+        .exec(r#"fs.read("/not-mounted", {count=1})"#)
+        .unwrap_err();
+
+    assert!(
+        err.message.contains("count is byte-based"),
+        "got: {}",
+        err.message
+    );
+    assert!(
+        !err.message.contains("No such file"),
+        "options should be validated before resolving the path: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_rejects_invalid_byte_ranges() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    for option in ["offset", "count"] {
+        for value in ["-1", "1.5", "math.huge", "0/0"] {
+            let code = format!(r#"fs.read("/data/blob.bin", {{mode="buffer", {option}={value}}})"#);
+            let err = sandbox.exec(&code).unwrap_err();
+            assert!(
+                err.message.contains("must be a non-negative integer"),
+                "option {option}, value {value}, got: {}",
+                err.message
+            );
+        }
+    }
+}
+
+#[test]
+fn test_fs_read_rejects_unknown_and_old_range_options() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    for option in ["byte_offset", "byte_limit", "byte_limti"] {
+        let code = format!(r#"fs.read("/data/blob.bin", {{mode="buffer", {option}=1}})"#);
+        let err = sandbox.exec(&code).unwrap_err();
+        assert!(
+            err.message.contains(&format!("unknown option '{option}'")),
+            "option {option}, got: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn test_fs_read_rejects_path_keys_inside_options_tables() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    for (code, key) in [
+        (
+            r#"fs.read("/data/blob.bin", {path="/data/missing", mode="buffer"})"#,
+            "'path'",
+        ),
+        (
+            r#"fs.read("/data/blob.bin", {[1]="/data/missing", mode="buffer"})"#,
+            "1",
+        ),
+        (
+            r#"fs.read({path="/data/blob.bin", opts={path="/data/missing", mode="buffer"}})"#,
+            "'path'",
+        ),
+        (
+            r#"fs.read({path="/data/blob.bin", opts={[1]="/data/missing", mode="buffer"}})"#,
+            "1",
+        ),
+    ] {
+        let err = sandbox.exec(code).unwrap_err();
+        assert!(
+            err.message.contains(&format!("unknown option {key}")),
+            "code {code}, got: {}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn test_fs_read_byte_ranges_handle_empty_and_past_eof() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    let empty = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", count=0})"#)
+        .unwrap();
+    let past_eof = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=99})"#)
+        .unwrap();
+    let buffers = sandbox
+        .exec(
+            r#"
+            local empty = fs.read("/data/blob.bin", {mode="buffer", count=0})
+            local past = fs.read("/data/blob.bin", {mode="buffer", offset=99})
+            return type(empty), buffer.len(empty), type(past), buffer.len(past)
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(empty, "");
+    assert_eq!(past_eof, "");
+    assert_eq!(buffers, "buffer\t0\tbuffer\t0");
+}
+
+#[test]
+fn test_fs_read_huge_byte_offset_past_eof_is_empty() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+
+    let host = sandbox
+        .exec(r#"return fs.read("/data/blob.bin", {mode="base64", offset=1e19})"#)
+        .unwrap();
+    let synthetic = sandbox
+        .exec(r#"return fs.read("/etc/hostname", {mode="base64", offset=1e19})"#)
+        .unwrap();
+
+    assert_eq!(host, "");
+    assert_eq!(synthetic, "");
+}
+
+#[test]
+fn test_fs_read_buffer_rejects_ranges_above_luau_limit_before_reading() {
+    let dir = TempDir::new().unwrap();
+    let file = fs::File::create(dir.path().join("huge.bin")).unwrap();
+    file.set_len((1_u64 << 30) + 1).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "ro");
+    let err = sandbox
+        .exec(r#"fs.read("/data/huge.bin", {mode="buffer"})"#)
+        .unwrap_err();
+
+    assert!(
+        err.message.contains("Luau's 1 GiB buffer limit") && err.message.contains("use count"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_fs_read_base64_rejects_ranges_that_cannot_fit_a_luau_string() {
+    let dir = TempDir::new().unwrap();
+    let file = fs::File::create(dir.path().join("huge.bin")).unwrap();
+    file.set_len(805_306_369).unwrap();
+
+    let sandbox = sandbox_with_dir(&dir, "/data", "ro");
+    let err = sandbox
+        .exec(r#"fs.read("/data/huge.bin", {mode="base64"})"#)
+        .unwrap_err();
+
+    assert!(
+        err.message.contains("too large for base64 output") && err.message.contains("805306368"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_python_fs_read_kwargs_use_options_table() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    sandbox
+        .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
+        .unwrap();
+    let transpiled = cpsl_core::transpile::transpile(
+        r#"print(fs.read("/data/blob.bin", mode="base64", offset=1, count=2))"#,
+    )
+    .unwrap();
+
+    let result = sandbox.exec(&transpiled.luau_source).unwrap();
+
+    assert_eq!(result, "AQI=");
+
+    let transpiled = cpsl_core::transpile::transpile(
+        r#"print(fs.read("/data/blob.bin", {"mode": "base64", "offset": 1, "count": 2}))"#,
+    )
+    .unwrap();
+    let result = sandbox.exec(&transpiled.luau_source).unwrap();
+
+    assert_eq!(result, "AQI=");
+}
+
+#[test]
+fn test_python_fs_buffer_reads_map_to_bytearray_semantics() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2, 255]).unwrap();
+    fs::write(dir.path().join("empty.bin"), []).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    sandbox
+        .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
+        .unwrap();
+
+    let transpiled = cpsl_core::transpile::transpile(
+        r#"
+data = fs.read("/data/blob.bin", mode="buffer")
+empty = fs.read("/data/empty.bin", mode="buffer")
+print(type(data), isinstance(data, bytearray))
+print(bool(data), bool(empty), len(data), len(empty), data[0], data[-1])
+data[1] = 42
+values = []
+for value in data:
+    values.append(value)
+print(values)
+piece = data[1:4:2]
+reverse = data[::-1]
+oversized_reverse = data[999999::-1]
+empty_reverse = empty[::-1]
+explicit_none = data[None:None:None]
+print(type(piece), len(piece), piece[0], piece[-1])
+print(reverse)
+print(oversized_reverse)
+print(type(empty_reverse), len(empty_reverse), empty_reverse)
+print(explicit_none)
+print([1, 2, 3][999999::-1], "abc"[999999::-1])
+print(list(data))
+print(data)
+fs.write("/data/copy.bin", data)
+fs.write("/data/piece.bin", piece)
+"#,
+    )
+    .unwrap();
+
+    let result = sandbox.exec(&transpiled.luau_source).unwrap();
+
+    assert_eq!(
+        result,
+        "<class 'bytearray'> True\n\
+True False 4 0 0 255\n\
+[0, 42, 2, 255]\n\
+<class 'bytearray'> 2 42 255\n\
+bytearray([255, 2, 42, 0])\n\
+bytearray([255, 2, 42, 0])\n\
+<class 'bytearray'> 0 bytearray([])\n\
+bytearray([0, 42, 2, 255])\n\
+[3, 2, 1] cba\n\
+[0, 42, 2, 255]\n\
+bytearray([0, 42, 2, 255])"
+    );
+    assert_eq!(
+        fs::read(dir.path().join("copy.bin")).unwrap(),
+        [0, 42, 2, 255]
+    );
+    assert_eq!(fs::read(dir.path().join("piece.bin")).unwrap(), [42, 255]);
+}
+
+#[test]
+fn test_python_fs_buffer_bytearray_validates_indices_and_assignments() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("blob.bin"), [0, 1, 2]).unwrap();
+    let sandbox = sandbox_with_dir(&dir, "/data", "rw");
+    sandbox
+        .setup_python_runtime(include_str!("../../runtime/pyrt.luau"))
+        .unwrap();
+
+    for (statement, expected) in [
+        ("data[0] = -1", "ValueError: byte must be in range(0, 256)"),
+        ("data[0] = 256", "ValueError: byte must be in range(0, 256)"),
+        (
+            "data[0] = 1.5",
+            "TypeError: 'float' object cannot be interpreted as an integer",
+        ),
+        ("print(data[3])", "IndexError: bytearray index out of range"),
+        (
+            "print(data[-4])",
+            "IndexError: bytearray index out of range",
+        ),
+        (
+            "print(data[1.5])",
+            "TypeError: bytearray indices must be integers or slices, not float",
+        ),
+        (
+            "print(data[float(\"1e309\")])",
+            "TypeError: bytearray indices must be integers or slices, not float",
+        ),
+        (
+            "data[0] = float(\"1e309\")",
+            "TypeError: 'float' object cannot be interpreted as an integer",
+        ),
+        (
+            "print(data[::1.5])",
+            "TypeError: slice indices must be integers or None or have an __index__ method",
+        ),
+        (
+            "print(data[1.5:])",
+            "TypeError: slice indices must be integers or None or have an __index__ method",
+        ),
+        (
+            "print(data[::False])",
+            "ValueError: slice step cannot be zero",
+        ),
+    ] {
+        let source = format!("data = fs.read(\"/data/blob.bin\", mode=\"buffer\")\n{statement}");
+        let transpiled = cpsl_core::transpile::transpile(&source).unwrap();
+        let err = sandbox.exec(&transpiled.luau_source).unwrap_err();
+        assert!(
+            err.message.contains(expected),
+            "statement {statement:?}: expected {expected:?}, got {:?}",
+            err.message
+        );
+    }
+}
+
 // --- fs.grep tests ---
 
 #[cfg(feature = "mod-ripgrep")]

@@ -95,6 +95,29 @@ end"#
     }
     table.set("__params", params_table)?;
 
+    // __field_types — maps function names to the declared types of flattened
+    // option fields. The shell runtime uses this to coerce option values without
+    // guessing from their spelling (for example, `--validate false` must become
+    // a boolean while a string option whose value is "false" must stay a string).
+    let field_types_table = lua.create_table()?;
+    for f in doc.functions {
+        let method_field_types = lua.create_table()?;
+        let mut has_fields = false;
+        for p in f.params {
+            if p.name == "opts" {
+                let Some(fields) = p.fields else { continue };
+                for field in fields {
+                    method_field_types.set(field.name, field.typ)?;
+                    has_fields = true;
+                }
+            }
+        }
+        if has_fields {
+            field_types_table.set(f.name, method_field_types)?;
+        }
+    }
+    table.set("__field_types", field_types_table)?;
+
     // __fn_help — maps function names to compact help strings (signature + example).
     // Used by wrap_module_with_help_hints to inline help into usage error messages,
     // eliminating the round-trip of "call module.help()".
@@ -104,12 +127,22 @@ end"#
     }
     table.set("__fn_help", fn_help_table)?;
 
+    // __fn_help_shell — maps function names to compact shell-native usage.
+    // sh.run() uses this after removing the Luau-oriented inline help that the
+    // module wrapper adds for direct Luau callers.
+    let shell_fn_help_table = lua.create_table()?;
+    for f in doc.functions {
+        shell_fn_help_table.set(f.name, f.format_shell_error_help(doc.name))?;
+    }
+    table.set("__fn_help_shell", shell_fn_help_table)?;
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sandbox::{FieldDoc, FnDoc, Param, ParamType, ReturnType};
 
     #[test]
     fn test_value_type_name() {
@@ -138,5 +171,67 @@ mod tests {
         // Empty table
         let empty = lua.create_table().unwrap();
         assert!(is_lua_array(&empty, 0));
+    }
+
+    #[test]
+    fn test_register_help_exposes_only_opts_field_types() {
+        static DIRECT_FIELDS: &[FieldDoc] = &[FieldDoc {
+            name: "direct_flag",
+            typ: "boolean",
+            required: false,
+            description: "Not an opts field",
+        }];
+        static OPTS_FIELDS: &[FieldDoc] = &[FieldDoc {
+            name: "validate",
+            typ: "boolean",
+            required: false,
+            description: "Validate input",
+        }];
+        static PARAMS: &[Param] = &[
+            Param {
+                name: "payload",
+                short: None,
+                typ: ParamType::Table,
+                required: true,
+                fields: Some(DIRECT_FIELDS),
+            },
+            Param {
+                name: "opts",
+                short: None,
+                typ: ParamType::Table,
+                required: false,
+                fields: Some(OPTS_FIELDS),
+            },
+        ];
+        static FUNCTIONS: &[FnDoc] = &[FnDoc {
+            name: "decode",
+            description: "Decode input.",
+            params: PARAMS,
+            returns: ReturnType::Table,
+            example: None,
+        }];
+        let doc = ModuleDoc {
+            name: "test",
+            summary: "test module",
+            functions: FUNCTIONS,
+        };
+        let lua = Lua::new();
+        let module = lua.create_table().unwrap();
+
+        register_help_functions(&lua, &module, &doc).unwrap();
+
+        let all_types: mlua::Table = module.get("__field_types").unwrap();
+        let decode_types: mlua::Table = all_types.get("decode").unwrap();
+        assert_eq!(decode_types.get::<String>("validate").unwrap(), "boolean");
+        assert!(matches!(
+            decode_types.get::<Value>("direct_flag").unwrap(),
+            Value::Nil
+        ));
+
+        let shell_help: mlua::Table = module.get("__fn_help_shell").unwrap();
+        assert_eq!(
+            shell_help.get::<String>("decode").unwrap(),
+            "  Usage: test decode --payload <JSON> [--validate] -> JSON"
+        );
     }
 }

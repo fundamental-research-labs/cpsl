@@ -83,17 +83,44 @@ No validation at transpile time. Runtime `__index` metatable catches unknown met
 
 ### fs
 
-All positional-only. Maps cleanly:
+Required paths and content are positional. `fs.read` uses an options table for
+text or byte ranges and binary-safe output modes:
 
 | Shell | Module |
 |---|---|
 | `fs read /path` | `fs.read("/path")` |
+| `fs read /path --mode base64 --offset 0 --count 4096` | `fs.read("/path", {mode="base64", offset=0, count=4096})` |
+| `fs read -p /path -m base64 -o 0 -c 4096` | `fs.read("/path", {mode="base64", offset=0, count=4096})` |
 | `fs write /path "content"` | `fs.write("/path", "content")` |
 | `fs list /path` | `fs.list("/path")` |
 | `fs exists /path` | `fs.exists("/path")` |
 | `fs mkdir /path` | `fs.mkdir("/path")` |
 | `fs rename /a /b` | `fs.rename("/a", "/b")` |
 | `fs remove /path` | `fs.remove("/path")` |
+
+The modes are `text` (default), `buffer`, and `base64`. Text mode returns a
+UTF-8 string; `offset` and `limit` select lines. Buffer mode returns a native
+Luau buffer; buffer and base64 modes use a 0-based byte `offset` and byte
+`count`. `fs.write()` accepts either a string or native buffer, so binary data
+can round-trip without conversion. Native reads honor Luau's 1 GiB buffer
+ceiling:
+
+```lua
+local bytes = fs.read("/workspace/audio.wav", {mode="buffer", offset=0, count=4096})
+print(buffer.readu8(bytes, 0))
+fs.write("/artifacts/chunk.bin", bytes)
+```
+
+In Python mode, native buffers are presented as mutable, fixed-size
+`bytearray` values. They support truthiness, `len()`, integer indexing and
+assignment, iteration, slicing, `list()`, and direct `fs.write()` round trips;
+the Luau `buffer.*` functions remain an implementation detail.
+
+Shell, CLI, and FFI output channels are text-only. Use `mode="base64"` when
+bytes must cross those boundaries; shell dispatch rejects `mode="buffer"`
+with a corrective error. Shell callers may use `-p`, `-m`, `-o`, `-l`, and
+`-c` for `path`, `mode`, `offset`, `limit`, and `count`, respectively; the
+legacy `-p`, `-o`, and `-l` forms remain compatible.
 
 ### http
 
@@ -251,6 +278,8 @@ let header = t.get::<bool>("header")
 | `height` | `h` | plot |
 | `legend` | `l` | plot |
 | `grid` | `g` | plot |
+| `mode` | `m` | fs.read |
+| `count` | `c` | fs.read |
 
 ## Description Writing Guidelines
 

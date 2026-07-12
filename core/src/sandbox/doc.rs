@@ -10,6 +10,8 @@ use mlua::{MultiValue, Value};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParamType {
     String,
+    /// A byte sequence accepted as either an immutable Luau string or a native buffer.
+    StringOrBuffer,
     Number,
     Table,
     #[allow(dead_code)]
@@ -22,6 +24,7 @@ impl ParamType {
     pub fn label(self) -> &'static str {
         match self {
             ParamType::String => "string",
+            ParamType::StringOrBuffer => "string | buffer",
             ParamType::Number => "number",
             ParamType::Table => "table",
             ParamType::Boolean => "boolean",
@@ -33,6 +36,9 @@ impl ParamType {
     pub fn shell_label(self) -> &'static str {
         match self {
             ParamType::Table => "JSON",
+            // Shell arguments and output are text-only. Native buffers are an
+            // in-sandbox Luau representation, not a shell transport format.
+            ParamType::StringOrBuffer => "string",
             _ => self.label(),
         }
     }
@@ -41,6 +47,9 @@ impl ParamType {
     pub fn matches(self, val: &mlua::Value) -> bool {
         match self {
             ParamType::String => matches!(val, mlua::Value::String(_)),
+            ParamType::StringOrBuffer => {
+                matches!(val, mlua::Value::String(_) | mlua::Value::Buffer(_))
+            }
             ParamType::Number => matches!(val, mlua::Value::Number(_) | mlua::Value::Integer(_)),
             ParamType::Table => matches!(val, mlua::Value::Table(_)),
             ParamType::Boolean => matches!(val, mlua::Value::Boolean(_)),
@@ -73,6 +82,8 @@ pub(crate) struct Param {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReturnType {
     String,
+    /// Mode-dependent bytes returned as either a Luau string or native buffer.
+    StringOrBuffer,
     Number,
     Table,
     Boolean,
@@ -88,6 +99,7 @@ impl ReturnType {
     pub fn label(self) -> &'static str {
         match self {
             ReturnType::String => "string",
+            ReturnType::StringOrBuffer => "string | buffer",
             ReturnType::Number => "number",
             ReturnType::Table => "table",
             ReturnType::Boolean => "boolean",
@@ -101,6 +113,9 @@ impl ReturnType {
     pub fn shell_label(self) -> &'static str {
         match self {
             ReturnType::Table => "JSON",
+            // Shell output is always textual; native buffers must be converted
+            // by selecting a transport-safe mode such as base64.
+            ReturnType::StringOrBuffer => "string",
             _ => self.label(),
         }
     }
@@ -157,8 +172,32 @@ impl FnDoc {
         out
     }
 
+    /// Compact shell-native usage for argument errors raised through `sh.run()`.
+    ///
+    /// Lua examples are intentionally omitted: shell callers need the flattened
+    /// flag signature, and embedding a Luau call in a shell error is misleading.
+    pub fn format_shell_error_help(&self, module_name: &str) -> String {
+        let sig = self.generated_signature_for_module(HelpMode::Shell, Some(module_name));
+        if sig.is_empty() {
+            format!("  Usage: {} {}", module_name, self.name)
+        } else {
+            format!("  Usage: {} {} {}", module_name, self.name, sig)
+        }
+    }
+
     /// Generate signature from structured params + returns.
     pub fn generated_signature(&self, mode: HelpMode) -> String {
+        self.generated_signature_for_module(mode, None)
+    }
+
+    /// Generate a signature with module context for module-specific shell
+    /// compatibility aliases. Keeping the context here prevents aliases for
+    /// `fs.read` from leaking into unrelated functions such as `doc.read`.
+    pub(crate) fn generated_signature_for_module(
+        &self,
+        mode: HelpMode,
+        module_name: Option<&str>,
+    ) -> String {
         match mode {
             HelpMode::Lua => {
                 let ret = if self.returns == ReturnType::Void {
@@ -188,16 +227,58 @@ impl FnDoc {
                 let flags: Vec<String> = self
                     .params
                     .iter()
-                    .map(|p| {
+                    .flat_map(|p| {
+                        if p.name == "opts" {
+                            if let Some(fields) = p.fields.filter(|fields| {
+                                fields.iter().all(|field| {
+                                    matches!(field.typ, "string" | "number" | "boolean")
+                                })
+                            }) {
+                                let mut flattened = fields
+                                    .iter()
+                                    .map(|field| {
+                                        let long = format!("--{}", field.name.replace('_', "-"));
+                                        let flag = match (module_name, self.name, field.name) {
+                                            // Compatibility aliases from fs.read's historical
+                                            // positional range parameters plus the canonical
+                                            // short forms for its new mode/count options.
+                                            // FieldDoc does not otherwise declare short aliases.
+                                            (Some("fs"), "read", "mode") => format!("-m/{long}"),
+                                            (Some("fs"), "read", "offset") => format!("-o/{long}"),
+                                            (Some("fs"), "read", "limit") => format!("-l/{long}"),
+                                            (Some("fs"), "read", "count") => format!("-c/{long}"),
+                                            _ => long,
+                                        };
+                                        if field.typ == "boolean" && field.required {
+                                            flag
+                                        } else if field.typ == "boolean" {
+                                            format!("[{}]", flag)
+                                        } else if field.required {
+                                            format!("{} <{}>", flag, field.typ)
+                                        } else {
+                                            format!("[{} <{}>]", flag, field.typ)
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                // A required opts table cannot be omitted in shell mode. When
+                                // none of its fields is individually required, keep each field
+                                // optional (and composable) while making the parent requirement
+                                // explicit.
+                                if p.required && fields.iter().all(|field| !field.required) {
+                                    flattened.push("(at least one option required)".to_string());
+                                }
+                                return flattened;
+                            }
+                        }
                         let flag = match p.short {
                             Some(c) => format!("-{}/--{}", c, p.name),
                             None => format!("--{}", p.name),
                         };
-                        if p.required {
+                        vec![if p.required {
                             format!("{} <{}>", flag, p.typ.shell_label())
                         } else {
                             format!("[{} <{}>]", flag, p.typ.shell_label())
-                        }
+                        }]
                     })
                     .collect();
                 format!("{}{}", flags.join(" "), ret)
@@ -213,7 +294,7 @@ impl ModuleDoc {
         let mut sorted_fns: Vec<&FnDoc> = self.functions.iter().collect();
         sorted_fns.sort_by_key(|f| f.name);
         for f in sorted_fns {
-            let sig = f.generated_signature(mode);
+            let sig = f.generated_signature_for_module(mode, Some(self.name));
             match mode {
                 HelpMode::Lua => {
                     out.push_str(&format!(
@@ -435,27 +516,55 @@ const FS_GREP_OPTS_FIELDS: &[FieldDoc] = &[
 ];
 
 #[cfg(feature = "mod-fs")]
+const FS_READ_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "mode",
+        typ: "string",
+        required: false,
+        description: "Output mode: \"text\" (default), \"buffer\", or \"base64\"",
+    },
+    FieldDoc {
+        name: "offset",
+        typ: "number",
+        required: false,
+        description:
+            "Text: 1-based first line (0 also means first); buffer/base64: 0-based byte offset",
+    },
+    FieldDoc {
+        name: "limit",
+        typ: "number",
+        required: false,
+        description: "Maximum number of lines in text mode",
+    },
+    FieldDoc {
+        name: "count",
+        typ: "number",
+        required: false,
+        description: "Maximum bytes to read in buffer or base64 mode",
+    },
+];
+
+#[cfg(feature = "mod-fs")]
 pub(crate) static FS_DOC: ModuleDoc = ModuleDoc {
     name: "fs",
     summary: "sandboxed filesystem (read, write, list, mkdir, copy, grep, tree, ...)",
     functions: &[
         FnDoc {
             name: "read",
-            description: "Read the contents of a file. Supports partial reads with offset/limit (1-based line numbers).",
+            description: "Read file contents. Text mode returns a UTF-8 string and uses line offset/limit. Buffer mode returns a native Luau buffer; buffer and base64 modes use byte offset/count. Shell callers must use base64 for byte output. Shell aliases: -p/--path, -m/--mode, -o/--offset, -l/--limit, and -c/--count.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "offset", short: Some('o'), typ: ParamType::Number, required: false, fields: None },
-                Param { name: "limit", short: Some('l'), typ: ParamType::Number, required: false, fields: None },
+                Param { name: "opts", short: None, typ: ParamType::Table, required: false, fields: Some(FS_READ_OPTS_FIELDS) },
             ],
-            returns: ReturnType::String,
-            example: Some(r#"local text = fs.read("/workspace/data.txt", 10, 50)"#),
+            returns: ReturnType::StringOrBuffer,
+            example: Some(r#"local bytes = fs.read("/workspace/audio.wav", {mode="buffer", count=4096}); print(buffer.readu8(bytes, 0))"#),
         },
         FnDoc {
             name: "write",
-            description: "Write content to a file.",
+            description: "Replace a file with bytes supplied as a string or native Luau buffer.",
             params: &[
                 Param { name: "path", short: Some('p'), typ: ParamType::String, required: true, fields: None },
-                Param { name: "content", short: Some('c'), typ: ParamType::String, required: true, fields: None },
+                Param { name: "content", short: Some('c'), typ: ParamType::StringOrBuffer, required: true, fields: None },
             ],
             returns: ReturnType::Void,
             example: Some(r#"fs.write("/artifacts/out.txt", "hello")"#),
