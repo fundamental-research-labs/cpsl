@@ -1154,6 +1154,7 @@ fn test_all_modules_have_nonempty_params() {
         ("random", "random"),
         ("crypto", "uuid"),
         ("crypto", "uuid_v7"),
+        ("http", "policy"),
     ];
     for (mod_name, doc) in all_module_docs() {
         for f in doc.functions {
