@@ -1,3 +1,5 @@
+//! Vision input preparation, caching, and concurrency helpers for document reads.
+
 use crate::doc_reader::DocFormat;
 #[cfg(feature = "pdfium-render")]
 use crate::pdfium_engine::PdfiumEngine;
