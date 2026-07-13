@@ -1654,6 +1654,72 @@ mod tests {
         cpsl_session_free(session);
     }
 
+    #[test]
+    fn readonly_icloud_parent_reserves_the_namespace() {
+        let root = TempDir::new().unwrap();
+        let icloud = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("workdir")).unwrap();
+        let config = json!({
+            "mounts": [
+                {
+                    "host": root.path().canonicalize().unwrap(),
+                    "virtual": "/",
+                    "mode": "rw"
+                },
+                {
+                    "host": icloud.path().canonicalize().unwrap(),
+                    "virtual": "/icloud",
+                    "mode": "ro"
+                },
+                {
+                    "host": project.path().canonicalize().unwrap(),
+                    "virtual": "/icloud/project",
+                    "mode": "ro"
+                }
+            ],
+            "initial_cwd": WORKDIR,
+            "language": LANGUAGE_LUAU,
+            "http": {
+                "mode": "policy",
+                "allow_domains": [],
+                "deny_domains": []
+            }
+        });
+        let config = CString::new(config.to_string()).unwrap();
+        let session = cpsl_session_new(config.as_ptr());
+        assert!(!session.is_null(), "session_new failed: {}", unsafe {
+            borrowed_ffi_string(cpsl_last_error())
+        });
+
+        let response = eval_luau(
+            session,
+            r#"
+                local root_write = pcall(function()
+                    fs.write("/workdir/out.txt", "ok")
+                end)
+                local sibling_write = pcall(function()
+                    fs.write("/icloud/other.txt", "blocked")
+                end)
+                local sibling_mkdir = pcall(function()
+                    fs.mkdir("/icloud/other")
+                end)
+                print("root:" .. tostring(root_write))
+                print("sibling-write:" .. tostring(sibling_write))
+                print("sibling-mkdir:" .. tostring(sibling_mkdir))
+            "#,
+        );
+
+        assert_success(&response, 0);
+        let stdout = response["stdout"].as_str().unwrap();
+        assert!(stdout.contains("root:true"), "{response}");
+        assert!(stdout.contains("sibling-write:false"), "{response}");
+        assert!(stdout.contains("sibling-mkdir:false"), "{response}");
+        assert!(!root.path().join("icloud").exists());
+
+        cpsl_session_free(session);
+    }
+
     #[cfg(unix)]
     #[test]
     fn icloud_mount_symlinks_cannot_escape() {
