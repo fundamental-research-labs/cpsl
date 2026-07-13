@@ -156,7 +156,7 @@ fn required_table_string(
     fn_name: &str,
 ) -> Result<String, mlua::Error> {
     table
-        .get::<mlua::String>(field)
+        .get::<mlua::LuaString>(field)
         .map(|s| s.to_string_lossy().to_string())
         .map_err(|_| {
             mlua::Error::external(format!(

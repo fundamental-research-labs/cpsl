@@ -384,7 +384,7 @@ fn lua_value_to_json(val: &Value) -> Result<serde_json::Value, mlua::Error> {
             }
             // Object
             let mut map = serde_json::Map::new();
-            for pair in t.clone().pairs::<mlua::String, Value>() {
+            for pair in t.clone().pairs::<mlua::LuaString, Value>() {
                 let (k, v) = pair?;
                 map.insert(k.to_str()?.to_string(), lua_value_to_json(&v)?);
             }

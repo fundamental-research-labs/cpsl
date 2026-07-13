@@ -310,7 +310,7 @@ pub fn register_html_globals(lua: &Lua) -> Result<(), mlua::Error> {
                 "__tostring",
                 lua.create_function(move |_, _: Value| Ok(tostring_val.clone()))?,
             )?;
-            doc.set_metatable(Some(mt));
+            doc.set_metatable(Some(mt))?;
 
             Ok(Value::Table(doc))
         })?,

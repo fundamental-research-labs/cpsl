@@ -385,7 +385,7 @@ pub fn register_csv_globals(lua: &Lua, mounts: Arc<MountTable>) -> Result<(), ml
             let (text, csv_opts) = match first {
                 Value::String(s) => (s.as_bytes().to_vec(), CsvOpts::from_lua(&opts_arg)?),
                 Value::Table(t) => {
-                    let s: mlua::String = t.get::<mlua::String>(1).map_err(|_| {
+                    let s: mlua::LuaString = t.get::<mlua::LuaString>(1).map_err(|_| {
                         mlua::Error::external(
                             "csv.parse: missing required argument 'text' (string)",
                         )

@@ -1632,7 +1632,7 @@ fn register_fs_tree(
 
                 // Extract required fields
                 let sandbox_path: String = opts
-                    .get::<mlua::String>("path")
+                    .get::<mlua::LuaString>("path")
                     .map_err(|_| {
                         mlua::Error::external("fs.tree: missing required field 'path' (string)")
                     })?
