@@ -25,6 +25,15 @@ typedef void (*cpsl_file_activity_handle_fn)(
 typedef void (*cpsl_file_activity_user_data_free_fn)(void *user_data);
 typedef void (*cpsl_calendar_activity_handle_fn)(void *user_data, const char *operation);
 typedef void (*cpsl_calendar_activity_user_data_free_fn)(void *user_data);
+typedef struct cpsl_vision_input cpsl_vision_input_t;
+typedef void (*cpsl_vision_handle_fn)(
+    void *user_data,
+    const cpsl_vision_input_t *inputs,
+    uintptr_t input_count,
+    const char *query,
+    void *response_context
+);
+typedef void (*cpsl_vision_user_data_free_fn)(void *user_data);
 
 typedef struct cpsl_webbrowser_callbacks {
     void *user_data;
@@ -51,6 +60,19 @@ typedef struct cpsl_location_callbacks {
     cpsl_location_string_free_fn string_free;
     cpsl_location_user_data_free_fn user_data_free;
 } cpsl_location_callbacks_t;
+
+struct cpsl_vision_input {
+    const uint8_t *data;
+    uintptr_t data_len;
+    const char *filename;
+    const char *media_type;
+};
+
+typedef struct cpsl_vision_callbacks {
+    void *user_data;
+    cpsl_vision_handle_fn handle;
+    cpsl_vision_user_data_free_fn user_data_free;
+} cpsl_vision_callbacks_t;
 
 uint32_t cpsl_abi_version(void);
 
@@ -116,6 +138,28 @@ cpsl_session_t *cpsl_session_new_with_host_callbacks_v2(
     const cpsl_file_activity_callbacks_t *file_activity_callbacks,
     const cpsl_calendar_activity_callbacks_t *calendar_activity_callbacks,
     const cpsl_location_callbacks_t *location_callbacks
+);
+
+/*
+ * Adds document-vision callbacks. The callback receives one or more borrowed
+ * inputs and must synchronously call cpsl_vision_respond exactly once before
+ * returning. PDF inputs are rendered to page images when PDFium is available.
+ */
+cpsl_session_t *cpsl_session_new_with_host_callbacks_v3(
+    const char *config_json,
+    const cpsl_webbrowser_callbacks_t *webbrowser_callbacks,
+    const cpsl_file_activity_callbacks_t *file_activity_callbacks,
+    const cpsl_calendar_activity_callbacks_t *calendar_activity_callbacks,
+    const cpsl_location_callbacks_t *location_callbacks,
+    const cpsl_vision_callbacks_t *vision_callbacks
+);
+
+/* data is borrowed and copied before this function returns. */
+void cpsl_vision_respond(
+    void *response_context,
+    const uint8_t *data,
+    uintptr_t data_len,
+    uint8_t is_error
 );
 
 /* NULL is a no-op. Passing any other non-CPSL pointer is undefined behavior. */

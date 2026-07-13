@@ -46,7 +46,7 @@ mod-location = ["dep:serde_json"]
 mod-ripgrep = ["mod-fs", "dep:grep-regex", "dep:grep-searcher", "dep:grep-matcher", "dep:ignore", "dep:globset"]
 mod-fff = ["mod-fs", "dep:fff-grep", "dep:grep-regex", "dep:grep-matcher", "dep:ignore", "dep:memchr", "dep:globset"]
 mod-apple-calendar = ["dep:apple-calendar", "dep:chrono"]
-pdfium-render = ["dep:pdfium-render", "mod-doc"]       # PDF engine — sub-feature of mod-doc
+pdfium-render = ["dep:pdfium-render", "dep:image", "mod-doc"] # PDF engine — sub-feature of mod-doc
 
 [dependencies]
 # Always required — core sandbox runtime

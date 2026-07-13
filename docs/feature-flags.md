@@ -109,6 +109,16 @@ The `all` profile pulls native document/PDF dependencies. On Linux that can
 require GTK/WebKit development packages, and PDF-related tests may also need
 PDFium.
 
+Hosts can enable AI-backed `doc.read` through
+`SandboxBuilder::vision_callback(...)` or the C ABI
+`cpsl_session_new_with_host_callbacks_v3`. CPSL keeps provider credentials out
+of the sandbox: it passes borrowed image inputs and the extraction prompt to the
+host callback. With PDFium enabled, a PDF is rendered to page PNGs and all
+pages are supplied together for one multimodal request. `doc.read` defaults to
+vision for images and PDFs when this callback exists, while other formats
+default to local structural parsing; `opts.mode` overrides that choice per
+read.
+
 Apple Calendar host packaging requirements:
 
 - Minimum OS: iOS 17 or macOS 14, because V1 uses

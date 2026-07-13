@@ -20,6 +20,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(feature = "webbrowser")]
 use url::Url;
 
+mod vision;
+use vision::{cpsl_vision_callbacks_t, free_vision_callback_context, validate_vision_callbacks};
+
 const CPSL_ABI_VERSION: u32 = 2;
 const WORKDIR: &str = "/workdir";
 const LANGUAGE_LUAU: &str = "luau";
@@ -393,7 +396,8 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
                 "file_activity_callbacks": true,
                 "calendar_activity_callbacks": cfg!(feature = "calendar"),
                 "webbrowser_callbacks": cfg!(feature = "webbrowser"),
-                "location_callbacks": cfg!(feature = "location")
+                "location_callbacks": cfg!(feature = "location"),
+                "vision_callbacks": cfg!(feature = "doc")
             }
         });
         owned_c_string(metadata.to_string())
@@ -409,6 +413,7 @@ pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_sess
         #[cfg(feature = "calendar")]
         None,
         #[cfg(feature = "location")]
+        None,
         None,
     )
 }
@@ -433,6 +438,7 @@ pub extern "C" fn cpsl_session_new_with_webbrowser_callbacks(
         #[cfg(feature = "calendar")]
         None,
         #[cfg(feature = "location")]
+        None,
         None,
     )
 }
@@ -486,6 +492,7 @@ pub extern "C" fn cpsl_session_new_with_callbacks(
         None,
         #[cfg(feature = "location")]
         None,
+        None,
     )
 }
 
@@ -513,11 +520,31 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
     calendar_activity_callbacks: *const cpsl_calendar_activity_callbacks_t,
     location_callbacks: *const cpsl_location_callbacks_t,
 ) -> *mut cpsl_session_t {
+    cpsl_session_new_with_host_callbacks_v3(
+        config_json,
+        webbrowser_callbacks,
+        file_activity_callbacks,
+        calendar_activity_callbacks,
+        location_callbacks,
+        ptr::null(),
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
+    config_json: *const c_char,
+    webbrowser_callbacks: *const cpsl_webbrowser_callbacks_t,
+    file_activity_callbacks: *const cpsl_file_activity_callbacks_t,
+    calendar_activity_callbacks: *const cpsl_calendar_activity_callbacks_t,
+    location_callbacks: *const cpsl_location_callbacks_t,
+    vision_callbacks: *const cpsl_vision_callbacks_t,
+) -> *mut cpsl_session_t {
     let file_activity_callback = match validate_file_activity_callbacks(file_activity_callbacks) {
         Ok(callback) => callback,
         Err(error) => {
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
+            free_vision_callback_context(vision_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -528,6 +555,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
         Err(error) => {
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
+            free_vision_callback_context(vision_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -538,6 +566,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
         Err(error) => {
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
+            free_vision_callback_context(vision_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -549,6 +578,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
             Err(error) => {
                 free_calendar_activity_callback_context(calendar_activity_callbacks);
                 free_location_callback_context(location_callbacks);
+                free_vision_callback_context(vision_callbacks);
                 set_last_error(&error);
                 return ptr::null_mut();
             }
@@ -562,6 +592,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
         Ok(gateway) => gateway,
         Err(error) => {
             free_location_callback_context(location_callbacks);
+            free_vision_callback_context(vision_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -570,6 +601,14 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
     {
         free_location_callback_context(location_callbacks);
     }
+    let vision_callback = match validate_vision_callbacks(vision_callbacks) {
+        Ok(callback) => callback,
+        Err(error) => {
+            free_vision_callback_context(vision_callbacks);
+            set_last_error(&error);
+            return ptr::null_mut();
+        }
+    };
 
     session_new_inner(
         config_json,
@@ -579,6 +618,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v2(
         calendar_activity_callback,
         #[cfg(feature = "location")]
         location_gateway,
+        vision_callback,
     )
 }
 
@@ -589,6 +629,7 @@ fn session_new_inner(
     file_activity_callback: Option<FileActivityCallback>,
     #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
+    vision_callback: Option<cpsl_core::VisionCallback>,
 ) -> *mut cpsl_session_t {
     ffi_result(|| {
         let config_json = c_str_arg(config_json, "config_json")?;
@@ -602,6 +643,7 @@ fn session_new_inner(
             calendar_activity_callback,
             #[cfg(feature = "location")]
             location_gateway,
+            vision_callback,
         )?;
         let session = Box::new(Session {
             sandbox,
@@ -917,6 +959,7 @@ fn create_runtime_sandbox(
     file_activity_callback: Option<FileActivityCallback>,
     #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
+    vision_callback: Option<cpsl_core::VisionCallback>,
 ) -> Result<Sandbox, String> {
     let mut mounts = MountTable::new();
     for mount in &config.mounts {
@@ -933,6 +976,11 @@ fn create_runtime_sandbox(
         .auto_tmp(false);
     let builder = if let Some(callback) = file_activity_callback {
         builder.file_activity_callback(callback)
+    } else {
+        builder
+    };
+    let builder = if let Some(callback) = vision_callback {
+        builder.vision_callback(callback)
     } else {
         builder
     };
@@ -1608,6 +1656,7 @@ mod tests {
             #[cfg(feature = "calendar")]
             None,
             #[cfg(feature = "location")]
+            None,
             None,
         )
         .unwrap();

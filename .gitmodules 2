@@ -1,0 +1,3 @@
+[submodule "vendor/wb"]
+	path = vendor/wb
+	url = https://github.com/aduermael/wb.git

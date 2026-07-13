@@ -12,7 +12,7 @@ use crate::mount::MountTable;
 use crate::pdfium_engine::PdfiumEngine;
 use crate::sandbox::{
     arg_error, wrap_module_with_help_hints, FieldDoc, FnDoc, ModuleDoc, Param, ParamType,
-    PendingRead, PendingReads, ReturnType, VisionCallback,
+    PendingRead, PendingReads, ReturnType, VisionCallback, VisionInput,
 };
 use mlua::{Lua, MultiValue, UserData, UserDataMethods};
 use sha2::{Digest, Sha256};
@@ -98,6 +98,87 @@ pub(crate) fn cache_write(cache_dir: &Path, key: &str, text: &str) {
     let _ = std::fs::create_dir_all(cache_dir);
     let path = cache_dir.join(format!("{}.txt", key));
     let _ = std::fs::write(path, text);
+}
+
+fn vision_media_type(format: DocFormat) -> &'static str {
+    match format {
+        DocFormat::Png => "image/png",
+        DocFormat::Jpg => "image/jpeg",
+        DocFormat::Webp => "image/webp",
+        DocFormat::Gif => "image/gif",
+        DocFormat::Pdf => "application/pdf",
+        DocFormat::Txt => "text/plain",
+        DocFormat::Csv => "text/csv",
+        DocFormat::Json => "application/json",
+        DocFormat::Md => "text/markdown",
+        DocFormat::Html => "text/html",
+        DocFormat::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        DocFormat::Xls => "application/vnd.ms-excel",
+        DocFormat::Xlsm => "application/vnd.ms-excel.sheet.macroenabled.12",
+        DocFormat::Ods => "application/vnd.oasis.opendocument.spreadsheet",
+        DocFormat::Docx => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        DocFormat::Rtf => "application/rtf",
+        DocFormat::Pptx => {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        }
+    }
+}
+
+fn vision_inputs(
+    data: Vec<u8>,
+    format: DocFormat,
+    filename: String,
+    #[cfg(feature = "pdfium-render")] pdfium_engine: Option<&Arc<PdfiumEngine>>,
+) -> Result<Vec<VisionInput>, String> {
+    #[cfg(feature = "pdfium-render")]
+    if format == DocFormat::Pdf {
+        if let Some(engine) = pdfium_engine {
+            let pages = crate::doc_reader::render_pdf_pages_for_vision(engine, &data)?;
+            let stem = Path::new(&filename)
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("document");
+            return Ok(pages
+                .into_iter()
+                .enumerate()
+                .map(|(index, data)| VisionInput {
+                    data,
+                    filename: format!("{}-page-{}.png", stem, index + 1),
+                    media_type: "image/png".to_string(),
+                })
+                .collect());
+        }
+    }
+
+    #[cfg(feature = "mod-image")]
+    if matches!(format, DocFormat::Webp | DocFormat::Gif) {
+        use image::ImageFormat;
+
+        let image_format = if format == DocFormat::Webp {
+            ImageFormat::WebP
+        } else {
+            ImageFormat::Gif
+        };
+        let image = image::load_from_memory_with_format(&data, image_format)
+            .map_err(|e| format!("cannot decode image for vision: {}", e))?;
+        let mut output = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut output, ImageFormat::Png)
+            .map_err(|e| format!("cannot encode image for vision: {}", e))?;
+        return Ok(vec![VisionInput {
+            data: output.into_inner(),
+            filename: format!("{}.png", filename),
+            media_type: "image/png".to_string(),
+        }]);
+    }
+
+    Ok(vec![VisionInput {
+        data,
+        filename,
+        media_type: vision_media_type(format).to_string(),
+    }])
 }
 
 const DOC_READ_OPTS_FIELDS_BASE: &[FieldDoc] = &[
@@ -443,7 +524,8 @@ static DOC_MOD_DOC_VISION: ModuleDoc = ModuleDoc {
                  Supported: xlsx, xls, xlsm, ods, docx, pdf, rtf, pptx, csv, txt, json, md, html, png, jpg, webp, gif.\n    \
                  Two modes: \"structural\" (local parsing) and \"vision\" (AI multimodal analysis).\n    \
                  Defaults: images/PDFs → vision, everything else → structural.\n    \
-                 Override with opts.mode. Use opts.query to customize the vision extraction prompt.",
+                 Override per file with opts.mode=\"structural\" or opts.mode=\"vision\".\n    \
+                 Use opts.query to customize the vision extraction prompt.",
             params: DOC_READ_PARAMS_WITH_MODE,
             returns: ReturnType::String,
             example: Some(r#"local text = doc.read("/attachments/chart.png", {query = "extract all tables"})"#),
@@ -657,7 +739,9 @@ static DOC_MOD_DOC_VISION_PDFIUM: ModuleDoc = ModuleDoc {
                  Supported: xlsx, xls, xlsm, ods, docx, pdf, rtf, pptx, csv, txt, json, md, html, png, jpg, webp, gif.\n    \
                  Two modes: \"structural\" (local parsing) and \"vision\" (AI multimodal analysis).\n    \
                  Defaults: images/PDFs → vision, everything else → structural.\n    \
-                 Override with opts.mode. Use opts.query to customize the vision extraction prompt.",
+                 PDF vision renders every page to an image and sends all pages in one model request.\n    \
+                 Override per file with opts.mode=\"structural\" or opts.mode=\"vision\".\n    \
+                 Use opts.query to customize the vision extraction prompt.",
             params: DOC_READ_PARAMS_WITH_MODE,
             returns: ReturnType::String,
             example: Some(r#"local text = doc.read("/attachments/chart.png", {query = "extract all tables"})"#),
@@ -840,7 +924,7 @@ fn resolve_pending_read(
 
     // Try callback
     if let Some(cb) = callback {
-        match cb(&pr.data, &pr.filename, &pr.query) {
+        match cb(&pr.inputs, &pr.query) {
             Ok(text) => {
                 // Cache the result
                 if let Some(dir) = cache_dir {
@@ -857,9 +941,9 @@ fn resolve_pending_read(
         }
     }
 
-    // Local extraction fallback
-    let result = read_document(&pr.data, pr.format, &pr.read_opts);
-    *pr.result_slot.lock().unwrap() = Some(result);
+    *pr.result_slot.lock().unwrap() = Some(Err(
+        "vision mode requires a vision callback (not available in this environment)".to_string(),
+    ));
 }
 
 /// Parse common arguments for doc.read() and doc.readAsync():
@@ -1047,7 +1131,16 @@ fn register_doc_readers(
                         }
                     }
 
-                    match callback(&data, &filename, &query) {
+                    let inputs = vision_inputs(
+                        data,
+                        format,
+                        filename,
+                        #[cfg(feature = "pdfium-render")]
+                        pe.as_ref(),
+                    )
+                    .map_err(mlua::Error::external)?;
+
+                    match callback(&inputs, &query) {
                         Ok(text) => {
                             if let Some(ref dir) = cd {
                                 cache_write(dir, &key, &text);
@@ -1140,17 +1233,27 @@ fn register_doc_readers(
                             }
                         }
 
-                        // Defer to pending queue for parallel resolution
-                        let mut queue = pq.lock().unwrap();
-                        queue.push(PendingRead {
+                        match vision_inputs(
                             data,
-                            filename,
                             format,
-                            query,
-                            read_opts,
-                            cache_key: key,
-                            result_slot: result_slot.clone(),
-                        });
+                            filename,
+                            #[cfg(feature = "pdfium-render")]
+                            pe.as_ref(),
+                        ) {
+                            Ok(inputs) => {
+                                // Defer provider calls to the pending queue for parallel resolution.
+                                let mut queue = pq.lock().unwrap();
+                                queue.push(PendingRead {
+                                    inputs,
+                                    query,
+                                    cache_key: key,
+                                    result_slot: result_slot.clone(),
+                                });
+                            }
+                            Err(error) => {
+                                *result_slot.lock().unwrap() = Some(Err(error));
+                            }
+                        }
                     }
                 }
             }

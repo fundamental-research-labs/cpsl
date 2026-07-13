@@ -27,6 +27,15 @@ type SessionNewWithHostCallbacksV2 = unsafe extern "C" fn(
     *const std::ffi::c_void,
     *const std::ffi::c_void,
 ) -> *mut std::ffi::c_void;
+type SessionNewWithHostCallbacksV3 = unsafe extern "C" fn(
+    *const c_char,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+    *const std::ffi::c_void,
+) -> *mut std::ffi::c_void;
+type VisionRespond = unsafe extern "C" fn(*mut std::ffi::c_void, *const u8, usize, u8);
 type SessionFree = unsafe extern "C" fn(*mut std::ffi::c_void);
 type Eval = unsafe extern "C" fn(*mut std::ffi::c_void, *const c_char) -> *mut c_char;
 type StringFree = unsafe extern "C" fn(*mut c_char);
@@ -64,6 +73,10 @@ fn probe_release_library_exports_contract_symbols() {
         let _session_new_with_host_callbacks_v2: Symbol<SessionNewWithHostCallbacksV2> = library
             .get(b"cpsl_session_new_with_host_callbacks_v2")
             .unwrap();
+        let _session_new_with_host_callbacks_v3: Symbol<SessionNewWithHostCallbacksV3> = library
+            .get(b"cpsl_session_new_with_host_callbacks_v3")
+            .unwrap();
+        let _vision_respond: Symbol<VisionRespond> = library.get(b"cpsl_vision_respond").unwrap();
         let session_free: Symbol<SessionFree> = library.get(b"cpsl_session_free").unwrap();
         let eval: Symbol<Eval> = library.get(b"cpsl_eval").unwrap();
         let string_free: Symbol<StringFree> = library.get(b"cpsl_string_free").unwrap();
@@ -89,6 +102,10 @@ fn probe_release_library_exports_contract_symbols() {
         assert_eq!(metadata["capabilities"]["mounts"], true);
         assert_eq!(metadata["capabilities"]["network_policy"], true);
         assert_eq!(metadata["capabilities"]["file_activity_callbacks"], true);
+        assert_eq!(
+            metadata["capabilities"]["vision_callbacks"],
+            cfg!(feature = "doc")
+        );
 
         string_free(std::ptr::null_mut());
         session_free(std::ptr::null_mut());

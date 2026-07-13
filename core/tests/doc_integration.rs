@@ -1557,6 +1557,36 @@ return table.concat({
         );
     }
 
+    #[test]
+    fn pdfium_vision_batches_rendered_pages() {
+        let mut mt = MountTable::new();
+        mt.parse_and_add(&format!("{}:/pdf:ro", fixtures_dir().display()))
+            .unwrap();
+        let cb = Arc::new(
+            |inputs: &[cpsl_core::VisionInput], query: &str| -> Result<String, String> {
+                assert_eq!(inputs.len(), 3);
+                assert!(query.contains("Extract all content"));
+                for (index, input) in inputs.iter().enumerate() {
+                    assert_eq!(input.media_type, "image/png");
+                    assert_eq!(input.filename, format!("multi_page-page-{}.png", index + 1));
+                    assert!(input.data.starts_with(b"\x89PNG\r\n\x1a\n"));
+                }
+                Ok("three-page vision analysis".to_string())
+            },
+        );
+        let sb = Sandbox::builder()
+            .mounts(mt)
+            .pdfium_engine(engine())
+            .vision_callback(cb)
+            .build()
+            .unwrap();
+
+        let result = sb
+            .exec(r#"return doc.read("/pdf/multi_page.pdf")"#)
+            .unwrap();
+        assert_eq!(result, "three-page vision analysis");
+    }
+
     // ── readAsync with PDFium ────────────────────────────────────
 
     /// Build sandbox with PDFium, fixtures at /pdf/ (ro), and a writable output dir.

@@ -323,6 +323,46 @@ pub fn read_pdf_pdfium(
     Ok(output)
 }
 
+/// Render every PDF page to PNG for multimodal model input.
+///
+/// A bounded target width keeps individual images comfortably below common
+/// provider upload limits while retaining enough detail for document reading.
+#[cfg(feature = "pdfium-render")]
+pub fn render_pdf_pages_for_vision(
+    engine: &crate::pdfium_engine::PdfiumEngine,
+    data: &[u8],
+) -> Result<Vec<Vec<u8>>, String> {
+    use image::ImageFormat;
+    use pdfium_render::prelude::PdfRenderConfig;
+
+    const TARGET_WIDTH: i32 = 2_000;
+
+    let doc = engine
+        .pdfium()
+        .load_pdf_from_byte_slice(data, None)
+        .map_err(|e| format!("cannot load PDF: {}", e))?;
+    let config = PdfRenderConfig::new().set_target_width(TARGET_WIDTH);
+    let pages = doc.pages();
+    let mut rendered = Vec::with_capacity(pages.len() as usize);
+
+    for index in 0..pages.len() {
+        let page = pages
+            .get(index)
+            .map_err(|e| format!("cannot read page {}: {}", index + 1, e))?;
+        let bitmap = page
+            .render_with_config(&config)
+            .map_err(|e| format!("cannot render page {}: {}", index + 1, e))?;
+        let mut output = Cursor::new(Vec::new());
+        bitmap
+            .as_image()
+            .write_to(&mut output, ImageFormat::Png)
+            .map_err(|e| format!("cannot encode page {} as PNG: {}", index + 1, e))?;
+        rendered.push(output.into_inner());
+    }
+
+    Ok(rendered)
+}
+
 /// PDF page size info (width and height in points).
 #[cfg(feature = "pdfium-render")]
 #[derive(Debug, Clone)]

@@ -377,25 +377,30 @@ impl HostInfo {
 /// Arguments: (virtual_path, activity_type) where activity_type is "read", "write", "remove", "rename", or "mkdir".
 pub type FileActivityCallback = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
-/// Called by doc module before local extraction. Gets first crack at reading any file.
-/// Vision callback — only called when mode resolves to "vision".
-/// The sandbox owns the routing decision; the callback just extracts or fails.
-///
-/// Arguments: (file_bytes, filename, query)
-/// Returns: Ok(text) on success, Err(msg) on failure.
-pub type VisionCallback = Arc<dyn Fn(&[u8], &str, &str) -> Result<String, String> + Send + Sync>;
+/// One file supplied to a vision model.
+#[derive(Debug, Clone)]
+pub struct VisionInput {
+    pub data: Vec<u8>,
+    pub filename: String,
+    pub media_type: String,
+}
 
-/// Legacy alias for backward compatibility with external callers (Tauri).
-pub type DocReadCallback = VisionCallback;
+/// Vision callback — only called when `doc.read()` resolves to vision mode.
+/// The sandbox owns format routing and prepares model-compatible inputs; the
+/// host owns model selection and inference.
+///
+/// Arguments: (inputs, query)
+/// Returns: Ok(text) on success, Err(msg) on failure.
+pub type VisionCallback = Arc<dyn Fn(&[VisionInput], &str) -> Result<String, String> + Send + Sync>;
+
+/// Legacy single-input callback retained for existing embedders.
+pub type DocReadCallback = Arc<dyn Fn(&[u8], &str, &str) -> Result<String, String> + Send + Sync>;
 
 /// A deferred read awaiting batch resolution via `doc.readAsync()`.
 #[cfg(feature = "mod-doc")]
 pub struct PendingRead {
-    pub data: Vec<u8>,
-    pub filename: String,
-    pub format: crate::doc_reader::DocFormat,
+    pub inputs: Vec<VisionInput>,
     pub query: String,
-    pub read_opts: crate::doc_reader::ReadOptions,
     pub cache_key: String,
     pub result_slot: Arc<Mutex<Option<Result<String, String>>>>,
 }
@@ -528,15 +533,21 @@ impl SandboxBuilder {
         self
     }
 
-    /// Set a callback for vision-powered document reading (images, PDFs via Gemini).
+    /// Set a provider-agnostic callback for vision-powered document reading.
     pub fn vision_callback(mut self, cb: VisionCallback) -> Self {
         self.vision_callback = Some(cb);
         self
     }
 
-    /// Legacy alias — use `vision_callback()` for new code.
-    pub fn doc_read_callback(self, cb: VisionCallback) -> Self {
-        self.vision_callback(cb)
+    /// Legacy single-input adapter — use `vision_callback()` for new code.
+    pub fn doc_read_callback(self, cb: DocReadCallback) -> Self {
+        self.vision_callback(Arc::new(move |inputs, query| {
+            let mut results = Vec::with_capacity(inputs.len());
+            for input in inputs {
+                results.push(cb(&input.data, &input.filename, query)?);
+            }
+            Ok(results.join("\n\n"))
+        }))
     }
 
     /// Set the PDFium engine for PDF operations (structural extraction, editing).
