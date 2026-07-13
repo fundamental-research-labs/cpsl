@@ -3,10 +3,7 @@
 //! Exposes `doc.read(path, opts?)` for extracting text from various file formats.
 //! Format is auto-detected from the file extension.
 
-use crate::doc_reader::{
-    convert_file, is_binary_conversion, read_document, render_document, render_document_bytes,
-    DocFormat, PageOptions, ReadMode, ReadOptions,
-};
+use crate::doc_reader::{read_document, DocFormat, ReadMode, ReadOptions};
 use crate::mount::MountTable;
 #[cfg(feature = "pdfium-render")]
 use crate::pdfium_engine::PdfiumEngine;
@@ -21,6 +18,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "pdfium-render")]
 mod pdf_utils;
 mod vision;
+mod render;
 
 use vision::{
     cache_key, cache_read, cache_write, vision_inputs, Semaphore, DEFAULT_EXTRACTION_QUERY,
@@ -625,7 +623,7 @@ static DOC_MOD_DOC_VISION_PDFIUM: ModuleDoc = ModuleDoc {
 const DOC_RENDER_FN: FnDoc = FnDoc {
     name: "render",
     description:
-        "Convert text between formats.\n    Supported paths: markdown→html, html→text, markdown→pdf, html→pdf.\n    PDF output is returned as a binary string.",
+        "Convert text between formats.\n    Supported paths: markdown→html, html→text, markdown→pdf, html→pdf.\n    PDF output is returned as a binary string. PDF rendering uses a native web view and may be disabled by network policy.",
     params: DOC_RENDER_PARAMS,
     returns: ReturnType::String,
     example: Some(r##"doc.render({text="# Hello", from="markdown", to="html"})"##),
@@ -634,40 +632,11 @@ const DOC_RENDER_FN: FnDoc = FnDoc {
 const DOC_RENDER_FILE_FN: FnDoc = FnDoc {
     name: "renderFile",
     description:
-        "Convert a file and write the result. Formats auto-detected from extensions.\n    Render: md→html, md→pdf, html→pdf, html→txt.\n    Extract: xlsx, docx, pdf, rtf, pptx → txt.",
+        "Convert a file and write the result. Formats auto-detected from extensions.\n    Render: md→html, md→pdf, html→pdf, html→txt.\n    Extract: xlsx, docx, pdf, rtf, pptx → txt. PDF rendering uses a native web view and may be disabled by network policy.",
     params: DOC_RENDER_FILE_PARAMS,
     returns: ReturnType::Void,
     example: Some(r#"doc.renderFile({source="/workspace/report.md", target="/artifacts/report.pdf"})"#),
 };
-
-/// Extract page geometry from a Lua options table, falling back to defaults.
-fn parse_page_options(opts: Option<&mlua::Table>) -> PageOptions {
-    let mut p = PageOptions::default();
-    if let Some(t) = opts {
-        if let Ok(v) = t.get::<f64>("pageWidth") {
-            p.page_width = v;
-        }
-        if let Ok(v) = t.get::<f64>("pageHeight") {
-            p.page_height = v;
-        }
-        if let Ok(v) = t.get::<f64>("marginTop") {
-            p.margin_top = v;
-        }
-        if let Ok(v) = t.get::<f64>("marginBottom") {
-            p.margin_bottom = v;
-        }
-        if let Ok(v) = t.get::<f64>("marginLeft") {
-            p.margin_left = v;
-        }
-        if let Ok(v) = t.get::<f64>("marginRight") {
-            p.margin_right = v;
-        }
-        if let Ok(v) = t.get::<bool>("landscape") {
-            p.landscape = v;
-        }
-    }
-    p
-}
 
 /// A deferred read result returned by `doc.readAsync()`.
 /// Exposes a single method `:await()` that blocks until the result is available.
@@ -857,6 +826,7 @@ fn parse_doc_read_args(
 pub(crate) fn register_doc_globals(
     lua: &Lua,
     mounts: Arc<MountTable>,
+    allow_webview_pdf_rendering: bool,
     vision_callback: Option<VisionCallback>,
     cache_dir: Option<PathBuf>,
     #[cfg(feature = "pdfium-render")] pdfium_engine: Option<Arc<PdfiumEngine>>,
@@ -878,7 +848,7 @@ pub(crate) fn register_doc_globals(
     #[cfg(feature = "pdfium-render")]
     register_doc_pdf(lua, &doc, mounts.clone(), pdfium_engine.clone())?;
 
-    register_doc_rendering(lua, &doc, mounts.clone())?;
+    render::register(lua, &doc, mounts.clone(), allow_webview_pdf_rendering)?;
 
     // Select documentation based on compiled features and vision callback.
     // PDF functions stay visible when PDFium is compiled in but not available;
@@ -1746,199 +1716,6 @@ fn register_doc_pdf_annotations(
 
                 let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
                 std::fs::write(&host_output, result_bytes).map_err(mlua::Error::external)?;
-
-                Ok(())
-            })?,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn register_doc_rendering(
-    lua: &Lua,
-    doc: &mlua::Table,
-    mounts: Arc<MountTable>,
-) -> Result<(), mlua::Error> {
-    // doc.render(text, from, to, opts?) -> string (or binary string for PDF)
-    // Also accepts: doc.render({text=..., from=..., to=..., ...pageOpts})
-    doc.set(
-        "render",
-        lua.create_function(|lua, args: MultiValue| {
-            if args.is_empty() {
-                return Err(arg_error("doc.render", DOC_RENDER_PARAMS));
-            }
-            let first = args[0].clone();
-            let from_opt = args.get(1).and_then(|v| match v {
-                mlua::Value::String(s) => Some(s.to_string_lossy().to_string()),
-                _ => None,
-            });
-            let to_opt = args.get(2).and_then(|v| match v {
-                mlua::Value::String(s) => Some(s.to_string_lossy().to_string()),
-                _ => None,
-            });
-            let opts_opt = args.get(3).and_then(|v| match v {
-                mlua::Value::Table(t) => Some(t.clone()),
-                _ => None,
-            });
-            let (text, from, to, opts): (String, String, String, Option<mlua::Table>) = match first
-            {
-                mlua::Value::Table(ref t) => {
-                    let text = t
-                        .get::<String>("text")
-                        .or_else(|_| t.get::<String>(1))
-                        .map_err(|_| {
-                            mlua::Error::external("doc.render: table must have 'text' or [1]")
-                        })?;
-                    let from = t
-                        .get::<String>("from")
-                        .or_else(|_| t.get::<String>(2))
-                        .map_err(|_| {
-                            mlua::Error::external("doc.render: table must have 'from' or [2]")
-                        })?;
-                    let to = t
-                        .get::<String>("to")
-                        .or_else(|_| t.get::<String>(3))
-                        .map_err(|_| {
-                            mlua::Error::external("doc.render: table must have 'to' or [3]")
-                        })?;
-                    (text, from, to, Some(t.clone()))
-                }
-                mlua::Value::String(ref s) => {
-                    let text = s.to_string_lossy().to_string();
-                    let from = from_opt.ok_or_else(|| {
-                        mlua::Error::external("doc.render: missing 'from' format")
-                    })?;
-                    let to = to_opt
-                        .ok_or_else(|| mlua::Error::external("doc.render: missing 'to' format"))?;
-                    (text, from, to, opts_opt)
-                }
-                _ => {
-                    return Err(mlua::Error::external(
-                        "doc.render: first arg must be a string or table",
-                    ))
-                }
-            };
-
-            if is_binary_conversion(&to) {
-                let page = parse_page_options(opts.as_ref());
-                let bytes = render_document_bytes(&text, &from, &to, &page)
-                    .map_err(mlua::Error::external)?;
-                lua.create_string(bytes)
-            } else {
-                let s = render_document(&text, &from, &to).map_err(mlua::Error::external)?;
-                lua.create_string(s)
-            }
-        })?,
-    )?;
-
-    // doc.renderFile(input, output, opts?) -> nil
-    // Also accepts: doc.renderFile({source=..., target=..., ...opts})
-    {
-        let m = mounts.clone();
-        doc.set(
-            "renderFile",
-            lua.create_function(move |_, args: MultiValue| {
-                if args.is_empty() {
-                    return Err(arg_error("doc.renderFile", DOC_RENDER_FILE_PARAMS));
-                }
-                let first = args[0].clone();
-                let output_opt = args.get(1).and_then(|v| match v {
-                    mlua::Value::String(s) => Some(s.to_string_lossy().to_string()),
-                    _ => None,
-                });
-                let opts_opt = args.get(2).and_then(|v| match v {
-                    mlua::Value::Table(t) => Some(t.clone()),
-                    _ => None,
-                });
-                // Accept both positional and named-param table forms:
-                //   doc.renderFile("/in.md", "/out.pdf", {landscape=true})
-                //   doc.renderFile({source="/in.md", target="/out.pdf", landscape=true})
-                let (input, output, opts): (String, String, Option<mlua::Table>) = match first {
-                    mlua::Value::Table(ref t) => {
-                        let source = t
-                            .get::<String>("source")
-                            .or_else(|_| t.get::<String>(1))
-                            .map_err(|_| {
-                                mlua::Error::external(
-                                    "doc.renderFile: table must have 'source' or [1]",
-                                )
-                            })?;
-                        let target = t
-                            .get::<String>("target")
-                            .or_else(|_| t.get::<String>(2))
-                            .map_err(|_| {
-                                mlua::Error::external(
-                                    "doc.renderFile: table must have 'target' or [2]",
-                                )
-                            })?;
-                        (source, target, Some(t.clone()))
-                    }
-                    mlua::Value::String(ref s) => {
-                        let input = s.to_string_lossy().to_string();
-                        let output = output_opt.ok_or_else(|| {
-                            mlua::Error::external("doc.renderFile: missing output path")
-                        })?;
-                        (input, output, opts_opt)
-                    }
-                    _ => {
-                        return Err(mlua::Error::external(
-                            "doc.renderFile: first arg must be a string or table",
-                        ))
-                    }
-                };
-
-                let from_override = opts.as_ref().and_then(|t| t.get::<String>("from").ok());
-                let to_override = opts.as_ref().and_then(|t| t.get::<String>("to").ok());
-                let sheet = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<i32>("sheet").ok())
-                    .map(|n| n as usize);
-                let read_opts = ReadOptions { sheet, mode: None };
-                let page_opts = parse_page_options(opts.as_ref());
-
-                // Infer formats from extensions (or use overrides)
-                let from_ext = from_override.unwrap_or_else(|| {
-                    std::path::Path::new(&input)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_string()
-                });
-                let to_ext = to_override.unwrap_or_else(|| {
-                    std::path::Path::new(&output)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_string()
-                });
-
-                if from_ext.is_empty() {
-                    return Err(mlua::Error::external(format!(
-                        "cannot infer input format from '{}' — pass {{from=\"...\"}}",
-                        input
-                    )));
-                }
-                if to_ext.is_empty() {
-                    return Err(mlua::Error::external(format!(
-                        "cannot infer output format from '{}' — pass {{to=\"...\"}}",
-                        output
-                    )));
-                }
-
-                // Resolve paths through mount table
-                let host_input = m.resolve_read(&input).map_err(mlua::Error::external)?;
-                let host_output = m.resolve_write(&output).map_err(mlua::Error::external)?;
-
-                // Read input
-                let data = std::fs::read(&host_input).map_err(mlua::Error::external)?;
-
-                // Convert
-                let result = convert_file(&data, &from_ext, &to_ext, &read_opts, &page_opts)
-                    .map_err(mlua::Error::external)?;
-
-                // Write output
-                std::fs::write(&host_output, result).map_err(mlua::Error::external)?;
 
                 Ok(())
             })?,

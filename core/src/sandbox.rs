@@ -412,6 +412,7 @@ pub type PendingReads = Arc<Mutex<Vec<PendingRead>>>;
 pub struct SandboxBuilder {
     mounts: Option<MountTable>,
     auto_tmp: bool,
+    allow_webview_pdf_rendering: bool,
     #[cfg(feature = "mod-http")]
     http_gateway: Option<Arc<HttpGateway>>,
     #[cfg(feature = "mod-apple-calendar")]
@@ -440,6 +441,7 @@ impl Default for SandboxBuilder {
         Self {
             mounts: None,
             auto_tmp: true,
+            allow_webview_pdf_rendering: false,
             #[cfg(feature = "mod-http")]
             http_gateway: None,
             #[cfg(feature = "mod-apple-calendar")]
@@ -473,6 +475,16 @@ impl SandboxBuilder {
 
     pub fn auto_tmp(mut self, enabled: bool) -> Self {
         self.auto_tmp = enabled;
+        self
+    }
+
+    /// Control HTML/Markdown-to-PDF conversion through the platform web view.
+    ///
+    /// Disabled by default because the web view bypasses `HttpGateway` and may
+    /// load network subresources. This affects PDF output from `doc.render` and
+    /// `doc.renderFile` only.
+    pub fn allow_webview_pdf_rendering(mut self, allowed: bool) -> Self {
+        self.allow_webview_pdf_rendering = allowed;
         self
     }
 
@@ -647,6 +659,7 @@ impl SandboxBuilder {
         crate::doc::register_doc_globals(
             &lua,
             mounts.clone(),
+            self.allow_webview_pdf_rendering,
             self.vision_callback,
             self.doc_cache_dir,
             #[cfg(feature = "pdfium-render")]

@@ -416,6 +416,8 @@ fn doc_module_help() {
         result
     );
     assert!(result.contains("doc.read"), "help: {}", result);
+    assert!(result.contains("native web view"), "help: {}", result);
+    assert!(result.contains("network policy"), "help: {}", result);
 }
 
 #[test]
@@ -503,6 +505,20 @@ fn doc_render_unsupported_errors() {
     );
 }
 
+#[test]
+fn doc_render_webview_pdf_is_denied_by_default() {
+    let sb = Sandbox::new().unwrap();
+    let err = sb
+        .exec("doc.render('<h1>Private</h1>', 'html', 'pdf')")
+        .unwrap_err();
+    assert!(
+        err.message
+            .contains("Web-view-backed PDF rendering is disabled by network policy"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
 // ── doc.read for HTML files ─────────────────────────────────────
 
 #[test]
@@ -581,6 +597,23 @@ fn doc_render_file_unsupported_conversion() {
         "should error: {}",
         err.message
     );
+}
+
+#[test]
+fn doc_render_file_webview_pdf_is_denied_before_file_access() {
+    let dir = TempDir::new().unwrap();
+    let sb = sandbox_with_rw_dir(&dir);
+
+    let err = sb
+        .exec(r#"doc.renderFile("/workspace/missing.htm", "/workspace/out.pdf")"#)
+        .unwrap_err();
+    assert!(
+        err.message
+            .contains("Web-view-backed PDF rendering is disabled by network policy"),
+        "unexpected error: {}",
+        err.message
+    );
+    assert!(!dir.path().join("out.pdf").exists());
 }
 
 #[test]

@@ -39,4 +39,16 @@ Probe the release library with:
 cargo test -p cpsl-ffi --test probe -- --ignored
 ```
 
+## Native PDF Rendering and Network Policy
+
+Native web views can load remote subresources without using CPSL's HTTP or
+browser gateways. The FFI therefore enables HTML- and Markdown-to-PDF rendering
+only when every applicable network policy is fully unrestricted: the HTTP
+policy and, when compiled, the webbrowser policy must include `"*"` in
+`allow_domains` and have no `deny_domains`. Otherwise `doc.render` and
+`doc.renderFile` return a structured `sandbox_denied` error before invoking the
+native web view. `doc.renderFile` leaves its input and existing output
+untouched, and non-PDF conversions remain available. Other CPSL hosts must make
+their own explicit sandbox-builder choice.
+
 See `../docs/feature-flags.md` for the full module list.

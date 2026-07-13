@@ -35,6 +35,7 @@ fn main() {
     run_test!(test_markdown_to_pdf);
     run_test!(test_html_to_pdf);
     run_test!(test_markdown_to_pdf_with_table);
+    run_test!(test_webview_pdf_default_denied);
     run_test!(test_unsupported_to_pdf_errors);
 
     println!("\n{} passed, {} failed", passed, failed);
@@ -44,7 +45,7 @@ fn main() {
 }
 
 fn test_markdown_to_pdf() {
-    let sb = Sandbox::new().unwrap();
+    let sb = webview_pdf_sandbox();
     let code = concat!(
         "local md = '# Hello\\n\\nThis is **bold** and *italic*.'\n",
         "local pdf = doc.render(md, 'markdown', 'pdf')\n",
@@ -56,7 +57,7 @@ fn test_markdown_to_pdf() {
 }
 
 fn test_html_to_pdf() {
-    let sb = Sandbox::new().unwrap();
+    let sb = webview_pdf_sandbox();
     let code = concat!(
         "local pdf = doc.render('<h1>Hello</h1><p>World</p>', 'html', 'pdf')\n",
         "return string.sub(pdf, 1, 5)\n",
@@ -67,7 +68,7 @@ fn test_html_to_pdf() {
 }
 
 fn test_markdown_to_pdf_with_table() {
-    let sb = Sandbox::new().unwrap();
+    let sb = webview_pdf_sandbox();
     let code = concat!(
         "local md = '# Report\\n\\n| Name | Value |\\n|------|-------|\\n| Alpha | 100 |\\n| Beta | 200 |'\n",
         "local pdf = doc.render(md, 'markdown', 'pdf')\n",
@@ -83,6 +84,20 @@ fn test_markdown_to_pdf_with_table() {
     println!("  PASS: test_markdown_to_pdf_with_table");
 }
 
+fn test_webview_pdf_default_denied() {
+    let sb = Sandbox::new().unwrap();
+    let err = sb
+        .exec("doc.render('<h1>Private</h1>', 'html', 'pdf')")
+        .unwrap_err();
+    assert!(
+        err.message
+            .contains("Web-view-backed PDF rendering is disabled by network policy"),
+        "unexpected error: {}",
+        err.message
+    );
+    println!("  PASS: test_webview_pdf_default_denied");
+}
+
 fn test_unsupported_to_pdf_errors() {
     let sb = Sandbox::new().unwrap();
     let err = sb.exec("doc.render('text', 'txt', 'pdf')").unwrap_err();
@@ -92,4 +107,11 @@ fn test_unsupported_to_pdf_errors() {
         err.message
     );
     println!("  PASS: test_unsupported_to_pdf_errors");
+}
+
+fn webview_pdf_sandbox() -> Sandbox {
+    Sandbox::builder()
+        .allow_webview_pdf_rendering(true)
+        .build()
+        .unwrap()
 }

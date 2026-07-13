@@ -88,6 +88,10 @@ pub use sandbox::{
     clean_lua_error, humanize_error, DocReadCallback, ExecError, FileActivityCallback, Sandbox,
     SandboxBuilder, SandboxError, VisionCallback, VisionInput,
 };
+
+/// Stable denial message for native web-view PDF rendering policy failures.
+pub const WEBVIEW_PDF_POLICY_ERROR: &str =
+    "Web-view-backed PDF rendering is disabled by network policy";
 #[cfg(cpsl_experimental_sfae)]
 pub use sfae::{BrowserOpener, CredentialPrompt};
 #[cfg(feature = "mod-webbrowser")]

@@ -8,7 +8,10 @@ use cpsl_core::LocationGateway;
 use cpsl_core::PdfiumEngine;
 #[cfg(feature = "webbrowser")]
 use cpsl_core::WebBrowserGateway;
-use cpsl_core::{FileActivityCallback, HttpGateway, MountPermission, MountTable, Sandbox};
+use cpsl_core::{
+    FileActivityCallback, HttpGateway, MountPermission, MountTable, Sandbox,
+    WEBVIEW_PDF_POLICY_ERROR,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -973,6 +976,7 @@ fn create_runtime_sandbox(
     let builder = Sandbox::builder()
         .mounts(mounts)
         .http_gateway(Arc::new(create_http_gateway(config)))
+        .allow_webview_pdf_rendering(webview_pdf_rendering_allowed(config))
         .auto_tmp(false);
     let builder = if let Some(callback) = file_activity_callback {
         builder.file_activity_callback(callback)
@@ -1045,6 +1049,23 @@ fn create_http_gateway(config: &ValidatedSessionConfig) -> HttpGateway {
         builder = builder.deny_domain(domain.clone());
     }
     builder.build()
+}
+
+fn webview_pdf_rendering_allowed(config: &ValidatedSessionConfig) -> bool {
+    let http_unrestricted =
+        network_policy_is_unrestricted(&config.allow_domains, &config.deny_domains);
+    #[cfg(feature = "webbrowser")]
+    let webbrowser_unrestricted = network_policy_is_unrestricted(
+        &config.webbrowser_policy.allow_domains,
+        &config.webbrowser_policy.deny_domains,
+    );
+    #[cfg(not(feature = "webbrowser"))]
+    let webbrowser_unrestricted = true;
+    http_unrestricted && webbrowser_unrestricted
+}
+
+fn network_policy_is_unrestricted(allow_domains: &[String], deny_domains: &[String]) -> bool {
+    deny_domains.is_empty() && allow_domains.iter().any(|domain| domain == "*")
 }
 
 #[cfg(feature = "webbrowser")]
@@ -1214,7 +1235,9 @@ fn eval_luau(session: &Session, request: &EvalRequest) -> serde_json::Value {
 }
 
 fn eval_exec_error_json(message: &str, cwd: &str) -> serde_json::Value {
-    if is_network_policy_denial(message) {
+    if message.contains(WEBVIEW_PDF_POLICY_ERROR) {
+        eval_error_json("sandbox_denied", WEBVIEW_PDF_POLICY_ERROR, cwd)
+    } else if is_network_policy_denial(message) {
         eval_error_json("sandbox_denied", "Network access is denied by policy", cwd)
     } else {
         eval_error_json("runtime_error", message, cwd)
@@ -1806,6 +1829,86 @@ mod tests {
             sandbox.exec("return type(doc.pdfInfo)").unwrap(),
             "function"
         );
+    }
+
+    #[cfg(feature = "pdfium-render")]
+    #[test]
+    fn restricted_network_policy_returns_structured_webview_pdf_denials() {
+        let dir = TempDir::new().unwrap();
+        let markdown = "# Private\n";
+        let existing_output = b"existing output";
+        fs::write(dir.path().join("input.md"), markdown).unwrap();
+        fs::write(dir.path().join("output.pdf"), existing_output).unwrap();
+        let session = new_session_with_language(dir.path(), LANGUAGE_LUAU);
+
+        for source in [
+            r#"return doc.render({text="<h1>Private</h1>", from="html", to="pdf"})"#,
+            r##"return doc.render({text="# Private", from="markdown", to="pdf"})"##,
+        ] {
+            let response = eval_luau(session, source);
+            assert_eval_error(&response, "sandbox_denied");
+            assert_eq!(response["error"]["message"], WEBVIEW_PDF_POLICY_ERROR);
+        }
+
+        let response = eval_luau(
+            session,
+            r#"doc.renderFile({source="/workdir/input.md", target="/workdir/output.pdf"})"#,
+        );
+        assert_eval_error(&response, "sandbox_denied");
+        assert_eq!(response["error"]["message"], WEBVIEW_PDF_POLICY_ERROR);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("input.md")).unwrap(),
+            markdown
+        );
+        assert_eq!(
+            fs::read(dir.path().join("output.pdf")).unwrap(),
+            existing_output
+        );
+
+        let response = eval_luau(
+            session,
+            r##"print(doc.render({text="# Safe", from="markdown", to="html"}))"##,
+        );
+        assert_success(&response, 0);
+        assert!(response["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("<h1>Safe</h1>"));
+
+        cpsl_session_free(session);
+    }
+
+    #[test]
+    fn webview_pdf_rendering_requires_unrestricted_http_policy() {
+        let dir = TempDir::new().unwrap();
+        let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
+
+        let restricted = validate_session_config(&config.to_string()).unwrap();
+        assert!(!webview_pdf_rendering_allowed(&restricted));
+
+        config["http"]["allow_domains"] = json!(["*"]);
+        let unrestricted = validate_session_config(&config.to_string()).unwrap();
+        assert!(webview_pdf_rendering_allowed(&unrestricted));
+
+        config["http"]["deny_domains"] = json!(["private.example"]);
+        let partially_restricted = validate_session_config(&config.to_string()).unwrap();
+        assert!(!webview_pdf_rendering_allowed(&partially_restricted));
+    }
+
+    #[cfg(feature = "webbrowser")]
+    #[test]
+    fn webview_pdf_rendering_requires_unrestricted_webbrowser_policy() {
+        let dir = TempDir::new().unwrap();
+        let mut config = session_config(dir.path().canonicalize().unwrap().to_str().unwrap());
+        config["http"]["allow_domains"] = json!(["*"]);
+        config["webbrowser"] = json!({
+            "mode": "policy",
+            "allow_domains": [],
+            "deny_domains": []
+        });
+
+        let restricted = validate_session_config(&config.to_string()).unwrap();
+        assert!(!webview_pdf_rendering_allowed(&restricted));
     }
 
     #[test]

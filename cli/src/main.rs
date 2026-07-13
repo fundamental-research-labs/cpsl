@@ -33,6 +33,11 @@ fn resolve_language(_bash: bool, python: bool, lua: bool) -> Language {
     }
 }
 
+#[cfg(feature = "mod-http")]
+fn webview_pdf_rendering_allowed(allow_domains: &[String], deny_domains: &[String]) -> bool {
+    deny_domains.is_empty() && allow_domains.iter().any(|domain| domain == "*")
+}
+
 #[derive(Parser)]
 #[command(name = "cpsl", about = "Sandboxed runtime")]
 #[command(args_conflicts_with_subcommands = true)]
@@ -804,18 +809,25 @@ fn cmd_exec(cli: ExecArgs) {
         None
     };
 
-    let mut builder = Sandbox::builder().mounts(mounts);
+    let builder = Sandbox::builder().mounts(mounts);
     #[cfg(feature = "mod-http")]
-    if !cli.allow_domain.is_empty() || !cli.deny_domain.is_empty() {
-        let mut gw = cpsl_core::HttpGateway::builder();
-        for d in &cli.allow_domain {
-            gw = gw.allow_domain(d);
+    let builder = {
+        let mut builder = builder.allow_webview_pdf_rendering(webview_pdf_rendering_allowed(
+            &cli.allow_domain,
+            &cli.deny_domain,
+        ));
+        if !cli.allow_domain.is_empty() || !cli.deny_domain.is_empty() {
+            let mut gw = cpsl_core::HttpGateway::builder();
+            for d in &cli.allow_domain {
+                gw = gw.allow_domain(d);
+            }
+            for d in &cli.deny_domain {
+                gw = gw.deny_domain(d);
+            }
+            builder = builder.http_gateway(std::sync::Arc::new(gw.build()));
         }
-        for d in &cli.deny_domain {
-            gw = gw.deny_domain(d);
-        }
-        builder = builder.http_gateway(std::sync::Arc::new(gw.build()));
-    }
+        builder
+    };
     let sandbox = builder.build().unwrap_or_else(|e| {
         eprintln!("error: failed to create sandbox: {}", e);
         std::process::exit(1);
@@ -1541,6 +1553,21 @@ mod tests {
     #[test]
     fn resolve_language_lua() {
         assert_eq!(resolve_language(false, false, true), Language::Lua);
+    }
+
+    #[cfg(feature = "mod-http")]
+    #[test]
+    fn webview_pdf_rendering_requires_fully_unrestricted_network_policy() {
+        assert!(!webview_pdf_rendering_allowed(&[], &[]));
+        assert!(!webview_pdf_rendering_allowed(
+            &["example.com".to_string()],
+            &[]
+        ));
+        assert!(webview_pdf_rendering_allowed(&["*".to_string()], &[]));
+        assert!(!webview_pdf_rendering_allowed(
+            &["*".to_string()],
+            &["private.example".to_string()]
+        ));
     }
 
     // --- Clap flag parsing tests ---
