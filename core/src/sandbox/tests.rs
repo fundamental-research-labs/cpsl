@@ -1519,3 +1519,105 @@ fn test_table_params_have_field_docs() {
         }
     }
 }
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_serialized_as_json_object() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("return { a = 1 }").unwrap();
+    assert_eq!(result, r#"{"a":1}"#);
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_serialized_as_json_array() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("return {1, 2, 3}").unwrap();
+    assert_eq!(result, "[1,2,3]");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_nested_table_return_serialized_as_json() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec("return { today = { { title = 'standup' } }, count = 2 }")
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(parsed["count"], 2);
+    assert_eq!(parsed["today"][0]["title"], "standup");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_multi_value_keeps_tab_join() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("return { a = 1 }, 'x'").unwrap();
+    assert_eq!(result, "{\"a\":1}\tx");
+}
+
+#[test]
+fn test_cyclic_table_return_falls_back_to_table() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("local t = {} t.self = t return t").unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+fn test_unserializable_table_return_falls_back_to_table() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("return { f = function() end }").unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+fn test_print_table_still_plain() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("print({ a = 1 })").unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_json_encode_cyclic_table_errors_cleanly() {
+    // A cyclic table must produce a clean error, not a stack-overflow abort.
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("local t = {} t.self = t return json.encode(t)");
+    assert!(result.is_err());
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_print_then_table_return() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("print('log line')\nreturn { a = 1 }").unwrap();
+    assert_eq!(result, "log line\n{\"a\":1}");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_empty_table_return_serialized_as_json_object() {
+    // Lua cannot distinguish an empty array from an empty object; {} wins.
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("return {}").unwrap();
+    assert_eq!(result, "{}");
+}
+
+const DEEP_TABLE: &str =
+    "local t = {}\nlocal cur = t\nfor _ = 1, 200 do cur.next = {} cur = cur.next end";
+
+#[test]
+fn test_deep_acyclic_table_return_falls_back_to_table() {
+    // Nesting beyond MAX_ENCODE_DEPTH trips the guard even without a cycle.
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec(&format!("{DEEP_TABLE}\nreturn t")).unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_json_encode_deep_acyclic_table_errors_cleanly() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec(&format!("{DEEP_TABLE}\nreturn json.encode(t)"));
+    assert!(result.is_err());
+}

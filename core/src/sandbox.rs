@@ -1166,9 +1166,22 @@ fn format_multi_value(values: &MultiValue) -> String {
     }
     values
         .iter()
-        .map(format_value)
+        .map(format_return_value)
         .collect::<Vec<_>>()
         .join("\t")
+}
+
+/// Format a value returned by the executed chunk. Unlike `format_value`
+/// (shared with `print`), tables are serialized to JSON; tables that cannot
+/// be encoded (functions inside, cycles, NaN, ...) fall back to `format_value`.
+fn format_return_value(value: &Value) -> String {
+    match value {
+        #[cfg(feature = "mod-json")]
+        Value::Table(_) => {
+            crate::json::lua_to_json_string(value).unwrap_or_else(|_| format_value(value))
+        }
+        _ => format_value(value),
+    }
 }
 
 fn format_value(value: &Value) -> String {
