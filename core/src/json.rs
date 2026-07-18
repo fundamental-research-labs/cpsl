@@ -200,13 +200,9 @@ fn lua_to_json_at_depth(value: &Value, depth: usize) -> Result<serde_json::Value
                     let mut map = serde_json::Map::new();
                     for pair in data.pairs::<Value, Value>() {
                         let (k, v) = pair?;
-                        let key = match &k {
-                            Value::String(s) => s.to_string_lossy().to_string(),
-                            Value::Integer(i) => i.to_string(),
-                            Value::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        map.insert(key, lua_to_json_at_depth(&v, depth + 1)?);
+                        let key = json_object_key(&k)?;
+                        let value = lua_to_json_at_depth(&v, depth + 1)?;
+                        insert_json_object_value(&mut map, key, value)?;
                     }
                     return Ok(serde_json::Value::Object(map));
                 }
@@ -226,18 +222,9 @@ fn lua_to_json_at_depth(value: &Value, depth: usize) -> Result<serde_json::Value
                 let mut map = serde_json::Map::new();
                 for pair in t.clone().pairs::<Value, Value>() {
                     let (k, v) = pair?;
-                    let key = match &k {
-                        Value::String(s) => s.to_string_lossy().to_string(),
-                        Value::Integer(i) => i.to_string(),
-                        Value::Number(n) => n.to_string(),
-                        _ => {
-                            return Err(mlua::Error::external(format!(
-                                "JSON object keys must be strings, got {}",
-                                value_type_name(&k)
-                            )))
-                        }
-                    };
-                    map.insert(key, lua_to_json_at_depth(&v, depth + 1)?);
+                    let key = json_object_key(&k)?;
+                    let value = lua_to_json_at_depth(&v, depth + 1)?;
+                    insert_json_object_value(&mut map, key, value)?;
                 }
                 Ok(serde_json::Value::Object(map))
             }
@@ -248,4 +235,30 @@ fn lua_to_json_at_depth(value: &Value, depth: usize) -> Result<serde_json::Value
             value_type_name(value)
         ))),
     }
+}
+
+fn json_object_key(key: &Value) -> Result<String, mlua::Error> {
+    match key {
+        Value::String(s) => Ok(s.to_string_lossy().to_string()),
+        Value::Integer(i) => Ok(i.to_string()),
+        Value::Number(n) => Ok(n.to_string()),
+        _ => Err(mlua::Error::external(format!(
+            "JSON object keys must be strings or numbers, got {}",
+            value_type_name(key)
+        ))),
+    }
+}
+
+fn insert_json_object_value(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), mlua::Error> {
+    if map.contains_key(&key) {
+        return Err(mlua::Error::external(format!(
+            "multiple Lua keys map to JSON object key {key:?}"
+        )));
+    }
+    map.insert(key, value);
+    Ok(())
 }
