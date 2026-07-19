@@ -1571,9 +1571,80 @@ fn test_unserializable_table_return_falls_back_to_table() {
 }
 
 #[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_with_unsupported_py_dict_key_falls_back_to_table() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(r#"return { __py_type = "dict", data = { [true] = "lost", ok = "kept" } }"#)
+        .unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_with_colliding_object_keys_falls_back_to_table() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(r#"return { [1] = "numeric", ["1"] = "string" }"#)
+        .unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_json_encode_rejects_lossy_object_keys() {
+    let sandbox = Sandbox::new().unwrap();
+    assert!(sandbox
+        .exec(r#"return json.encode({ __py_type = "dict", data = { [true] = "lost" } })"#)
+        .is_err());
+    assert!(sandbox
+        .exec(r#"return json.encode({ [1] = "numeric", ["1"] = "string" })"#)
+        .is_err());
+}
+
+#[test]
 fn test_print_table_still_plain() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("print({ a = 1 })").unwrap();
+    assert_eq!(result, "table");
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_does_not_invoke_index_metamethod() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local t = setmetatable({ a = 1 }, {
+                __index = function(_, key)
+                    print("unexpected lookup: " .. key)
+                end,
+            })
+            return t
+            "#,
+        )
+        .unwrap();
+    assert_eq!(result, r#"{"a":1}"#);
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_table_return_does_not_use_metamethod_wrapper_data() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(
+            r#"
+            local t = setmetatable({ __py_type = "list" }, {
+                __index = function(_, key)
+                    print("unexpected lookup: " .. key)
+                    return { 1 }
+                end,
+            })
+            return t
+            "#,
+        )
+        .unwrap();
     assert_eq!(result, "table");
 }
 

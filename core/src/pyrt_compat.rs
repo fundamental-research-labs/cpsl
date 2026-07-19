@@ -11,10 +11,10 @@ use mlua::Value;
 /// If the table is a py.list or py.tuple wrapper, return its `.data` sub-table;
 /// otherwise return the table as-is.
 pub(crate) fn unwrap_py_seq(t: &mlua::Table) -> Result<mlua::Table, mlua::Error> {
-    if let Ok(Value::String(s)) = t.get::<Value>("__py_type") {
+    if let Ok(Value::String(s)) = t.raw_get::<Value>("__py_type") {
         let ty = s.to_string_lossy();
         if ty == "list" || ty == "tuple" {
-            return t.get::<mlua::Table>("data").map_err(|_| {
+            return t.raw_get::<mlua::Table>("data").map_err(|_| {
                 mlua::Error::external(format!("py.{} wrapper missing .data field", ty))
             });
         }
@@ -25,10 +25,10 @@ pub(crate) fn unwrap_py_seq(t: &mlua::Table) -> Result<mlua::Table, mlua::Error>
 /// If the table is a py.dict wrapper, return its `.data` sub-table;
 /// otherwise return the table as-is.
 pub(crate) fn unwrap_py_dict(t: &mlua::Table) -> Result<mlua::Table, mlua::Error> {
-    if let Ok(Value::String(s)) = t.get::<Value>("__py_type") {
+    if let Ok(Value::String(s)) = t.raw_get::<Value>("__py_type") {
         if s.to_string_lossy() == "dict" {
             return t
-                .get::<mlua::Table>("data")
+                .raw_get::<mlua::Table>("data")
                 .map_err(|_| mlua::Error::external("py.dict wrapper missing .data field"));
         }
     }
@@ -37,7 +37,7 @@ pub(crate) fn unwrap_py_dict(t: &mlua::Table) -> Result<mlua::Table, mlua::Error
 
 /// Returns the `__py_type` string if this table is a py wrapper, or None.
 pub(crate) fn py_type(t: &mlua::Table) -> Option<String> {
-    if let Ok(Value::String(s)) = t.get::<Value>("__py_type") {
+    if let Ok(Value::String(s)) = t.raw_get::<Value>("__py_type") {
         Some(s.to_string_lossy().to_string())
     } else {
         None
