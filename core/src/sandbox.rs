@@ -760,6 +760,7 @@ impl SandboxBuilder {
 
         let needs_newline = Arc::new(Mutex::new(false));
         register_print(&lua, print_buf.clone(), needs_newline.clone())?;
+        register_tostring(&lua)?;
         register_global_help(&lua)?;
         remove_dangerous_globals(&lua)?;
 
@@ -1090,6 +1091,21 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
         end
     "#;
     lua.load(code).exec()?;
+    Ok(())
+}
+
+/// Override `tostring` so tables serialize as JSON (same as print/return). Agents
+/// often do `tostring(t)` or `"x" .. tostring(t)`, which otherwise yields
+/// opaque `table: 0x…` and hides nested fields like location.city.
+fn register_tostring(lua: &Lua) -> Result<(), mlua::Error> {
+    let original: mlua::Function = lua.globals().get("tostring")?;
+    let tostring_fn = lua.create_function(move |_, value: Value| -> Result<String, mlua::Error> {
+        if matches!(value, Value::Table(_)) {
+            return Ok(format_return_value(&value));
+        }
+        original.call::<String>(value)
+    })?;
+    lua.globals().set("tostring", tostring_fn)?;
     Ok(())
 }
 

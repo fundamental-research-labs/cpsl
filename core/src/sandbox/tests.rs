@@ -1624,6 +1624,19 @@ fn test_print_nested_table_serialized_as_json() {
 }
 
 #[test]
+#[cfg(feature = "mod-json")]
+fn test_tostring_table_serialized_as_json() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(r#"print("status: " .. tostring({ access = "granted", city = "Palo Alto" }))"#)
+        .unwrap();
+    assert!(
+        result.contains(r#""access":"granted""#) && result.contains(r#""city":"Palo Alto""#),
+        "tostring(table) should JSON-encode nested fields: {result}"
+    );
+}
+
+#[test]
 fn test_print_unserializable_table_falls_back_to_table() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("print({ f = function() end })").unwrap();
