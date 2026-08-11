@@ -22,8 +22,10 @@ use webbrowser_upload::{
 mod tests;
 
 const DEFAULT_RESOURCE_MODE: &str = "lean";
-const DEFAULT_WINDOW_WIDTH: i64 = 1200;
-const DEFAULT_WINDOW_HEIGHT: i64 = 900;
+/// Mobile-first defaults (iPhone-class CSS viewport). Use layout_mode="desktop" for full desktop.
+const DEFAULT_LAYOUT_MODE: &str = "mobile";
+const DEFAULT_WINDOW_WIDTH: i64 = 390;
+const DEFAULT_WINDOW_HEIGHT: i64 = 844;
 
 pub trait WebBrowserGateway: Send + Sync {
     fn handle_json(&self, request_json: &str) -> Result<String, String>;
@@ -38,12 +40,20 @@ where
     }
 }
 
-const CREATE_OPTS_FIELDS: &[FieldDoc] = &[FieldDoc {
-    name: "resource_mode",
-    typ: "string",
-    required: false,
-    description: "Resource loading mode: \"lean\" (default) or \"full\"",
-}];
+const CREATE_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "resource_mode",
+        typ: "string",
+        required: false,
+        description: "Resource loading mode: \"lean\" (default) or \"full\"",
+    },
+    FieldDoc {
+        name: "layout_mode",
+        typ: "string",
+        required: false,
+        description: "Device layout: \"mobile\" (default phone viewport + mobile UA) or \"desktop\"",
+    },
+];
 
 const OPEN_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
@@ -57,6 +67,12 @@ const OPEN_OPTS_FIELDS: &[FieldDoc] = &[
         typ: "string",
         required: false,
         description: "Resource loading mode: \"lean\" (default) or \"full\"",
+    },
+    FieldDoc {
+        name: "layout_mode",
+        typ: "string",
+        required: false,
+        description: "Device layout: \"mobile\" (default) or \"desktop\"; reuse browser to keep mode",
     },
     FieldDoc {
         name: "wait_resources",
@@ -202,7 +218,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "create",
-            description: "Create an empty browser. CPSL defaults to lean resource loading.",
+            description: "Create an empty browser. Defaults: lean resources + mobile layout (phone viewport/UA).",
             params: &[Param {
                 name: "opts",
                 short: None,
@@ -211,7 +227,9 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
                 fields: Some(CREATE_OPTS_FIELDS),
             }],
             returns: ReturnType::Table,
-            example: Some(r#"local browser = webbrowser.create({resource_mode="lean"}).browser"#),
+            example: Some(
+                r#"local browser = webbrowser.create({resource_mode="lean", layout_mode="mobile"}).browser"#,
+            ),
         },
         FnDoc {
             name: "drag",
@@ -274,7 +292,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "open",
-            description: "Open a URL in a browser. CPSL defaults to lean resource loading.",
+            description: "Open a URL in a browser. Defaults: lean resources + mobile layout. Returns a table with .browser id and .page snapshot—print or use it; do not discard.",
             params: &[
                 Param {
                     name: "url",
@@ -347,7 +365,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "resize",
-            description: "Resize the browser automation viewport.",
+            description: "Resize the browser automation viewport (pixels). Prefer set_layout for mobile/desktop presets.",
             params: &[
                 Param {
                     name: "browser",
@@ -373,6 +391,28 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
             ],
             returns: ReturnType::Table,
             example: Some(r#"webbrowser.resize(browser, 1200, 900)"#),
+        },
+        FnDoc {
+            name: "set_layout",
+            description: "Switch the same browser between mobile and desktop layout (viewport + user agent + WebKit content mode). Reloads the current page when possible.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "mode",
+                    short: Some('m'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(r#"webbrowser.set_layout(browser, "desktop")"#),
         },
         FnDoc {
             name: "screenshot",
@@ -698,6 +738,7 @@ pub(crate) fn register_webbrowser_globals(
                 let opts = optional_only_table(&args, "webbrowser.create")?;
                 let mut request = request("browserCreate");
                 set_resource_mode(&mut request, opts.as_ref(), true)?;
+                set_layout_mode(&mut request, opts.as_ref(), true)?;
                 dispatch(lua, &*gateway, request)
             })?,
         )?;
@@ -713,6 +754,7 @@ pub(crate) fn register_webbrowser_globals(
                 set_optional_string_field(&mut request, "browser", browser);
                 request.insert("url".to_string(), serde_json::Value::String(url));
                 set_resource_mode(&mut request, opts.as_ref(), true)?;
+                set_layout_mode(&mut request, opts.as_ref(), true)?;
                 set_resource_loading(&mut request, opts.as_ref(), false)?;
                 dispatch(lua, &*gateway, request)
             })?,
@@ -761,6 +803,20 @@ pub(crate) fn register_webbrowser_globals(
                     "windowHeight".to_string(),
                     serde_json::Value::Number(height.into()),
                 );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
+
+    {
+        let gateway = gateway.clone();
+        webbrowser.set(
+            "set_layout",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, mode) = parse_set_layout_args(&args)?;
+                let mut request = request("browserSetLayout");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert("layoutMode".to_string(), serde_json::Value::String(mode));
                 dispatch(lua, &*gateway, request)
             })?,
         )?;
@@ -1505,6 +1561,62 @@ fn set_resource_mode(
         }
     }
     Ok(())
+}
+
+fn set_layout_mode(
+    request: &mut Map<String, serde_json::Value>,
+    opts: Option<&Table>,
+    use_default: bool,
+) -> Result<(), mlua::Error> {
+    let mode = optional_string(
+        &opts.cloned(),
+        "webbrowser",
+        &["layout_mode", "layoutMode"],
+    )?
+    .or_else(|| use_default.then(|| DEFAULT_LAYOUT_MODE.to_string()));
+    if let Some(mode) = mode {
+        match mode.as_str() {
+            "mobile" | "desktop" => {
+                request.insert("layoutMode".to_string(), serde_json::Value::String(mode));
+            }
+            _ => {
+                return Err(mlua::Error::external(format!(
+                    "webbrowser: layout_mode must be \"mobile\" or \"desktop\", got {mode:?}"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_set_layout_args(args: &MultiValue) -> Result<(String, String), mlua::Error> {
+    if args.len() == 1 {
+        if let Value::Table(table) = &args[0] {
+            let browser = required_string(table, "webbrowser.set_layout", &["browser"])?;
+            let mode = required_string(table, "webbrowser.set_layout", &["mode", "layout_mode", "layoutMode"])?;
+            validate_layout_mode(&mode)?;
+            return Ok((browser, mode));
+        }
+    }
+    if args.len() == 2 {
+        let browser = value_string(&args[0], "webbrowser.set_layout", "browser")?;
+        let mode = value_string(&args[1], "webbrowser.set_layout", "mode")?;
+        validate_layout_mode(&mode)?;
+        return Ok((browser, mode));
+    }
+    Err(arg_error(
+        "webbrowser.set_layout",
+        WEBBROWSER_DOC.params("set_layout"),
+    ))
+}
+
+fn validate_layout_mode(mode: &str) -> Result<(), mlua::Error> {
+    match mode {
+        "mobile" | "desktop" => Ok(()),
+        _ => Err(mlua::Error::external(format!(
+            "webbrowser: layout mode must be \"mobile\" or \"desktop\", got {mode:?}"
+        ))),
+    }
 }
 
 fn set_resource_loading(
