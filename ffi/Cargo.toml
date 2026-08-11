@@ -19,6 +19,7 @@ ffi-minimal = [
 ]
 webbrowser = ["ffi-minimal", "cpsl-core/mod-webbrowser"]
 location = ["ffi-minimal", "cpsl-core/mod-location"]
+xlsx = ["ffi-minimal", "cpsl-core/mod-xlsx"]
 calendar = ["ffi-minimal", "cpsl-core/mod-apple-calendar"]
 doc = ["ffi-minimal", "cpsl-core/mod-doc"]
 embedded-agent = [
@@ -44,10 +45,11 @@ embedded-agent = [
     "cpsl-core/mod-qr",
     "webbrowser",
     "location",
+    "xlsx",
     "pdfium-render",
 ]
 pdfium-render = ["doc", "cpsl-core/pdfium-render"]
-all = ["cpsl-core/all", "doc", "pdfium-render", "webbrowser", "location", "calendar"]
+all = ["cpsl-core/all", "doc", "pdfium-render", "webbrowser", "location", "xlsx", "calendar"]
 
 [dependencies]
 cpsl-core = { path = "../core", default-features = false }

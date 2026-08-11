@@ -4,6 +4,8 @@
 use crate::calendar::CalendarActivityCallback;
 #[cfg(feature = "mod-location")]
 use crate::location::LocationGateway;
+#[cfg(feature = "mod-xlsx")]
+use crate::xlsx::XlsxGateway;
 use crate::mount::MountTable;
 #[cfg(feature = "mod-apple-calendar")]
 use apple_calendar::AppleCalendarGateway;
@@ -423,6 +425,8 @@ pub struct SandboxBuilder {
     webbrowser_gateway: Option<Arc<dyn crate::webbrowser::WebBrowserGateway>>,
     #[cfg(feature = "mod-location")]
     location_gateway: Option<Arc<dyn LocationGateway>>,
+    #[cfg(feature = "mod-xlsx")]
+    xlsx_gateway: Option<Arc<dyn XlsxGateway>>,
     #[cfg(cpsl_experimental_sfae)]
     sfae_store: Option<Arc<Mutex<dyn SecretStore + Send>>>,
     #[cfg(cpsl_experimental_sfae)]
@@ -452,6 +456,8 @@ impl Default for SandboxBuilder {
             webbrowser_gateway: None,
             #[cfg(feature = "mod-location")]
             location_gateway: None,
+            #[cfg(feature = "mod-xlsx")]
+            xlsx_gateway: None,
             #[cfg(cpsl_experimental_sfae)]
             sfae_store: None,
             #[cfg(cpsl_experimental_sfae)]
@@ -518,6 +524,12 @@ impl SandboxBuilder {
     #[cfg(feature = "mod-location")]
     pub fn location_gateway(mut self, gateway: Arc<dyn LocationGateway>) -> Self {
         self.location_gateway = Some(gateway);
+        self
+    }
+
+    #[cfg(feature = "mod-xlsx")]
+    pub fn xlsx_gateway(mut self, gateway: Arc<dyn XlsxGateway>) -> Self {
+        self.xlsx_gateway = Some(gateway);
         self
     }
 
@@ -712,6 +724,10 @@ impl SandboxBuilder {
         #[cfg(feature = "mod-location")]
         if let Some(ref gateway) = self.location_gateway {
             crate::location::register_location_globals(&lua, gateway.clone())?;
+        }
+        #[cfg(feature = "mod-xlsx")]
+        if let Some(ref gateway) = self.xlsx_gateway {
+            crate::xlsx::register_xlsx_globals(&lua, gateway.clone(), mounts.clone())?;
         }
         #[cfg(feature = "mod-http")]
         if let Some(ref gw) = self.http_gateway {
@@ -1056,7 +1072,10 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
     // global names and includes only those that are actually registered.
     let code = r#"
         function help()
-            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","location","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xml","yaml","yfinance"}
+            -- Keep in sync with runtime/shrt.luau known-module list (and feature-gated
+            -- register_* paths below). Include host-gateway modules like xlsx so
+            -- help() discovers them when the host wires the gateway.
+            local known = {"base64","calendar","compress","country","crypto","csv","currency","datetime","doc","edgar","email","fin","fs","fuzzy","html","http","image","json","location","numx","phone","plot","qr","random","regex","sfae","url","webbrowser","xlsx","xml","yaml","yfinance"}
             local lines = {}
             for _, name in ipairs(known) do
                 local m = rawget(_G, name)

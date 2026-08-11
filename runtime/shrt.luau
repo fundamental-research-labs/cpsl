@@ -1527,7 +1527,7 @@ function sh.shell_help()
         .. "Variables:      export VAR=value, $VAR\n"
 
     -- Dynamically list loaded modules
-    local known = {"fs","calendar","compress","json","csv","doc","plot","yaml","xml","numx","http","fuzzy","phone","email","country","currency","datetime","image","random","base64","fin","yfinance","edgar","ocr","crypto","regex","html","url","qr","sfae","webbrowser"}
+    local known = {"fs","calendar","compress","json","csv","doc","plot","yaml","xml","numx","http","fuzzy","phone","email","country","currency","datetime","image","random","base64","fin","yfinance","edgar","ocr","crypto","regex","html","url","qr","sfae","webbrowser","location","xlsx"}
     local lines = {}
     for _, name in ipairs(known) do
         local m = rawget(_G, name)

@@ -17,6 +17,9 @@ typedef void (*cpsl_webbrowser_user_data_free_fn)(void *user_data);
 typedef char *(*cpsl_location_handle_json_fn)(void *user_data, const char *request_json);
 typedef void (*cpsl_location_string_free_fn)(char *value);
 typedef void (*cpsl_location_user_data_free_fn)(void *user_data);
+typedef char *(*cpsl_xlsx_handle_json_fn)(void *user_data, const char *request_json);
+typedef void (*cpsl_xlsx_string_free_fn)(char *value);
+typedef void (*cpsl_xlsx_user_data_free_fn)(void *user_data);
 typedef void (*cpsl_file_activity_handle_fn)(
     void *user_data,
     const char *path,
@@ -60,6 +63,13 @@ typedef struct cpsl_location_callbacks {
     cpsl_location_string_free_fn string_free;
     cpsl_location_user_data_free_fn user_data_free;
 } cpsl_location_callbacks_t;
+
+typedef struct cpsl_xlsx_callbacks {
+    void *user_data;
+    cpsl_xlsx_handle_json_fn handle_json;
+    cpsl_xlsx_string_free_fn string_free;
+    cpsl_xlsx_user_data_free_fn user_data_free;
+} cpsl_xlsx_callbacks_t;
 
 struct cpsl_vision_input {
     const uint8_t *data;
@@ -152,6 +162,21 @@ cpsl_session_t *cpsl_session_new_with_host_callbacks_v3(
     const cpsl_calendar_activity_callbacks_t *calendar_activity_callbacks,
     const cpsl_location_callbacks_t *location_callbacks,
     const cpsl_vision_callbacks_t *vision_callbacks
+);
+
+/*
+ * Adds Excel (.xlsx) host callbacks backed by the cells C ABI on the host.
+ * Callbacks receive borrowed UTF-8 JSON and must return caller-owned UTF-8 JSON
+ * released with xlsx_callbacks->string_free.
+ */
+cpsl_session_t *cpsl_session_new_with_host_callbacks_v4(
+    const char *config_json,
+    const cpsl_webbrowser_callbacks_t *webbrowser_callbacks,
+    const cpsl_file_activity_callbacks_t *file_activity_callbacks,
+    const cpsl_calendar_activity_callbacks_t *calendar_activity_callbacks,
+    const cpsl_location_callbacks_t *location_callbacks,
+    const cpsl_vision_callbacks_t *vision_callbacks,
+    const cpsl_xlsx_callbacks_t *xlsx_callbacks
 );
 
 /* data is borrowed and copied before this function returns. */

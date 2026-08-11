@@ -41,6 +41,8 @@ pub(crate) mod json;
 #[cfg(feature = "mod-location")]
 pub(crate) mod location;
 pub(crate) mod lua_util;
+#[cfg(feature = "mod-xlsx")]
+pub(crate) mod xlsx;
 mod mount;
 #[cfg(feature = "mod-numpy")]
 pub(crate) mod numpy;
@@ -80,6 +82,8 @@ pub use calendar::CalendarActivityCallback;
 #[cfg(feature = "mod-location")]
 pub use location::LocationGateway;
 pub use mount::{MountError, MountPermission, MountTable};
+#[cfg(feature = "mod-xlsx")]
+pub use xlsx::XlsxGateway;
 #[cfg(feature = "mod-http")]
 pub use native_http::HttpGateway;
 #[cfg(feature = "pdfium-render")]

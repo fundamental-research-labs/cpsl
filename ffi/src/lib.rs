@@ -8,6 +8,8 @@ use cpsl_core::LocationGateway;
 use cpsl_core::PdfiumEngine;
 #[cfg(feature = "webbrowser")]
 use cpsl_core::WebBrowserGateway;
+#[cfg(feature = "xlsx")]
+use cpsl_core::XlsxGateway;
 use cpsl_core::{
     FileActivityCallback, HttpGateway, MountPermission, MountTable, Sandbox,
     WEBVIEW_PDF_POLICY_ERROR,
@@ -58,6 +60,10 @@ type LocationHandleJsonFn =
     unsafe extern "C" fn(user_data: *mut c_void, request_json: *const c_char) -> *mut c_char;
 type LocationStringFreeFn = unsafe extern "C" fn(value: *mut c_char);
 type LocationUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
+type XlsxHandleJsonFn =
+    unsafe extern "C" fn(user_data: *mut c_void, request_json: *const c_char) -> *mut c_char;
+type XlsxStringFreeFn = unsafe extern "C" fn(value: *mut c_char);
+type XlsxUserDataFreeFn = unsafe extern "C" fn(user_data: *mut c_void);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -91,6 +97,15 @@ pub struct cpsl_location_callbacks_t {
     handle_json: Option<LocationHandleJsonFn>,
     string_free: Option<LocationStringFreeFn>,
     user_data_free: Option<LocationUserDataFreeFn>,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct cpsl_xlsx_callbacks_t {
+    user_data: *mut c_void,
+    handle_json: Option<XlsxHandleJsonFn>,
+    string_free: Option<XlsxStringFreeFn>,
+    user_data_free: Option<XlsxUserDataFreeFn>,
 }
 
 #[cfg(feature = "webbrowser")]
@@ -153,6 +168,20 @@ struct FfiLocationGateway {
 unsafe impl Send for FfiLocationGateway {}
 #[cfg(feature = "location")]
 unsafe impl Sync for FfiLocationGateway {}
+
+#[cfg(feature = "xlsx")]
+struct FfiXlsxGateway {
+    user_data: *mut c_void,
+    handle_json: XlsxHandleJsonFn,
+    string_free: XlsxStringFreeFn,
+    user_data_free: Option<XlsxUserDataFreeFn>,
+    callback_lock: Mutex<()>,
+}
+
+#[cfg(feature = "xlsx")]
+unsafe impl Send for FfiXlsxGateway {}
+#[cfg(feature = "xlsx")]
+unsafe impl Sync for FfiXlsxGateway {}
 
 #[cfg(feature = "webbrowser")]
 impl WebBrowserGateway for FfiWebBrowserGateway {
@@ -247,6 +276,43 @@ impl LocationGateway for FfiLocationGateway {
 
 #[cfg(feature = "location")]
 impl Drop for FfiLocationGateway {
+    fn drop(&mut self) {
+        if !self.user_data.is_null() {
+            if let Some(user_data_free) = self.user_data_free {
+                unsafe {
+                    user_data_free(self.user_data);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "xlsx")]
+impl XlsxGateway for FfiXlsxGateway {
+    fn handle_json(&self, request_json: &str) -> Result<String, String> {
+        let request = CString::new(request_json)
+            .map_err(|_| "xlsx request JSON contained an embedded NUL byte".to_string())?;
+        let _guard = self
+            .callback_lock
+            .lock()
+            .map_err(|_| "xlsx callback lock was poisoned".to_string())?;
+        let response = unsafe { (self.handle_json)(self.user_data, request.as_ptr()) };
+        if response.is_null() {
+            return Err("xlsx callback returned NULL".to_string());
+        }
+        let value = unsafe { CStr::from_ptr(response) }
+            .to_str()
+            .map(|value| value.to_string())
+            .map_err(|_| "xlsx callback returned non-UTF-8 JSON".to_string());
+        unsafe {
+            (self.string_free)(response);
+        }
+        value
+    }
+}
+
+#[cfg(feature = "xlsx")]
+impl Drop for FfiXlsxGateway {
     fn drop(&mut self) {
         if !self.user_data.is_null() {
             if let Some(user_data_free) = self.user_data_free {
@@ -400,6 +466,7 @@ pub extern "C" fn cpsl_backend_metadata_json() -> *mut c_char {
                 "calendar_activity_callbacks": cfg!(feature = "calendar"),
                 "webbrowser_callbacks": cfg!(feature = "webbrowser"),
                 "location_callbacks": cfg!(feature = "location"),
+                "xlsx_callbacks": cfg!(feature = "xlsx"),
                 "vision_callbacks": cfg!(feature = "doc")
             }
         });
@@ -417,6 +484,10 @@ pub extern "C" fn cpsl_session_new(config_json: *const c_char) -> *mut cpsl_sess
         None,
         #[cfg(feature = "location")]
         None,
+        None,
+        #[cfg(feature = "xlsx")]
+        None,
+        #[cfg(not(feature = "xlsx"))]
         None,
     )
 }
@@ -442,6 +513,10 @@ pub extern "C" fn cpsl_session_new_with_webbrowser_callbacks(
         None,
         #[cfg(feature = "location")]
         None,
+        None,
+        #[cfg(feature = "xlsx")]
+        None,
+        #[cfg(not(feature = "xlsx"))]
         None,
     )
 }
@@ -496,6 +571,10 @@ pub extern "C" fn cpsl_session_new_with_callbacks(
         #[cfg(feature = "location")]
         None,
         None,
+        #[cfg(feature = "xlsx")]
+        None,
+        #[cfg(not(feature = "xlsx"))]
+        None,
     )
 }
 
@@ -542,12 +621,34 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
     location_callbacks: *const cpsl_location_callbacks_t,
     vision_callbacks: *const cpsl_vision_callbacks_t,
 ) -> *mut cpsl_session_t {
+    cpsl_session_new_with_host_callbacks_v4(
+        config_json,
+        webbrowser_callbacks,
+        file_activity_callbacks,
+        calendar_activity_callbacks,
+        location_callbacks,
+        vision_callbacks,
+        ptr::null(),
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn cpsl_session_new_with_host_callbacks_v4(
+    config_json: *const c_char,
+    webbrowser_callbacks: *const cpsl_webbrowser_callbacks_t,
+    file_activity_callbacks: *const cpsl_file_activity_callbacks_t,
+    calendar_activity_callbacks: *const cpsl_calendar_activity_callbacks_t,
+    location_callbacks: *const cpsl_location_callbacks_t,
+    vision_callbacks: *const cpsl_vision_callbacks_t,
+    xlsx_callbacks: *const cpsl_xlsx_callbacks_t,
+) -> *mut cpsl_session_t {
     let file_activity_callback = match validate_file_activity_callbacks(file_activity_callbacks) {
         Ok(callback) => callback,
         Err(error) => {
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             free_vision_callback_context(vision_callbacks);
+            free_xlsx_callback_context(xlsx_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -559,6 +660,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             free_vision_callback_context(vision_callbacks);
+            free_xlsx_callback_context(xlsx_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -570,6 +672,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
             free_calendar_activity_callback_context(calendar_activity_callbacks);
             free_location_callback_context(location_callbacks);
             free_vision_callback_context(vision_callbacks);
+            free_xlsx_callback_context(xlsx_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -582,6 +685,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
                 free_calendar_activity_callback_context(calendar_activity_callbacks);
                 free_location_callback_context(location_callbacks);
                 free_vision_callback_context(vision_callbacks);
+                free_xlsx_callback_context(xlsx_callbacks);
                 set_last_error(&error);
                 return ptr::null_mut();
             }
@@ -596,6 +700,7 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
         Err(error) => {
             free_location_callback_context(location_callbacks);
             free_vision_callback_context(vision_callbacks);
+            free_xlsx_callback_context(xlsx_callbacks);
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -608,6 +713,24 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
         Ok(callback) => callback,
         Err(error) => {
             free_vision_callback_context(vision_callbacks);
+            free_xlsx_callback_context(xlsx_callbacks);
+            set_last_error(&error);
+            return ptr::null_mut();
+        }
+    };
+    #[cfg(feature = "xlsx")]
+    let xlsx_gateway = match validate_xlsx_callbacks(xlsx_callbacks) {
+        Ok(gateway) => gateway,
+        Err(error) => {
+            free_xlsx_callback_context(xlsx_callbacks);
+            set_last_error(&error);
+            return ptr::null_mut();
+        }
+    };
+    #[cfg(not(feature = "xlsx"))]
+    let xlsx_gateway = match reject_xlsx_callbacks(xlsx_callbacks) {
+        Ok(gateway) => gateway,
+        Err(error) => {
             set_last_error(&error);
             return ptr::null_mut();
         }
@@ -622,6 +745,10 @@ pub extern "C" fn cpsl_session_new_with_host_callbacks_v3(
         #[cfg(feature = "location")]
         location_gateway,
         vision_callback,
+        #[cfg(feature = "xlsx")]
+        xlsx_gateway,
+        #[cfg(not(feature = "xlsx"))]
+        xlsx_gateway,
     )
 }
 
@@ -633,6 +760,8 @@ fn session_new_inner(
     #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
     vision_callback: Option<cpsl_core::VisionCallback>,
+    #[cfg(feature = "xlsx")] xlsx_gateway: Option<Arc<dyn XlsxGateway>>,
+    #[cfg(not(feature = "xlsx"))] _xlsx_gateway: Option<()>,
 ) -> *mut cpsl_session_t {
     ffi_result(|| {
         let config_json = c_str_arg(config_json, "config_json")?;
@@ -647,6 +776,8 @@ fn session_new_inner(
             #[cfg(feature = "location")]
             location_gateway,
             vision_callback,
+            #[cfg(feature = "xlsx")]
+            xlsx_gateway,
         )?;
         let session = Box::new(Session {
             sandbox,
@@ -863,6 +994,20 @@ fn free_location_callback_context(callbacks: *const cpsl_location_callbacks_t) {
     }
 }
 
+fn free_xlsx_callback_context(callbacks: *const cpsl_xlsx_callbacks_t) {
+    if callbacks.is_null() {
+        return;
+    }
+    let callbacks = unsafe { &*callbacks };
+    if !callbacks.user_data.is_null() {
+        if let Some(user_data_free) = callbacks.user_data_free {
+            unsafe {
+                user_data_free(callbacks.user_data);
+            }
+        }
+    }
+}
+
 #[cfg(feature = "location")]
 fn validate_location_callbacks(
     callbacks: *const cpsl_location_callbacks_t,
@@ -886,6 +1031,42 @@ fn validate_location_callbacks(
         user_data_free: callbacks.user_data_free,
         callback_lock: Mutex::new(()),
     })))
+}
+
+#[cfg(feature = "xlsx")]
+fn validate_xlsx_callbacks(
+    callbacks: *const cpsl_xlsx_callbacks_t,
+) -> Result<Option<Arc<dyn XlsxGateway>>, String> {
+    if callbacks.is_null() {
+        return Ok(None);
+    }
+
+    let callbacks = unsafe { &*callbacks };
+    let handle_json = callbacks
+        .handle_json
+        .ok_or_else(|| "xlsx callbacks.handle_json must not be NULL".to_string())?;
+    let string_free = callbacks
+        .string_free
+        .ok_or_else(|| "xlsx callbacks.string_free must not be NULL".to_string())?;
+
+    Ok(Some(Arc::new(FfiXlsxGateway {
+        user_data: callbacks.user_data,
+        handle_json,
+        string_free,
+        user_data_free: callbacks.user_data_free,
+        callback_lock: Mutex::new(()),
+    })))
+}
+
+#[cfg(not(feature = "xlsx"))]
+fn reject_xlsx_callbacks(
+    callbacks: *const cpsl_xlsx_callbacks_t,
+) -> Result<Option<()>, String> {
+    if callbacks.is_null() {
+        return Ok(None);
+    }
+    free_xlsx_callback_context(callbacks);
+    Err("CPSL was built without mod-xlsx".to_string())
 }
 
 fn validate_session_config(config_json: &str) -> Result<ValidatedSessionConfig, String> {
@@ -963,6 +1144,7 @@ fn create_runtime_sandbox(
     #[cfg(feature = "calendar")] calendar_activity_callback: Option<CalendarActivityCallback>,
     #[cfg(feature = "location")] location_gateway: Option<Arc<dyn LocationGateway>>,
     vision_callback: Option<cpsl_core::VisionCallback>,
+    #[cfg(feature = "xlsx")] xlsx_gateway: Option<Arc<dyn XlsxGateway>>,
 ) -> Result<Sandbox, String> {
     let mut mounts = MountTable::new();
     for mount in &config.mounts {
@@ -1006,6 +1188,12 @@ fn create_runtime_sandbox(
     #[cfg(feature = "location")]
     let builder = if let Some(gateway) = location_gateway {
         builder.location_gateway(gateway)
+    } else {
+        builder
+    };
+    #[cfg(feature = "xlsx")]
+    let builder = if let Some(gateway) = xlsx_gateway {
+        builder.xlsx_gateway(gateway)
     } else {
         builder
     };
@@ -1887,6 +2075,8 @@ mod tests {
             None,
             #[cfg(feature = "location")]
             None,
+            None,
+            #[cfg(feature = "xlsx")]
             None,
         )
         .unwrap();
