@@ -1108,7 +1108,9 @@ fn register_print(
                 "print: {BUFFER_TEXT_BOUNDARY_ERROR}"
             )));
         }
-        let line: Vec<String> = values.iter().map(format_value).collect();
+        // Same table formatting as return values: nested tables as JSON so agents
+        // can see fields (e.g. location.current() → {"location":{"latitude":...}}).
+        let line: Vec<String> = values.iter().map(format_return_value).collect();
         let Ok(mut b) = buf.lock() else { return Ok(()) };
         let Ok(mut nl) = needs_nl_print.lock() else {
             return Ok(());
@@ -1171,9 +1173,9 @@ fn format_multi_value(values: &MultiValue) -> String {
         .join("\t")
 }
 
-/// Format a value returned by the executed chunk. Unlike `format_value`
-/// (shared with `print`), tables are serialized to JSON; tables that cannot
-/// be encoded (functions inside, cycles, NaN, ...) fall back to `format_value`.
+/// Format a value for print() and for chunk return values. Tables are
+/// serialized to JSON when possible; tables that cannot be encoded (functions
+/// inside, cycles, NaN, ...) fall back to `format_value` ("table").
 fn format_return_value(value: &Value) -> String {
     match value {
         #[cfg(feature = "mod-json")]

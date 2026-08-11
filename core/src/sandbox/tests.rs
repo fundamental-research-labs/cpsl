@@ -1603,9 +1603,30 @@ fn test_json_encode_rejects_lossy_object_keys() {
 }
 
 #[test]
-fn test_print_table_still_plain() {
+#[cfg(feature = "mod-json")]
+fn test_print_table_serialized_as_json() {
     let sandbox = Sandbox::new().unwrap();
     let result = sandbox.exec("print({ a = 1 })").unwrap();
+    assert_eq!(result, r#"{"a":1}"#);
+}
+
+#[test]
+#[cfg(feature = "mod-json")]
+fn test_print_nested_table_serialized_as_json() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox
+        .exec(r#"print({ access = "granted", location = { latitude = 1.5, longitude = 2.5 } })"#)
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(parsed["access"], "granted");
+    assert_eq!(parsed["location"]["latitude"], 1.5);
+    assert_eq!(parsed["location"]["longitude"], 2.5);
+}
+
+#[test]
+fn test_print_unserializable_table_falls_back_to_table() {
+    let sandbox = Sandbox::new().unwrap();
+    let result = sandbox.exec("print({ f = function() end })").unwrap();
     assert_eq!(result, "table");
 }
 
