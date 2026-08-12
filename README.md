@@ -169,3 +169,9 @@ These local comparison runs use `./bench-python-luau.sh`, which is optional and 
 | CLI release artifacts | Publish `cpsl` CLI binaries for macOS, Windows, and Linux when tagging a version. | [#11](https://github.com/fundamental-research-labs/cpsl/issues/11) |
 | Capsule module contracts | Define the external capsule-module contract, including module metadata, source pinning, compatibility checks, and build boundaries so community modules can live in separate repositories. Distinct from CPSL Hub: this is the source/build contract; Hub is artifact distribution and discovery. | [#18](https://github.com/fundamental-research-labs/cpsl/issues/18) |
 | CPSL Hub | Design the push and pull workflow for pre-built capsules, including metadata, compatibility checks, and provenance. | [#12](https://github.com/fundamental-research-labs/cpsl/issues/12) |
+
+## License
+
+CPSL is distributed under the [MIT License](LICENSE).
+
+Third-party software used by CPSL is redistributed under its own licenses. See [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) for the full crate inventory, weak-copyleft components (MPL-2.0, LGPL-3.0), vendored trees, and optional PDFium notices.

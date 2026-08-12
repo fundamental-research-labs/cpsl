@@ -30,10 +30,10 @@ pub(crate) static LOCATION_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "current",
-            description: "Return the current device location. Prompts when access is undefined.",
+            description: "Return the current device location (lat/long plus reverse-geocoded place fields when available). Prompts when access is undefined.",
             params: &[],
             returns: ReturnType::Table,
-            example: Some("local here = location.current()"),
+            example: Some("local here = location.current(); print(here.location.city, here.location.latitude)"),
         },
     ],
 };

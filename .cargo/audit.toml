@@ -5,4 +5,9 @@ ignore = [
     # remove these ignores when upstream publishes fixed dependency ranges.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
+    # sevenz-rust: path traversal during extraction; no fixed upgrade available.
+    # CPSL mitigates via custom decompress_file_with_extract_fn in
+    # core/src/compress.rs that rejects entries whose resolved path escapes
+    # the destination directory (destination-prefix check).
+    "RUSTSEC-2026-0245",
 ]

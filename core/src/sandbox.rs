@@ -760,6 +760,7 @@ impl SandboxBuilder {
 
         let needs_newline = Arc::new(Mutex::new(false));
         register_print(&lua, print_buf.clone(), needs_newline.clone())?;
+        register_tostring(&lua)?;
         register_global_help(&lua)?;
         remove_dangerous_globals(&lua)?;
 
@@ -1093,6 +1094,21 @@ fn register_global_help(lua: &Lua) -> Result<(), mlua::Error> {
     Ok(())
 }
 
+/// Override `tostring` so tables serialize as JSON (same as print/return). Agents
+/// often do `tostring(t)` or `"x" .. tostring(t)`, which otherwise yields
+/// opaque `table: 0x…` and hides nested fields like location.city.
+fn register_tostring(lua: &Lua) -> Result<(), mlua::Error> {
+    let original: mlua::Function = lua.globals().get("tostring")?;
+    let tostring_fn = lua.create_function(move |_, value: Value| -> Result<String, mlua::Error> {
+        if matches!(value, Value::Table(_)) {
+            return Ok(format_return_value(&value));
+        }
+        original.call::<String>(value)
+    })?;
+    lua.globals().set("tostring", tostring_fn)?;
+    Ok(())
+}
+
 fn register_print(
     lua: &Lua,
     buf: Arc<Mutex<String>>,
@@ -1108,7 +1124,9 @@ fn register_print(
                 "print: {BUFFER_TEXT_BOUNDARY_ERROR}"
             )));
         }
-        let line: Vec<String> = values.iter().map(format_value).collect();
+        // Same table formatting as return values: nested tables as JSON so agents
+        // can see fields (e.g. location.current() → {"location":{"latitude":...}}).
+        let line: Vec<String> = values.iter().map(format_return_value).collect();
         let Ok(mut b) = buf.lock() else { return Ok(()) };
         let Ok(mut nl) = needs_nl_print.lock() else {
             return Ok(());
@@ -1171,9 +1189,9 @@ fn format_multi_value(values: &MultiValue) -> String {
         .join("\t")
 }
 
-/// Format a value returned by the executed chunk. Unlike `format_value`
-/// (shared with `print`), tables are serialized to JSON; tables that cannot
-/// be encoded (functions inside, cycles, NaN, ...) fall back to `format_value`.
+/// Format a value for print() and for chunk return values. Tables are
+/// serialized to JSON when possible; tables that cannot be encoded (functions
+/// inside, cycles, NaN, ...) fall back to `format_value` ("table").
 fn format_return_value(value: &Value) -> String {
     match value {
         #[cfg(feature = "mod-json")]

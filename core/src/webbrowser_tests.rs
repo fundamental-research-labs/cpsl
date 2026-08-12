@@ -41,6 +41,22 @@ fn open_defaults_to_lean_resource_mode() {
     assert_eq!(requests[0]["command"], "open");
     assert_eq!(requests[0]["url"], "https://example.com");
     assert_eq!(requests[0]["resourceMode"], "lean");
+    assert_eq!(requests[0]["layoutMode"], "mobile");
+}
+
+#[test]
+fn set_layout_dispatches_layout_mode() {
+    let gateway = Arc::new(RecordingGateway::default());
+    let sandbox = sandbox(gateway.clone());
+
+    sandbox
+        .exec(r#"webbrowser.set_layout("abc123ef", "desktop")"#)
+        .unwrap();
+
+    let requests = gateway.requests.lock().unwrap();
+    assert_eq!(requests[0]["command"], "browserSetLayout");
+    assert_eq!(requests[0]["browser"], "abc123ef");
+    assert_eq!(requests[0]["layoutMode"], "desktop");
 }
 
 #[test]

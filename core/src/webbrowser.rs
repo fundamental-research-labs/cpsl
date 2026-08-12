@@ -1,14 +1,13 @@
 //! Lua-facing browser automation module backed by an injectable native gateway.
 
-use crate::lua_util::{is_lua_array, register_help_functions, value_type_name};
+use crate::lua_util::register_help_functions;
 use crate::mount::MountTable;
 use crate::sandbox::{
     arg_error, wrap_module_with_help_hints, FieldDoc, FnDoc, ModuleDoc, Param, ParamType,
     ReturnType,
 };
 use mlua::{Lua, MultiValue, Table, Value};
-use serde_json::{Map, Number};
-use std::path::Path;
+use serde_json::Map;
 use std::sync::Arc;
 
 #[path = "webbrowser_upload.rs"]
@@ -17,13 +16,24 @@ use webbrowser_upload::{
     parse_arm_upload_args, parse_upload_args, resolve_upload_paths, validate_control_key,
 };
 
+#[path = "webbrowser_args.rs"]
+mod webbrowser_args;
+use webbrowser_args::{
+    ensure_no_args, json_to_lua, lua_to_json, number_value, optional_bool, optional_integer,
+    optional_number, optional_only_table, optional_string, required_number, required_string,
+    set_optional_string_field, single_table_arg, string_array, table_field,
+    validate_screenshot_path, value_integer, value_number, value_string, value_table,
+};
+
 #[cfg(test)]
 #[path = "webbrowser_tests.rs"]
 mod tests;
 
 const DEFAULT_RESOURCE_MODE: &str = "lean";
-const DEFAULT_WINDOW_WIDTH: i64 = 1200;
-const DEFAULT_WINDOW_HEIGHT: i64 = 900;
+/// Mobile-first defaults (iPhone-class CSS viewport). Use layout_mode="desktop" for full desktop.
+const DEFAULT_LAYOUT_MODE: &str = "mobile";
+const DEFAULT_WINDOW_WIDTH: i64 = 390;
+const DEFAULT_WINDOW_HEIGHT: i64 = 844;
 
 pub trait WebBrowserGateway: Send + Sync {
     fn handle_json(&self, request_json: &str) -> Result<String, String>;
@@ -38,12 +48,20 @@ where
     }
 }
 
-const CREATE_OPTS_FIELDS: &[FieldDoc] = &[FieldDoc {
-    name: "resource_mode",
-    typ: "string",
-    required: false,
-    description: "Resource loading mode: \"lean\" (default) or \"full\"",
-}];
+const CREATE_OPTS_FIELDS: &[FieldDoc] = &[
+    FieldDoc {
+        name: "resource_mode",
+        typ: "string",
+        required: false,
+        description: "Resource loading mode: \"lean\" (default) or \"full\"",
+    },
+    FieldDoc {
+        name: "layout_mode",
+        typ: "string",
+        required: false,
+        description: "Device layout: \"mobile\" (default phone viewport + mobile UA) or \"desktop\"",
+    },
+];
 
 const OPEN_OPTS_FIELDS: &[FieldDoc] = &[
     FieldDoc {
@@ -57,6 +75,12 @@ const OPEN_OPTS_FIELDS: &[FieldDoc] = &[
         typ: "string",
         required: false,
         description: "Resource loading mode: \"lean\" (default) or \"full\"",
+    },
+    FieldDoc {
+        name: "layout_mode",
+        typ: "string",
+        required: false,
+        description: "Device layout: \"mobile\" (default) or \"desktop\"; reuse browser to keep mode",
     },
     FieldDoc {
         name: "wait_resources",
@@ -202,7 +226,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "create",
-            description: "Create an empty browser. CPSL defaults to lean resource loading.",
+            description: "Create an empty browser. Defaults: lean resources + mobile layout (phone viewport/UA).",
             params: &[Param {
                 name: "opts",
                 short: None,
@@ -211,7 +235,9 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
                 fields: Some(CREATE_OPTS_FIELDS),
             }],
             returns: ReturnType::Table,
-            example: Some(r#"local browser = webbrowser.create({resource_mode="lean"}).browser"#),
+            example: Some(
+                r#"local browser = webbrowser.create({resource_mode="lean", layout_mode="mobile"}).browser"#,
+            ),
         },
         FnDoc {
             name: "drag",
@@ -274,7 +300,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "open",
-            description: "Open a URL in a browser. CPSL defaults to lean resource loading.",
+            description: "Open a URL in a browser. Defaults: lean resources + mobile layout. Returns a table with .browser id and .page snapshot—print or use it; do not discard.",
             params: &[
                 Param {
                     name: "url",
@@ -347,7 +373,7 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
         },
         FnDoc {
             name: "resize",
-            description: "Resize the browser automation viewport.",
+            description: "Resize the browser automation viewport (pixels). Prefer set_layout for mobile/desktop presets.",
             params: &[
                 Param {
                     name: "browser",
@@ -373,6 +399,28 @@ pub(crate) static WEBBROWSER_DOC: ModuleDoc = ModuleDoc {
             ],
             returns: ReturnType::Table,
             example: Some(r#"webbrowser.resize(browser, 1200, 900)"#),
+        },
+        FnDoc {
+            name: "set_layout",
+            description: "Switch the same browser between mobile and desktop layout (viewport + user agent + WebKit content mode). Reloads the current page when possible.",
+            params: &[
+                Param {
+                    name: "browser",
+                    short: Some('b'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+                Param {
+                    name: "mode",
+                    short: Some('m'),
+                    typ: ParamType::String,
+                    required: true,
+                    fields: None,
+                },
+            ],
+            returns: ReturnType::Table,
+            example: Some(r#"webbrowser.set_layout(browser, "desktop")"#),
         },
         FnDoc {
             name: "screenshot",
@@ -698,6 +746,7 @@ pub(crate) fn register_webbrowser_globals(
                 let opts = optional_only_table(&args, "webbrowser.create")?;
                 let mut request = request("browserCreate");
                 set_resource_mode(&mut request, opts.as_ref(), true)?;
+                set_layout_mode(&mut request, opts.as_ref(), true)?;
                 dispatch(lua, &*gateway, request)
             })?,
         )?;
@@ -713,6 +762,7 @@ pub(crate) fn register_webbrowser_globals(
                 set_optional_string_field(&mut request, "browser", browser);
                 request.insert("url".to_string(), serde_json::Value::String(url));
                 set_resource_mode(&mut request, opts.as_ref(), true)?;
+                set_layout_mode(&mut request, opts.as_ref(), true)?;
                 set_resource_loading(&mut request, opts.as_ref(), false)?;
                 dispatch(lua, &*gateway, request)
             })?,
@@ -761,6 +811,20 @@ pub(crate) fn register_webbrowser_globals(
                     "windowHeight".to_string(),
                     serde_json::Value::Number(height.into()),
                 );
+                dispatch(lua, &*gateway, request)
+            })?,
+        )?;
+    }
+
+    {
+        let gateway = gateway.clone();
+        webbrowser.set(
+            "set_layout",
+            lua.create_function(move |lua, args: MultiValue| {
+                let (browser, mode) = parse_set_layout_args(&args)?;
+                let mut request = request("browserSetLayout");
+                request.insert("browser".to_string(), serde_json::Value::String(browser));
+                request.insert("layoutMode".to_string(), serde_json::Value::String(mode));
                 dispatch(lua, &*gateway, request)
             })?,
         )?;
@@ -1507,6 +1571,62 @@ fn set_resource_mode(
     Ok(())
 }
 
+fn set_layout_mode(
+    request: &mut Map<String, serde_json::Value>,
+    opts: Option<&Table>,
+    use_default: bool,
+) -> Result<(), mlua::Error> {
+    let mode = optional_string(
+        &opts.cloned(),
+        "webbrowser",
+        &["layout_mode", "layoutMode"],
+    )?
+    .or_else(|| use_default.then(|| DEFAULT_LAYOUT_MODE.to_string()));
+    if let Some(mode) = mode {
+        match mode.as_str() {
+            "mobile" | "desktop" => {
+                request.insert("layoutMode".to_string(), serde_json::Value::String(mode));
+            }
+            _ => {
+                return Err(mlua::Error::external(format!(
+                    "webbrowser: layout_mode must be \"mobile\" or \"desktop\", got {mode:?}"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_set_layout_args(args: &MultiValue) -> Result<(String, String), mlua::Error> {
+    if args.len() == 1 {
+        if let Value::Table(table) = &args[0] {
+            let browser = required_string(table, "webbrowser.set_layout", &["browser"])?;
+            let mode = required_string(table, "webbrowser.set_layout", &["mode", "layout_mode", "layoutMode"])?;
+            validate_layout_mode(&mode)?;
+            return Ok((browser, mode));
+        }
+    }
+    if args.len() == 2 {
+        let browser = value_string(&args[0], "webbrowser.set_layout", "browser")?;
+        let mode = value_string(&args[1], "webbrowser.set_layout", "mode")?;
+        validate_layout_mode(&mode)?;
+        return Ok((browser, mode));
+    }
+    Err(arg_error(
+        "webbrowser.set_layout",
+        WEBBROWSER_DOC.params("set_layout"),
+    ))
+}
+
+fn validate_layout_mode(mode: &str) -> Result<(), mlua::Error> {
+    match mode {
+        "mobile" | "desktop" => Ok(()),
+        _ => Err(mlua::Error::external(format!(
+            "webbrowser: layout mode must be \"mobile\" or \"desktop\", got {mode:?}"
+        ))),
+    }
+}
+
 fn set_resource_loading(
     request: &mut Map<String, serde_json::Value>,
     opts: Option<&Table>,
@@ -1636,343 +1756,4 @@ fn set_typing_options(
         );
     }
     Ok(())
-}
-
-fn set_optional_string_field(
-    request: &mut Map<String, serde_json::Value>,
-    key: &str,
-    value: Option<String>,
-) {
-    if let Some(value) = value {
-        request.insert(key.to_string(), serde_json::Value::String(value));
-    }
-}
-
-fn optional_only_table(args: &MultiValue, fn_name: &str) -> Result<Option<Table>, mlua::Error> {
-    match args.len() {
-        0 => Ok(None),
-        1 => Ok(Some(value_table(&args[0], fn_name, "opts")?)),
-        _ => Err(mlua::Error::external(format!(
-            "{fn_name}: expected optional opts table, got {} arguments",
-            args.len()
-        ))),
-    }
-}
-
-fn ensure_no_args(args: &MultiValue, fn_name: &str) -> Result<(), mlua::Error> {
-    if args.is_empty() {
-        Ok(())
-    } else {
-        Err(mlua::Error::external(format!(
-            "{fn_name}: expected no arguments, got {}",
-            args.len()
-        )))
-    }
-}
-
-fn single_table_arg(args: &MultiValue) -> Option<Table> {
-    if args.len() == 1 {
-        if let Some(Value::Table(table)) = args.get(0) {
-            return Some(table.clone());
-        }
-    }
-    None
-}
-
-fn table_field(table: &Table, aliases: &[&str]) -> Result<Value, mlua::Error> {
-    for alias in aliases {
-        let value = table.get::<Value>(*alias)?;
-        if !matches!(value, Value::Nil) {
-            return Ok(value);
-        }
-    }
-    Ok(Value::Nil)
-}
-
-fn required_string(table: &Table, fn_name: &str, aliases: &[&str]) -> Result<String, mlua::Error> {
-    match table_field(table, aliases)? {
-        Value::String(s) => Ok(s.to_string_lossy().to_string()),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{}' (string)",
-            aliases[0]
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{}' expected string, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn required_number(table: &Table, fn_name: &str, aliases: &[&str]) -> Result<f64, mlua::Error> {
-    match table_field(table, aliases)? {
-        Value::Integer(value) => Ok(value as f64),
-        Value::Number(value) => Ok(value),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{}' (number)",
-            aliases[0]
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{}' expected number, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn optional_string(
-    table: &Option<Table>,
-    fn_name: &str,
-    aliases: &[&str],
-) -> Result<Option<String>, mlua::Error> {
-    let Some(table) = table else {
-        return Ok(None);
-    };
-    match table_field(table, aliases)? {
-        Value::Nil => Ok(None),
-        Value::String(s) => Ok(Some(s.to_string_lossy().to_string())),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: option '{}' expected string, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn optional_bool(
-    table: &Option<Table>,
-    fn_name: &str,
-    aliases: &[&str],
-) -> Result<Option<bool>, mlua::Error> {
-    let Some(table) = table else {
-        return Ok(None);
-    };
-    match table_field(table, aliases)? {
-        Value::Nil => Ok(None),
-        Value::Boolean(value) => Ok(Some(value)),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: option '{}' expected boolean, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn optional_number(
-    table: &Option<Table>,
-    fn_name: &str,
-    aliases: &[&str],
-) -> Result<Option<f64>, mlua::Error> {
-    let Some(table) = table else {
-        return Ok(None);
-    };
-    match table_field(table, aliases)? {
-        Value::Nil => Ok(None),
-        Value::Integer(value) => Ok(Some(value as f64)),
-        Value::Number(value) => Ok(Some(value)),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: option '{}' expected number, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn optional_integer(
-    table: &Option<Table>,
-    fn_name: &str,
-    aliases: &[&str],
-) -> Result<Option<i64>, mlua::Error> {
-    let Some(table) = table else {
-        return Ok(None);
-    };
-    match table_field(table, aliases)? {
-        Value::Nil => Ok(None),
-        Value::Integer(value) => Ok(Some(value)),
-        Value::Number(value) if value.fract() == 0.0 => Ok(Some(value as i64)),
-        Value::Number(_) => Err(mlua::Error::external(format!(
-            "{fn_name}: option '{}' expected integer",
-            aliases[0]
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: option '{}' expected number, got {}",
-            aliases[0],
-            other.type_name()
-        ))),
-    }
-}
-
-fn value_string(value: &Value, fn_name: &str, name: &str) -> Result<String, mlua::Error> {
-    match value {
-        Value::String(s) => Ok(s.to_string_lossy().to_string()),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{name}' (string)"
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected string, got {}",
-            other.type_name()
-        ))),
-    }
-}
-
-fn value_number(value: &Value, fn_name: &str, name: &str) -> Result<f64, mlua::Error> {
-    match value {
-        Value::Integer(value) => Ok(*value as f64),
-        Value::Number(value) => Ok(*value),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{name}' (number)"
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected number, got {}",
-            other.type_name()
-        ))),
-    }
-}
-
-fn value_integer(value: &Value, fn_name: &str, name: &str) -> Result<i64, mlua::Error> {
-    match value {
-        Value::Integer(value) => Ok(*value),
-        Value::Number(value) if value.fract() == 0.0 => Ok(*value as i64),
-        Value::Number(_) => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected integer"
-        ))),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{name}' (number)"
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected number, got {}",
-            other.type_name()
-        ))),
-    }
-}
-
-fn value_table(value: &Value, fn_name: &str, name: &str) -> Result<Table, mlua::Error> {
-    match value {
-        Value::Table(table) => Ok(table.clone()),
-        Value::Nil => Err(mlua::Error::external(format!(
-            "{fn_name}: missing required argument '{name}' (table)"
-        ))),
-        other => Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected table, got {}",
-            other.type_name()
-        ))),
-    }
-}
-
-fn string_array(table: &Table, fn_name: &str, name: &str) -> Result<Vec<String>, mlua::Error> {
-    let len = table.raw_len();
-    if len == 0 || !is_lua_array(table, len) {
-        return Err(mlua::Error::external(format!(
-            "{fn_name}: argument '{name}' expected array table"
-        )));
-    }
-    let mut values = Vec::with_capacity(len);
-    for i in 1..=len {
-        let value: Value = table.raw_get(i)?;
-        values.push(value_string(&value, fn_name, name)?);
-    }
-    Ok(values)
-}
-
-fn number_value(value: f64, fn_name: &str, name: &str) -> Result<serde_json::Value, mlua::Error> {
-    let number = Number::from_f64(value).ok_or_else(|| {
-        mlua::Error::external(format!("{fn_name}: argument '{name}' must be finite"))
-    })?;
-    Ok(serde_json::Value::Number(number))
-}
-
-fn validate_screenshot_path(path: &str) -> Result<(), mlua::Error> {
-    let extension = Path::new(path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if matches!(extension.as_str(), "png" | "jpg" | "jpeg") {
-        Ok(())
-    } else {
-        Err(mlua::Error::external(
-            "webbrowser.screenshot: path must end in .png, .jpg, or .jpeg",
-        ))
-    }
-}
-
-fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> Result<Value, mlua::Error> {
-    match value {
-        serde_json::Value::Null => Ok(Value::Nil),
-        serde_json::Value::Bool(value) => Ok(Value::Boolean(*value)),
-        serde_json::Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
-                    Ok(Value::Integer(value as mlua::Integer))
-                } else {
-                    Ok(Value::Number(value as f64))
-                }
-            } else if let Some(value) = number.as_f64() {
-                Ok(Value::Number(value))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        serde_json::Value::String(value) => Ok(Value::String(lua.create_string(value)?)),
-        serde_json::Value::Array(values) => {
-            let table = lua.create_table()?;
-            for (index, item) in values.iter().enumerate() {
-                table.set(index + 1, json_to_lua(lua, item)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        serde_json::Value::Object(values) => {
-            let table = lua.create_table()?;
-            for (key, item) in values {
-                table.set(key.as_str(), json_to_lua(lua, item)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
-}
-
-fn lua_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
-    match value {
-        Value::Nil => Ok(serde_json::Value::Null),
-        Value::Boolean(value) => Ok(serde_json::Value::Bool(*value)),
-        Value::Integer(value) => Ok(serde_json::Value::Number((*value).into())),
-        Value::Number(value) => number_value(*value, "webbrowser", "value"),
-        Value::String(value) => Ok(serde_json::Value::String(
-            value.to_string_lossy().to_string(),
-        )),
-        Value::Table(table) => {
-            let len = table.raw_len();
-            if len > 0 && is_lua_array(table, len) {
-                let mut values = Vec::with_capacity(len);
-                for i in 1..=len {
-                    let value: Value = table.raw_get(i)?;
-                    values.push(lua_to_json(&value)?);
-                }
-                Ok(serde_json::Value::Array(values))
-            } else {
-                let mut map = Map::new();
-                for pair in table.clone().pairs::<Value, Value>() {
-                    let (key, value) = pair?;
-                    let key = match key {
-                        Value::String(value) => value.to_string_lossy().to_string(),
-                        Value::Integer(value) => value.to_string(),
-                        Value::Number(value) => value.to_string(),
-                        other => {
-                            return Err(mlua::Error::external(format!(
-                                "JSON object keys must be strings, got {}",
-                                value_type_name(&other)
-                            )))
-                        }
-                    };
-                    map.insert(key, lua_to_json(&value)?);
-                }
-                Ok(serde_json::Value::Object(map))
-            }
-        }
-        Value::Function(_) => Err(mlua::Error::external("cannot encode function as JSON")),
-        other => Err(mlua::Error::external(format!(
-            "cannot encode {} as JSON",
-            value_type_name(other)
-        ))),
-    }
 }

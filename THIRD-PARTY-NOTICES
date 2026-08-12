@@ -1,0 +1,2135 @@
+THIRD-PARTY-NOTICES
+===================
+
+Last updated: 2026-07-22
+
+This file lists third-party software used by CPSL (crates, vendored trees,
+and optional native libraries). CPSL itself is licensed under the MIT
+License; see the LICENSE file in this repository.
+
+Third-party components remain under their own licenses. Dual- or
+multi-licensed crates show the SPDX license expression declared by the
+upstream package on crates.io / in Cargo.toml. For dual-licensed crates
+such as "Apache-2.0 OR MIT", recipients may use the software under either
+license.
+
+The Rust crate inventory below was generated from this repository with:
+
+  cargo license --json
+
+using the workspace members and Cargo.lock present at generation time.
+Refresh this file when dependencies change, especially before releases
+that redistribute CPSL binaries or shared libraries.
+
+--------------------------------------------------------------------------------
+1. Summary of license families (third-party crates)
+--------------------------------------------------------------------------------
+
+Total third-party crates: 625
+
+   348  Apache-2.0 OR MIT
+   159  MIT
+    18  Unicode-3.0
+    16  Apache-2.0 OR MIT OR Zlib
+    15  Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT
+    14  MIT OR Unlicense
+    12  Apache-2.0
+     7  ISC
+     5  LGPL-3.0
+     5  MPL-2.0
+     3  Zlib
+     2  Apache-2.0 OR BSD-2-Clause OR MIT
+     2  Apache-2.0 OR BSD-3-Clause
+     2  Apache-2.0 OR ISC OR MIT
+     2  Apache-2.0 OR LGPL-2.1-or-later OR MIT
+     2  BSD-3-Clause
+     2  BSL-1.0
+     1  (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) AND (Apache-2.0 OR ISC) AND Apache-2.0 AND BSD-3-Clause AND ISC AND MIT
+     1  (Apache-2.0 OR ISC) AND ISC
+     1  (Apache-2.0 OR MIT) AND BSD-3-Clause
+     1  (Apache-2.0 OR MIT) AND Unicode-3.0
+     1  (Apache-2.0 OR MIT) AND Unicode-DFS-2016
+     1  0BSD OR Apache-2.0 OR MIT
+     1  Apache-2.0 AND ISC
+     1  Apache-2.0 OR BSL-1.0
+     1  Apache-2.0 OR CC0-1.0 OR MIT-0
+     1  Apache-2.0 WITH LLVM-exception
+     1  CC0-1.0
+
+Most crates are MIT and/or Apache-2.0. A small number use other licenses
+(including MPL-2.0 and LGPL-3.0) and require extra attention when
+redistributing binaries — see sections 3 and 4.
+
+--------------------------------------------------------------------------------
+2. Vendored source trees
+--------------------------------------------------------------------------------
+
+### vendor/wb
+
+Path: vendor/wb
+License: MIT
+Copyright: Copyright (c) 2026 Adrien Duermael
+
+MIT License
+
+Copyright (c) 2026 Adrien Duermael
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+### vendor/conch-parser
+
+Path: vendor/conch-parser
+License: Apache-2.0 OR MIT (dual)
+Used via [patch.crates-io] in the workspace Cargo.toml.
+
+MIT text:
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Ivan Petkov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Apache-2.0 text is provided in vendor/conch-parser/LICENSE-APACHE.
+
+--------------------------------------------------------------------------------
+3. Weak copyleft components (MPL-2.0)
+--------------------------------------------------------------------------------
+
+The following crates are licensed under the Mozilla Public License 2.0.
+MPL-2.0 is file-level weak copyleft: modifications to MPL-covered source
+files must remain under MPL-2.0, and the source for those files must be
+made available to recipients of the binary. Linking to MPL code from
+larger works under other licenses (including MIT) is permitted.
+
+License text: https://www.mozilla.org/en-US/MPL/2.0/
+
+  - cssparser 0.34.0
+    Authors: Simon Sapin <simon.sapin@exyr.org>
+    Repository: https://github.com/servo/rust-cssparser
+  - cssparser-macros 0.6.1
+    Authors: Simon Sapin <simon.sapin@exyr.org>
+    Repository: https://github.com/servo/rust-cssparser
+  - dtoa-short 0.3.5
+    Authors: Xidorn Quan <me@upsuper.org>
+    Repository: https://github.com/upsuper/dtoa-short
+  - option-ext 0.2.0
+    Authors: Simon Ochsenreither <simon@ochsenreither.de>
+    Repository: https://github.com/soc/option-ext.git
+  - selectors 0.26.0
+    Authors: The Servo Project Developers
+    Repository: https://github.com/servo/stylo
+
+Corresponding source for these crates is available from the repositories
+above and from crates.io at the versions pinned in Cargo.lock. Distributors
+of CPSL binaries that include these crates should ensure recipients can
+obtain that source (for example by shipping Cargo.lock and relying on
+crates.io, or by bundling the crate sources).
+
+--------------------------------------------------------------------------------
+4. LGPL-3.0 components (Malachite)
+--------------------------------------------------------------------------------
+
+The following crates are licensed under the GNU Lesser General Public
+License version 3 (LGPL-3.0). They are pulled in via the RustPython parser
+stack used by cpsl-core and therefore can be linked into CPSL CLI, FFI,
+and related binaries.
+
+License text: https://www.gnu.org/licenses/lgpl-3.0.html
+Also see: https://www.gnu.org/licenses/lgpl-3.0.html
+
+  - malachite 0.4.22
+    Authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    Repository: https://github.com/mhogrefe/malachite
+  - malachite-base 0.4.22
+    Authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    Repository: https://github.com/mhogrefe/malachite
+  - malachite-bigint 0.2.3
+    Authors: Steve Shi <shikangzhi@gmail.com>
+    Repository: https://github.com/RustPython/malachite-bigint
+  - malachite-nz 0.4.22
+    Authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    Repository: https://github.com/mhogrefe/malachite
+  - malachite-q 0.4.22
+    Authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    Repository: https://github.com/mhogrefe/malachite
+
+Dependency path (illustrative):
+  malachite* → malachite-bigint / rustpython-parser → cpsl-core → cpsl-cli / cpsl-ffi
+
+LGPL compliance notes for distributors of CPSL binaries:
+
+  - You must provide or offer the complete corresponding source of these
+    LGPL libraries at the versions you ship (Cargo.lock pins versions;
+    sources are on crates.io and the repositories listed above).
+  - If you statically link LGPL libraries into a proprietary or differently
+    licensed binary, LGPL-3.0 requires that you allow reverse engineering
+    for debugging such modifications and that you provide means for users
+    to relink with modified versions of the library (for example by
+    providing object files, or by dynamic linking). Open-source MIT
+    distribution of CPSL source + Cargo.lock typically satisfies source
+    availability; binary-only redistributors should review LGPL-3.0 §§4–5
+    carefully or prefer dynamic linking.
+  - This notice is informational and not legal advice.
+
+Crates that are dual-licensed including LGPL as one option (for example
+"Apache-2.0 OR LGPL-2.1-or-later OR MIT") may be used under a non-LGPL
+option; those appear under their full SPDX expression in section 6 and are
+not required to be treated as LGPL if another option is elected.
+
+--------------------------------------------------------------------------------
+5. Optional native library: PDFium
+--------------------------------------------------------------------------------
+
+CPSL can optionally load Google PDFium for PDF features via the
+pdfium-render crate and platform binaries (see core/scripts/download-pdfium.sh).
+
+  - pdfium-render (Rust crate): Apache-2.0 OR MIT
+    https://github.com/ajrcarey/pdfium-render
+  - PDFium native library: typically obtained from
+    https://github.com/bblanchon/pdfium-binaries
+    PDFium (Chromium) is licensed under a BSD-style license; see the
+    LICENSE files shipped with the PDFium binary package you redistribute.
+    Do not redistribute PDFium binaries without including their upstream
+    license and copyright notices.
+
+PDFium is not always present in every CPSL build. Include PDFium notices
+whenever you ship libpdfium / pdfium shared libraries alongside CPSL.
+
+--------------------------------------------------------------------------------
+6. Complete third-party crate inventory by SPDX license
+--------------------------------------------------------------------------------
+
+Format: name version
+Authors and repository URLs are included when declared by the package.
+
+### Apache-2.0 OR MIT
+
+  - aead 0.5.2
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits
+  - aes 0.8.4
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/block-ciphers
+  - aes-gcm 0.10.3
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/AEADs
+  - ahash 0.8.12
+    authors: Tom Kaitchuck <Tom.Kaitchuck@gmail.com>
+    https://github.com/tkaitchuck/ahash
+  - android_system_properties 0.1.5
+    authors: Nicolas Silva <nical@fastmail.com>
+    https://github.com/nical/android_system_properties
+  - anstream 1.0.0
+    https://github.com/rust-cli/anstyle.git
+  - anstyle 1.0.14
+    https://github.com/rust-cli/anstyle.git
+  - anstyle-parse 1.0.0
+    https://github.com/rust-cli/anstyle.git
+  - anstyle-query 1.1.5
+    https://github.com/rust-cli/anstyle.git
+  - anstyle-wincon 3.0.11
+    https://github.com/rust-cli/anstyle.git
+  - anyhow 1.0.102
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/anyhow
+  - arbitrary 1.4.2
+    authors: The Rust-Fuzz Project Developers|Nick Fitzgerald <fitzgen@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>|Simonas Kazlauskas <arbitrary@kazlauskas.me>|Brian L. Troutwine <brian@troutwine.us>|Corey Farwell <coreyf@rwell.org>
+    https://github.com/rust-fuzz/arbitrary/
+  - arraydeque 0.5.1
+    authors: andylokandy
+    https://github.com/andylokandy/arraydeque
+  - askama 0.15.6
+    https://github.com/askama-rs/askama
+  - askama_derive 0.15.6
+    https://github.com/askama-rs/askama
+  - askama_macros 0.15.6
+    https://github.com/askama-rs/askama
+  - askama_parser 0.15.6
+    https://github.com/askama-rs/askama
+  - atoi_simd 0.17.0
+    authors: Dmitry Rodionov <gh@rdmtr.com>
+    https://github.com/RoDmitry/atoi_simd
+  - atomic-polyfill 1.0.3
+    authors: Dario Nieuwenhuis <dirbaio@dirbaio.net>
+    https://github.com/embassy-rs/atomic-polyfill
+  - atomic-waker 1.1.2
+    authors: Stjepan Glavina <stjepang@gmail.com>|Contributors to futures-rs
+    https://github.com/smol-rs/atomic-waker
+  - autocfg 1.5.0
+    authors: Josh Stone <cuviper@gmail.com>
+    https://github.com/cuviper/autocfg
+  - base64 0.22.1
+    authors: Marshall Pierce <marshall@mpierce.org>
+    https://github.com/marshallpierce/rust-base64
+  - basic-toml 0.1.10
+    authors: Alex Crichton <alex@alexcrichton.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/basic-toml
+  - bit-set 0.6.0
+    authors: Alexis Beingessner <a.beingessner@gmail.com>
+    https://github.com/contain-rs/bit-set
+  - bit-vec 0.7.0
+    authors: Alexis Beingessner <a.beingessner@gmail.com>
+    https://github.com/contain-rs/bit-vec
+  - bitflags 2.11.1
+    authors: The Rust Project Developers
+    https://github.com/bitflags/bitflags
+  - block-buffer 0.10.4
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/utils
+  - bstr 1.12.1
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/bstr
+  - bumpalo 3.20.2
+    authors: Nick Fitzgerald <fitzgen@gmail.com>
+    https://github.com/fitzgen/bumpalo
+  - bzip2 0.5.2
+    https://github.com/trifectatechfoundation/bzip2-rs
+  - bzip2-sys 0.1.13+1.0.8
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/alexcrichton/bzip2-rs
+  - cc 1.2.61
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rust-lang/cc-rs
+  - cfg-expr 0.20.7
+    authors: Embark <opensource@embark-studios.com>|Jake Shadle <jake.shadle@embark-studios.com>
+    https://github.com/EmbarkStudios/cfg-expr
+  - cfg-if 1.0.4
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rust-lang/cfg-if
+  - chrono 0.4.44
+    https://github.com/chronotope/chrono
+  - cipher 0.4.4
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits
+  - clap 4.6.1
+    https://github.com/clap-rs/clap
+  - clap_builder 4.6.0
+    https://github.com/clap-rs/clap
+  - clap_derive 4.6.1
+    https://github.com/clap-rs/clap
+  - clap_lex 1.1.0
+    https://github.com/clap-rs/clap
+  - cmake 0.1.58
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rust-lang/cmake-rs
+  - cobs 0.3.0
+    authors: Allen Welkie <>|James Munns <james@onevariable.com>
+    https://github.com/jamesmunns/cobs.rs
+  - codepage 0.1.2
+    authors: Henri Sivonen <hsivonen@hsivonen.fi>
+    https://github.com/hsivonen/codepage
+  - colorchoice 1.0.5
+    https://github.com/rust-cli/anstyle.git
+  - conch-parser 0.1.1
+    authors: Ivan Petkov <ivanppetkov@gmail.com>
+    https://github.com/ipetkov/conch-parser
+  - console_error_panic_hook 0.1.7
+    authors: Nick Fitzgerald <fitzgen@gmail.com>
+    https://github.com/rustwasm/console_error_panic_hook
+  - console_log 1.0.0
+    authors: Matthew Nicholson <matt@matt-land.com>
+    https://github.com/iamcodemaker/console_log
+  - core-foundation 0.10.1
+    authors: The Servo Project Developers
+    https://github.com/servo/core-foundation-rs
+  - core-foundation 0.9.4
+    authors: The Servo Project Developers
+    https://github.com/servo/core-foundation-rs
+  - core-foundation-sys 0.8.7
+    authors: The Servo Project Developers
+    https://github.com/servo/core-foundation-rs
+  - cpufeatures 0.2.17
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/utils
+  - crc 3.4.0
+    authors: Rui Hu <code@mrhooray.com>|Akhil Velagapudi <4@4khil.com>
+    https://github.com/mrhooray/crc-rs.git
+  - crc-catalog 2.5.0
+    authors: Akhil Velagapudi <akhilvelagapudi@gmail.com>
+    https://github.com/akhilles/crc-catalog.git
+  - crc32fast 1.5.0
+    authors: Sam Rijs <srijs@airpost.net>|Alex Crichton <alex@alexcrichton.com>
+    https://github.com/srijs/rust-crc32fast
+  - critical-section 1.2.0
+    https://github.com/rust-embedded/critical-section
+  - crossbeam-deque 0.8.6
+    https://github.com/crossbeam-rs/crossbeam
+  - crossbeam-epoch 0.9.20
+    https://github.com/crossbeam-rs/crossbeam
+  - crossbeam-utils 0.8.21
+    https://github.com/crossbeam-rs/crossbeam
+  - crypto-common 0.1.7
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits
+  - ctr 0.9.2
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/block-modes
+  - debug_unsafe 0.1.4
+    authors: Dmitry Rodionov <gh@rdmtr.com>
+    https://github.com/RoDmitry/debug_unsafe
+  - deranged 0.5.8
+    authors: Jacob Pratt <jacob@jhpratt.dev>
+    https://github.com/jhpratt/deranged
+  - derive_arbitrary 1.4.2
+    authors: The Rust-Fuzz Project Developers|Nick Fitzgerald <fitzgen@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>|Andre Bogus <bogusandre@gmail.com>|Corey Farwell <coreyf@rwell.org>
+    https://github.com/rust-fuzz/arbitrary
+  - digest 0.10.7
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits
+  - dirs 6.0.0
+    authors: Simon Ochsenreither <simon@ochsenreither.de>
+    https://github.com/soc/dirs-rs
+  - dirs-sys 0.5.0
+    authors: Simon Ochsenreither <simon@ochsenreither.de>
+    https://github.com/dirs-dev/dirs-sys-rs
+  - displaydoc 0.2.5
+    authors: Jane Lusby <jlusby@yaah.dev>
+    https://github.com/yaahc/displaydoc
+  - dtoa 1.0.11
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/dtoa
+  - dyn-clone 1.0.20
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/dyn-clone
+  - either 1.15.0
+    authors: bluss
+    https://github.com/rayon-rs/either
+  - embedded-io 0.4.0
+    https://github.com/embassy-rs/embedded-io
+  - embedded-io 0.6.1
+    https://github.com/rust-embedded/embedded-hal
+  - encoding_rs_io 0.1.7
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/encoding_rs_io
+  - enum-as-inner 0.6.1
+    authors: Benjamin Fry <benjaminfry@me.com>
+    https://github.com/bluejekyll/enum-as-inner
+  - equivalent 1.0.2
+    https://github.com/indexmap-rs/equivalent
+  - erased-serde 0.4.10
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/erased-serde
+  - errno 0.3.14
+    authors: Chris Wong <lambda.fairy@gmail.com>|Dan Gohman <dev@sunfishcode.online>
+    https://github.com/lambda-fairy/rust-errno
+  - fast-float2 0.2.3
+    authors: Ivan Smirnov <i.s.smirnov@gmail.com>|Alex Huszagh <ahuszagh@gmail.com>
+    https://github.com/Alexhuszagh/fast-float-rust
+  - fastrand 2.4.1
+    authors: Stjepan Glavina <stjepang@gmail.com>
+    https://github.com/smol-rs/fastrand
+  - fd-lock 4.0.4
+    authors: Yoshua Wuyts <yoshuawuyts@gmail.com>
+    https://github.com/yoshuawuyts/fd-lock
+  - fdeflate 0.3.7
+    authors: The image-rs Developers
+    https://github.com/image-rs/fdeflate
+  - field-offset 0.3.6
+    authors: Diggory Blake <diggsey@googlemail.com>
+    https://github.com/Diggsey/rust-field-offset
+  - filetime 0.2.27
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/alexcrichton/filetime
+  - filetime_creation 0.2.0
+    authors: 29 <791603901@qq.com>
+    https://github.com/czy-29/filetime_creation
+  - find-msvc-tools 0.1.9
+    https://github.com/rust-lang/cc-rs
+  - flate2 1.1.9
+    authors: Alex Crichton <alex@alexcrichton.com>|Josh Triplett <josh@joshtriplett.org>
+    https://github.com/rust-lang/flate2-rs
+  - fnv 1.0.7
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/servo/rust-fnv
+  - foreign-types 0.3.2
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/sfackler/foreign-types
+  - foreign-types-shared 0.1.1
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/sfackler/foreign-types
+  - form_urlencoded 1.2.2
+    authors: The rust-url developers
+    https://github.com/servo/rust-url
+  - futf 0.1.5
+    authors: Keegan McAllister <kmcallister@mozilla.com>
+    https://github.com/servo/futf
+  - futures-channel 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-core 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-executor 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-io 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-macro 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-sink 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-task 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - futures-util 0.3.32
+    https://github.com/rust-lang/futures-rs
+  - fxhash 0.2.1
+    authors: cbreeden <github@u.breeden.cc>
+    https://github.com/cbreeden/fxhash
+  - generativity 1.2.1
+    https://github.com/CAD97/generativity
+  - getopts 0.2.24
+    authors: The Rust Project Developers
+    https://github.com/rust-lang/getopts
+  - getrandom 0.2.17
+    authors: The Rand Project Developers
+    https://github.com/rust-random/getrandom
+  - getrandom 0.3.4
+    authors: The Rand Project Developers
+    https://github.com/rust-random/getrandom
+  - getrandom 0.4.2
+    authors: The Rand Project Developers
+    https://github.com/rust-random/getrandom
+  - ghash 0.5.1
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/universal-hashes
+  - gif 0.14.2
+    authors: The image-rs Developers
+    https://github.com/image-rs/image-gif
+  - gloo-utils 0.1.7
+    authors: Rust and WebAssembly Working Group
+    https://github.com/rustwasm/gloo/tree/master/crates/utils
+  - half 2.7.1
+    authors: Kathryn Long <squeeself@gmail.com>
+    https://github.com/VoidStarKat/half-rs
+  - hash32 0.2.1
+    authors: Jorge Aparicio <jorge@japaric.io>
+    https://github.com/japaric/hash32
+  - hashbrown 0.12.3
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/rust-lang/hashbrown
+  - hashbrown 0.14.5
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/rust-lang/hashbrown
+  - hashbrown 0.15.5
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/rust-lang/hashbrown
+  - hashbrown 0.16.1
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/rust-lang/hashbrown
+  - hashbrown 0.17.0
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/rust-lang/hashbrown
+  - hashlink 0.11.0
+    https://github.com/kyren/hashlink
+  - heapless 0.7.17
+    authors: Jorge Aparicio <jorge@japaric.io>|Per Lindgren <per.lindgren@ltu.se>|Emil Fresk <emil.fresk@gmail.com>
+    https://github.com/japaric/heapless
+  - heck 0.5.0
+    https://github.com/withoutboats/heck
+  - hex 0.4.3
+    authors: KokaKiwi <kokakiwi@kokakiwi.net>
+    https://github.com/KokaKiwi/rust-hex
+  - hmac 0.12.1
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/MACs
+  - home 0.5.12
+    authors: Brian Anderson <andersrb@gmail.com>
+    https://github.com/rust-lang/cargo
+  - html5ever 0.29.1
+    authors: The html5ever Project Developers
+    https://github.com/servo/html5ever
+  - http 1.4.0
+    authors: Alex Crichton <alex@alexcrichton.com>|Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/http
+  - httparse 1.10.1
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/seanmonstar/httparse
+  - hyper-tls 0.6.0
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/hyper-tls
+  - iana-time-zone 0.1.65
+    authors: Andrew Straw <strawman@astraw.com>|René Kijewski <rene.kijewski@fu-berlin.de>|Ryan Lopopolo <rjl@hyperbo.la>
+    https://github.com/strawlab/iana-time-zone
+  - iana-time-zone-haiku 0.1.2
+    authors: René Kijewski <crates.io@k6i.de>
+    https://github.com/strawlab/iana-time-zone
+  - id-arena 2.3.0
+    authors: Nick Fitzgerald <fitzgen@gmail.com>|Aleksey Kladov <aleksey.kladov@gmail.com>
+    https://github.com/fitzgen/id-arena
+  - ident_case 1.0.1
+    authors: Ted Driggs <ted.driggs@outlook.com>
+    https://github.com/TedDriggs/ident_case
+  - idna 1.1.0
+    authors: The rust-url developers
+    https://github.com/servo/rust-url/
+  - idna_adapter 1.2.2
+    authors: The rust-url developers
+    https://github.com/hsivonen/idna_adapter
+  - image 0.25.10
+    authors: The image-rs Developers
+    https://github.com/image-rs/image
+  - image-webp 0.2.4
+    https://github.com/image-rs/image-webp
+  - indexmap 1.9.3
+    https://github.com/bluss/indexmap
+  - indexmap 2.14.0
+    https://github.com/indexmap-rs/indexmap
+  - inout 0.1.4
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/utils
+  - ipnet 2.12.0
+    authors: Kris Price <kris@krisprice.nz>
+    https://github.com/krisprice/ipnet
+  - iri-string 0.7.12
+    authors: YOSHIOKA Takuma <nop_thread@nops.red>
+    https://github.com/lo48576/iri-string
+  - is_terminal_polyfill 1.70.2
+    https://github.com/polyfill-rs/is_terminal_polyfill
+  - itertools 0.11.0
+    authors: bluss
+    https://github.com/rust-itertools/itertools
+  - itertools 0.12.1
+    authors: bluss
+    https://github.com/rust-itertools/itertools
+  - itertools 0.14.0
+    authors: bluss
+    https://github.com/rust-itertools/itertools
+  - itoa 1.0.18
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/itoa
+  - jobserver 0.1.34
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rust-lang/jobserver-rs
+  - js-sys 0.3.97
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
+  - lalrpop-util 0.20.2
+    authors: Niko Matsakis <niko@alum.mit.edu>
+    https://github.com/lalrpop/lalrpop
+  - lazy_static 1.5.0
+    authors: Marvin Löbel <loebel.marvin@gmail.com>
+    https://github.com/rust-lang-nursery/lazy-static.rs
+  - leb128fmt 0.1.0
+    authors: Bryant Luk <code@bryantluk.com>
+    https://github.com/bluk/leb128fmt
+  - libc 0.2.186
+    authors: The Rust Project Developers
+    https://github.com/rust-lang/libc
+  - linked-hash-map 0.5.6
+    authors: Stepan Koltsov <stepan.koltsov@gmail.com>|Andrew Paseltiner <apaseltiner@gmail.com>
+    https://github.com/contain-rs/linked-hash-map
+  - lock_api 0.4.14
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/Amanieu/parking_lot
+  - log 0.4.29
+    authors: The Rust Project Developers
+    https://github.com/rust-lang/log
+  - lru-cache 0.1.2
+    authors: Stepan Koltsov <stepan.koltsov@gmail.com>
+    https://github.com/contain-rs/lru-cache
+  - lzma-sys 0.1.20
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/alexcrichton/xz2-rs
+  - mac 0.1.1
+    authors: Jonathan Reem <jonathan.reem@gmail.com>
+    https://github.com/reem/rust-mac.git
+  - markup5ever 0.14.1
+    authors: The html5ever Project Developers
+    https://github.com/servo/html5ever
+  - match_token 0.1.0
+    https://github.com/servo/html5ever
+  - matrixmultiply 0.3.10
+    authors: bluss|R. Janis Goldschmidt
+    https://github.com/bluss/matrixmultiply/
+  - maybe-owned 0.3.4
+    authors: Philipp korber <philippkorber@gmail.com>|darkstalker <slayerbeast@gmail.com>|daboross <daboross@daboross.net>|Zac Burns (That3Percent) <that3percent@gmail.com>
+    https://github.com/rustonaut/maybe-owned
+  - md-5 0.10.6
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/hashes
+  - memmap2 0.9.10
+    authors: Dan Burkert <dan@danburkert.com>|Yevhenii Reizner <razrfalcon@gmail.com>|The Contributors
+    https://github.com/RazrFalcon/memmap2-rs
+  - mime 0.3.17
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/mime
+  - minimal-lexical 0.2.1
+    authors: Alex Huszagh <ahuszagh@gmail.com>
+    https://github.com/Alexhuszagh/minimal-lexical
+  - native-tls 0.2.18
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-native-tls/rust-native-tls
+  - ndarray 0.16.1
+    authors: Ulrik Sverdrup "bluss"|Jim Turner
+    https://github.com/rust-ndarray/ndarray
+  - nt-time 0.8.1
+    authors: Shun Sakai <sorairolake@protonmail.ch>
+    https://github.com/sorairolake/nt-time
+  - num 0.4.3
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num
+  - num-bigint 0.4.6
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-bigint
+  - num-complex 0.4.6
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-complex
+  - num-conv 0.2.1
+    authors: Jacob Pratt <jacob@jhpratt.dev>
+    https://github.com/jhpratt/num-conv
+  - num-integer 0.1.46
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-integer
+  - num-iter 0.1.45
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-iter
+  - num-rational 0.4.2
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-rational
+  - num-traits 0.2.19
+    authors: The Rust Project Developers
+    https://github.com/rust-num/num-traits
+  - once_cell 1.21.4
+    authors: Aleksey Kladov <aleksey.kladov@gmail.com>
+    https://github.com/matklad/once_cell
+  - once_cell_polyfill 1.70.2
+    https://github.com/polyfill-rs/once_cell_polyfill
+  - oncemutex 0.1.1
+    authors: Jonathan Reem <jonathan.reem@gmail.com>
+    https://github.com/reem/rust-once-mutex.git
+  - opaque-debug 0.3.1
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/utils
+  - openssl-macros 0.1.1
+  - openssl-probe 0.2.1
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rustls/openssl-probe
+  - parking_lot 0.12.5
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/Amanieu/parking_lot
+  - parking_lot_core 0.9.12
+    authors: Amanieu d'Antras <amanieu@gmail.com>
+    https://github.com/Amanieu/parking_lot
+  - paste 1.0.15
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/paste
+  - pdfium-render 0.8.37
+    authors: Alastair Carey <alastair@alastaircarey.com>
+    https://github.com/ajrcarey/pdfium-render
+  - percent-encoding 2.3.2
+    authors: The rust-url developers
+    https://github.com/servo/rust-url/
+  - pest 2.8.6
+    authors: Dragoș Tiselice <dragostiselice@gmail.com>
+    https://github.com/pest-parser/pest
+  - pest_derive 2.8.6
+    authors: Dragoș Tiselice <dragostiselice@gmail.com>
+    https://github.com/pest-parser/pest
+  - pest_generator 2.8.6
+    authors: Dragoș Tiselice <dragostiselice@gmail.com>
+    https://github.com/pest-parser/pest
+  - pest_meta 2.8.6
+    authors: Dragoș Tiselice <dragostiselice@gmail.com>
+    https://github.com/pest-parser/pest
+  - pin-project-lite 0.2.17
+    https://github.com/taiki-e/pin-project-lite
+  - pkg-config 0.3.33
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/rust-lang/pkg-config-rs
+  - plain 0.2.3
+    authors: jzr
+    https://github.com/randomites/plain
+  - png 0.18.1
+    authors: The image-rs Developers
+    https://github.com/image-rs/image-png
+  - polyval 0.6.2
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/universal-hashes
+  - portable-atomic 1.13.1
+    https://github.com/taiki-e/portable-atomic
+  - portable-atomic-util 0.2.7
+    https://github.com/taiki-e/portable-atomic-util
+  - postcard 1.1.3
+    authors: James Munns <james@onevariable.com>
+    https://github.com/jamesmunns/postcard
+  - powerfmt 0.2.0
+    authors: Jacob Pratt <jacob@jhpratt.dev>
+    https://github.com/jhpratt/powerfmt
+  - ppv-lite86 0.2.21
+    authors: The CryptoCorrosion Contributors
+    https://github.com/cryptocorrosion/cryptocorrosion
+  - prettyplease 0.2.37
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/prettyplease
+  - proc-macro-crate 3.5.0
+    authors: Bastian Köcher <git@kchr.de>
+    https://github.com/bkchr/proc-macro-crate
+  - proc-macro2 1.0.106
+    authors: David Tolnay <dtolnay@gmail.com>|Alex Crichton <alex@alexcrichton.com>
+    https://github.com/dtolnay/proc-macro2
+  - py_literal 0.4.0
+    authors: Jim Turner <py_literal@turner.link>
+    https://github.com/jturner314/py_literal
+  - qrcode 0.14.1
+    authors: kennytm <kennytm@gmail.com>
+    https://github.com/kennytm/qrcode-rust
+  - quick-error 2.0.1
+    authors: Paul Colomiets <paul@colomiets.name>|Colin Kiegel <kiegel@gmx.de>
+    http://github.com/tailhook/quick-error
+  - quote 1.0.45
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/quote
+  - rand 0.10.1
+    authors: The Rand Project Developers|The Rust Project Developers
+    https://github.com/rust-random/rand
+  - rand 0.8.6
+    authors: The Rand Project Developers|The Rust Project Developers
+    https://github.com/rust-random/rand
+  - rand 0.9.4
+    authors: The Rand Project Developers|The Rust Project Developers
+    https://github.com/rust-random/rand
+  - rand_chacha 0.3.1
+    authors: The Rand Project Developers|The Rust Project Developers|The CryptoCorrosion Contributors
+    https://github.com/rust-random/rand
+  - rand_chacha 0.9.0
+    authors: The Rand Project Developers|The Rust Project Developers|The CryptoCorrosion Contributors
+    https://github.com/rust-random/rand
+  - rand_core 0.10.1
+    authors: The Rand Project Developers
+    https://github.com/rust-random/rand_core
+  - rand_core 0.6.4
+    authors: The Rand Project Developers|The Rust Project Developers
+    https://github.com/rust-random/rand
+  - rand_core 0.9.5
+    authors: The Rand Project Developers|The Rust Project Developers
+    https://github.com/rust-random/rand
+  - rand_distr 0.4.3
+    authors: The Rand Project Developers
+    https://github.com/rust-random/rand
+  - rand_distr 0.5.1
+    authors: The Rand Project Developers
+    https://github.com/rust-random/rand_distr
+  - rawpointer 0.2.1
+    authors: bluss
+    https://github.com/bluss/rawpointer/
+  - rayon 1.12.0
+    https://github.com/rayon-rs/rayon
+  - rayon-core 1.13.0
+    https://github.com/rayon-rs/rayon
+  - ref-cast 1.0.25
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/ref-cast
+  - ref-cast-impl 1.0.25
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/ref-cast
+  - regex 1.12.3
+    authors: The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>
+    https://github.com/rust-lang/regex
+  - regex-automata 0.4.14
+    authors: The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>
+    https://github.com/rust-lang/regex
+  - regex-syntax 0.6.29
+    authors: The Rust Project Developers
+    https://github.com/rust-lang/regex
+  - regex-syntax 0.8.10
+    authors: The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>
+    https://github.com/rust-lang/regex
+  - reqwest 0.12.28
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/seanmonstar/reqwest
+  - rustc-hash 1.1.0
+    authors: The Rust Project Developers
+    https://github.com/rust-lang-nursery/rustc-hash
+  - rustc-hash 2.1.2
+    authors: The Rust Project Developers
+    https://github.com/rust-lang/rustc-hash
+  - rustc_version 0.4.1
+    https://github.com/djc/rustc-version-rs
+  - rustls-pki-types 1.14.1
+    https://github.com/rustls/pki-types
+  - rustversion 1.0.22
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/rustversion
+  - scopeguard 1.2.0
+    authors: bluss
+    https://github.com/bluss/scopeguard
+  - security-framework 3.7.0
+    authors: Steven Fackler <sfackler@gmail.com>|Kornel <kornel@geekhood.net>
+    https://github.com/kornelski/rust-security-framework
+  - security-framework-sys 2.17.0
+    authors: Steven Fackler <sfackler@gmail.com>|Kornel <kornel@geekhood.net>
+    https://github.com/kornelski/rust-security-framework
+  - semver 1.0.28
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/semver
+  - seq-macro 0.3.6
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/seq-macro
+  - serde 1.0.228
+    authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/serde-rs/serde
+  - serde_core 1.0.228
+    authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/serde-rs/serde
+  - serde_derive 1.0.228
+    authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/serde-rs/serde
+  - serde_derive_internals 0.28.0
+    authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/serde-rs/serde
+  - serde_json 1.0.149
+    authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+    https://github.com/serde-rs/json
+  - serde_repr 0.1.20
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/serde-repr
+  - serde_spanned 0.6.9
+    https://github.com/toml-rs/toml
+  - serde_spanned 1.1.1
+    https://github.com/toml-rs/toml
+  - serde_urlencoded 0.7.1
+    authors: Anthony Ramine <n.oxyde@gmail.com>
+    https://github.com/nox/serde_urlencoded
+  - serde_with 3.19.0
+    authors: Jonas Bushart|Marcin Kaźmierczak
+    https://github.com/jonasbb/serde_with/
+  - serde_with_macros 3.19.0
+    authors: Jonas Bushart
+    https://github.com/jonasbb/serde_with/
+  - servo_arc 0.4.3
+    authors: The Servo Project Developers
+    https://github.com/servo/stylo
+  - sha2 0.10.9
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/hashes
+  - shlex 1.3.0
+    authors: comex <comexk@gmail.com>|Fenhl <fenhl@fenhl.net>|Adrian Taylor <adetaylor@chromium.org>|Alex Touchet <alextouchet@outlook.com>|Daniel Parks <dp+git@oxidized.org>|Garrett Berg <googberg@gmail.com>
+    https://github.com/comex/rust-shlex
+  - signature 2.2.0
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits/tree/master/signature
+  - siphasher 1.0.3
+    authors: Frank Denis <github@pureftpd.org>
+    https://github.com/jedisct1/rust-siphash
+  - smallvec 1.15.1
+    authors: The Servo Project Developers
+    https://github.com/servo/rust-smallvec
+  - socket2 0.6.3
+    authors: Alex Crichton <alex@alexcrichton.com>|Thomas de Zeeuw <thomasdezeeuw@gmail.com>
+    https://github.com/rust-lang/socket2
+  - stable_deref_trait 1.2.1
+    authors: Robert Grosse <n210241048576@gmail.com>
+    https://github.com/storyyeller/stable_deref_trait
+  - static_assertions 1.1.0
+    authors: Nikolai Vazquez
+    https://github.com/nvzqz/static-assertions-rs
+  - string_cache 0.8.9
+    authors: The Servo Project Developers
+    https://github.com/servo/string-cache
+  - string_cache_codegen 0.5.4
+    authors: The Servo Project Developers
+    https://github.com/servo/string-cache
+  - syn 2.0.117
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/syn
+  - system-configuration 0.7.0
+    authors: Mullvad VPN
+    https://github.com/mullvad/system-configuration-rs
+  - system-configuration-sys 0.6.0
+    authors: Mullvad VPN
+    https://github.com/mullvad/system-configuration-rs
+  - system-deps 7.0.8
+    authors: Guillaume Desmottes <guillaume.desmottes@collabora.com>|Josh Triplett <josh@joshtriplett.org>
+    https://github.com/gdesmott/system-deps
+  - tar 0.4.45
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/alexcrichton/tar-rs
+  - tempfile 3.27.0
+    authors: Steven Allen <steven@stebalien.com>|The Rust Project Developers|Ashley Mannix <ashleymannix@live.com.au>|Jason White <me@jasonwhite.io>
+    https://github.com/Stebalien/tempfile
+  - tendril 0.4.3
+    authors: Keegan McAllister <mcallister.keegan@gmail.com>|Simon Sapin <simon.sapin@exyr.org>|Chris Morgan <me@chrismorgan.info>
+    https://github.com/servo/tendril
+  - thiserror 1.0.69
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/thiserror
+  - thiserror 2.0.18
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/thiserror
+  - thiserror-impl 1.0.69
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/thiserror
+  - thiserror-impl 2.0.18
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/thiserror
+  - time 0.3.47
+    authors: Jacob Pratt <open-source@jhpratt.dev>|Time contributors
+    https://github.com/time-rs/time
+  - time-core 0.1.8
+    authors: Jacob Pratt <open-source@jhpratt.dev>|Time contributors
+    https://github.com/time-rs/time
+  - time-macros 0.2.27
+    authors: Jacob Pratt <open-source@jhpratt.dev>|Time contributors
+    https://github.com/time-rs/time
+  - tokio-rustls 0.26.4
+    https://github.com/rustls/tokio-rustls
+  - toml 0.8.2
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/toml-rs/toml
+  - toml 1.1.2+spec-1.1.0
+    https://github.com/toml-rs/toml
+  - toml_datetime 0.6.3
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/toml-rs/toml
+  - toml_datetime 1.1.1+spec-1.1.0
+    https://github.com/toml-rs/toml
+  - toml_edit 0.20.2
+    authors: Andronik Ordian <write@reusable.software>|Ed Page <eopage@gmail.com>
+    https://github.com/toml-rs/toml
+  - toml_edit 0.25.11+spec-1.1.0
+    https://github.com/toml-rs/toml
+  - toml_parser 1.1.2+spec-1.1.0
+    https://github.com/toml-rs/toml
+  - toml_writer 1.1.1+spec-1.1.0
+    https://github.com/toml-rs/toml
+  - tsify 0.4.5
+    authors: Madono Haru <madonoharu@gmail.com>
+    https://github.com/madonoharu/tsify
+  - tsify-macros 0.4.5
+    authors: Madono Haru <madonoharu@gmail.com>
+    https://github.com/madonoharu/tsify
+  - ttf-parser 0.25.1
+    authors: Caleb Maclennan <caleb@alerque.com>|Laurenz Stampfl <laurenz.stampfl@gmail.com>|Yevhenii Reizner <razrfalcon@gmail.com>|خالد حسني (Khaled Hosny) <khaled@aliftype.com>
+    https://github.com/harfbuzz/ttf-parser
+  - typed-path 0.12.3
+    authors: Chip Senkbeil <chip@senkbeil.org>
+    https://github.com/chipsenkbeil/typed-path
+  - typeid 1.0.3
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/typeid
+  - typenum 1.20.0
+    authors: Paho Lurie-Gregg <paho@paholg.com>|Andre Bogus <bogusandre@gmail.com>
+    https://github.com/paholg/typenum
+  - ucd-trie 0.1.7
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ucd-generate
+  - unic-char-property 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unic-char-range 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unic-common 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unic-emoji-char 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unic-ucd-ident 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unic-ucd-version 0.9.0
+    authors: The UNIC Project Developers
+    https://github.com/open-i18n/rust-unic/
+  - unicase 2.9.0
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/seanmonstar/unicase
+  - unicode-segmentation 1.13.2
+    authors: kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-rs/unicode-segmentation
+  - unicode-width 0.2.2
+    authors: kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-rs/unicode-width
+  - unicode-xid 0.2.6
+    authors: erick.tryzelaar <erick.tryzelaar@gmail.com>|kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-rs/unicode-xid
+  - unicode_names2_generator 1.3.0
+    authors: Huon Wilson <dbau.pp@gmail.com>
+    https://github.com/progval/unicode_names2
+  - universal-hash 0.5.1
+    authors: RustCrypto Developers
+    https://github.com/RustCrypto/traits
+  - url 2.5.8
+    authors: The rust-url developers
+    https://github.com/servo/rust-url
+  - utf-8 0.7.6
+    authors: Simon Sapin <simon.sapin@exyr.org>
+    https://github.com/SimonSapin/rust-utf8
+  - utf16string 0.2.0
+    authors: Floris Bruynooghe <flub@devork.be>|Sentry <oss@sentry.io>
+    https://github.com/getsentry/utf16string
+  - utf8_iter 1.0.4
+    authors: Henri Sivonen <hsivonen@hsivonen.fi>
+    https://github.com/hsivonen/utf8_iter
+  - utf8parse 0.2.2
+    authors: Joe Wilm <joe@jwilm.com>|Christian Duerr <contact@christianduerr.com>
+    https://github.com/alacritty/vte
+  - uuid 1.23.1
+    authors: Ashley Mannix<ashleymannix@live.com.au>|Dylan DPC<dylan.dpc@gmail.com>|Hunar Roop Kahlon<hunar.roop@gmail.com>
+    https://github.com/uuid-rs/uuid
+  - vcpkg 0.2.15
+    authors: Jim McGrath <jimmc2@gmail.com>
+    https://github.com/mcgoo/vcpkg-rs
+  - version_check 0.9.5
+    authors: Sergio Benitez <sb@sergio.bz>
+    https://github.com/SergioBenitez/version_check
+  - wasm-bindgen 0.2.120
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen
+  - wasm-bindgen-futures 0.4.70
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures
+  - wasm-bindgen-macro 0.2.120
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro
+  - wasm-bindgen-macro-support 0.2.120
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support
+  - wasm-bindgen-shared 0.2.120
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared
+  - web-sys 0.3.97
+    authors: The wasm-bindgen Developers
+    https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys
+  - weezl 0.1.12
+    authors: The image-rs Developers
+    https://github.com/image-rs/weezl
+  - windows 0.61.3
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-collections 0.2.0
+    https://github.com/microsoft/windows-rs
+  - windows-core 0.61.2
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-core 0.62.2
+    https://github.com/microsoft/windows-rs
+  - windows-future 0.2.1
+    https://github.com/microsoft/windows-rs
+  - windows-implement 0.60.2
+    https://github.com/microsoft/windows-rs
+  - windows-interface 0.59.3
+    https://github.com/microsoft/windows-rs
+  - windows-link 0.1.3
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-link 0.2.1
+    https://github.com/microsoft/windows-rs
+  - windows-numerics 0.2.0
+    https://github.com/microsoft/windows-rs
+  - windows-registry 0.6.1
+    https://github.com/microsoft/windows-rs
+  - windows-result 0.3.4
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-result 0.4.1
+    https://github.com/microsoft/windows-rs
+  - windows-strings 0.4.2
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-strings 0.5.1
+    https://github.com/microsoft/windows-rs
+  - windows-sys 0.52.0
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-sys 0.59.0
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-sys 0.61.2
+    https://github.com/microsoft/windows-rs
+  - windows-targets 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows-threading 0.1.0
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_aarch64_gnullvm 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_aarch64_msvc 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_i686_gnu 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_i686_gnullvm 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_i686_msvc 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_x86_64_gnu 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_x86_64_gnullvm 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - windows_x86_64_msvc 0.52.6
+    authors: Microsoft
+    https://github.com/microsoft/windows-rs
+  - xattr 1.6.1
+    authors: Steven Allen <steven@stebalien.com>
+    https://github.com/Stebalien/xattr
+  - xz2 0.1.7
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/alexcrichton/xz2-rs
+  - yaml-rust2 0.11.0
+    authors: Yuheng Chen <yuhengchen@sensetime.com>|Ethiraric <ethiraric@gmail.com>|David Aguilar <davvid@gmail.com>
+    https://github.com/Ethiraric/yaml-rust2
+  - zeroize 1.8.2
+    authors: The RustCrypto Project Developers
+    https://github.com/RustCrypto/utils
+  - zeroize_derive 1.4.3
+    authors: The RustCrypto Project Developers
+    https://github.com/RustCrypto/utils/tree/master/zeroize/derive
+
+### MIT
+
+  - block2 0.6.2
+    authors: Mads Marquart <mads@marquart.dk>
+    https://github.com/madsmtm/objc2
+  - bytes 1.11.1
+    authors: Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>
+    https://github.com/tokio-rs/bytes
+  - cairo-rs 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - cairo-sys-rs 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - calamine 0.35.0
+    authors: Johann Tuffe <tafia973@gmail.com>
+    https://github.com/tafia/calamine
+  - cfg_aliases 0.2.1
+    authors: Zicklag <zicklag@katharostech.com>
+    https://github.com/katharostech/cfg_aliases
+  - color_quant 1.1.0
+    authors: nwin <nwin@users.noreply.github.com>
+    https://github.com/image-rs/color_quant.git
+  - crunchy 0.2.4
+    authors: Eira Fransham <jackefransham@gmail.com>
+    https://github.com/eira-fransham/crunchy
+  - darling 0.23.0
+    authors: Ted Driggs <ted.driggs@outlook.com>
+    https://github.com/TedDriggs/darling
+  - darling_core 0.23.0
+    authors: Ted Driggs <ted.driggs@outlook.com>
+    https://github.com/TedDriggs/darling
+  - darling_macro 0.23.0
+    authors: Ted Driggs <ted.driggs@outlook.com>
+    https://github.com/TedDriggs/darling
+  - derive_more 0.99.20
+    authors: Jelte Fennema <github-tech@jeltef.nl>
+    https://github.com/JelteF/derive_more
+  - derive_more 1.0.0
+    authors: Jelte Fennema <github-tech@jeltef.nl>
+    https://github.com/JelteF/derive_more
+  - derive_more-impl 1.0.0
+    authors: Jelte Fennema <github-tech@jeltef.nl>
+    https://github.com/JelteF/derive_more
+  - dyn-stack 0.13.2
+    authors: sarah <>
+    https://codeberg.org/sarah-quinones/dyn-stack
+  - dyn-stack-macros 0.1.3
+    authors: sarah quiñones<sarah@veganb.tw>
+    https://github.com/kitegi/dynstack/
+  - email_address 0.2.9
+    authors: Simon Johnston <johnstonskj@gmail.com>
+    https://github.com/johnstonskj/rust-email_address.git
+  - endian-type 0.1.2
+    authors: Lolirofle <lolipopple@hotmail.com>
+    https://github.com/Lolirofle/endian-type.git
+  - equator 0.2.2
+    authors: sarah <>
+    https://github.com/sarah-ek/equator/
+  - equator 0.4.2
+    authors: sarah <>
+    https://github.com/sarah-ek/equator/
+  - equator-macro 0.2.1
+    authors: sarah <>
+    https://github.com/sarah-ek/equator/
+  - equator-macro 0.4.2
+    authors: sarah <>
+    https://github.com/sarah-ek/equator/
+  - faer 0.21.9
+    authors: sarah quiñones <sarah@veganb.tw>
+    https://github.com/sarah-quinones/faer-rs/
+  - faer-macros 0.21.0
+    authors: sarah quiñones <sarah@veganb.tw>
+    https://github.com/sarah-quinones/faer-rs/
+  - faer-traits 0.21.5
+    authors: sarah quiñones <sarah@veganb.tw>
+    https://github.com/sarah-quinones/faer-rs/
+  - fax 0.2.7
+    authors: Sebastian K <s3bk@protonmail.com>
+    https://github.com/pdf-rs/fax
+  - fff-grep 0.9.6
+    authors: Dmitriy Kovalenko <dmtr.kovalenko@outlok.com>
+  - fs_extra 1.3.0
+    authors: Denis Kurilenko <webdesus@gmail.com>
+    https://github.com/webdesus/fs_extra
+  - gdk-pixbuf 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - gdk-pixbuf-sys 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - gdk4 0.11.2
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gdk4-sys 0.11.2
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gemm 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-c32 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-c64 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-common 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-f16 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-f32 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - gemm-f64 0.18.2
+    authors: sarah <>
+    https://github.com/sarah-ek/gemm/
+  - generic-array 0.14.7
+    authors: Bartłomiej Kamiński <fizyk20@gmail.com>|Aaron Trent <novacrazy@gmail.com>
+    https://github.com/fizyk20/generic-array.git
+  - gio 0.22.6
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - gio-sys 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - glib 0.22.7
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - glib-macros 0.22.6
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - glib-sys 0.22.6
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - gobject-sys 0.22.6
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - graphene-rs 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - graphene-sys 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - gsk4 0.11.1
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gsk4-sys 0.11.1
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gtk4 0.11.3
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gtk4-macros 0.11.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - gtk4-sys 0.11.3
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk4-rs
+  - h2 0.4.14
+    authors: Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/h2
+  - http-body 1.0.1
+    authors: Carl Lerche <me@carllerche.com>|Lucio Franco <luciofranco14@gmail.com>|Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/http-body
+  - http-body-util 0.1.3
+    authors: Carl Lerche <me@carllerche.com>|Lucio Franco <luciofranco14@gmail.com>|Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/http-body
+  - hyper 1.9.0
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/hyper
+  - hyper-util 0.1.20
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/hyperium/hyper-util
+  - imageproc 0.25.1
+    authors: theotherphil
+    https://github.com/image-rs/imageproc.git
+  - iso_country 0.1.4
+    authors: Piotr Zolnierek <pzolnierek@gmail.com>
+    https://github.com/pzol/iso_country
+  - iso_currency 0.5.3
+    authors: Rostislav Raykov <z@zbrox.org>
+    https://github.com/zbrox/iso_currency
+  - isocountry 0.3.2
+    authors: Bree (formerly Brett) <sifton@users.noreply.github.com>
+    https://github.com/sifton/isocountry-rs.git
+  - javascriptcore6 0.6.0
+    authors: Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>
+    https://gitlab.gnome.org/World/Rust/webkit6-rs
+  - javascriptcore6-sys 0.6.0
+    authors: Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>
+    https://gitlab.gnome.org/World/Rust/webkit6-rs
+  - jsonwebtoken 10.4.0
+    authors: Vincent Prouillet <hello@vincentprouillet.com>
+    https://github.com/Keats/jsonwebtoken
+  - libm 0.2.16
+    authors: Alex Crichton <alex@alexcrichton.com>|Amanieu d'Antras <amanieu@gmail.com>|Jorge Aparicio <japaricious@gmail.com>|Trevor Gross <tg@trevorgross.com>
+    https://github.com/rust-lang/compiler-builtins
+  - libredox 0.1.16
+    authors: 4lDO2 <4lDO2@protonmail.com>
+    https://gitlab.redox-os.org/redox-os/libredox.git
+  - luau0-src 0.20.7+luau728
+    authors: Aleksandr Orlenko <zxteam@protonmail.com>
+    https://github.com/mlua-rs/luau-src-rs
+  - memoffset 0.9.1
+    authors: Gilad Naaman <gilad.naaman@gmail.com>
+    https://github.com/Gilnaa/memoffset
+  - mio 1.2.0
+    authors: Carl Lerche <me@carllerche.com>|Thomas de Zeeuw <thomasdezeeuw@gmail.com>|Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/mio
+  - mlua 0.12.0
+    authors: Aleksandr Orlenko <zxteam@pm.me>|kyren <catherine@kyju.org>
+    https://github.com/mlua-rs/mlua
+  - mlua-sys 0.11.0
+    authors: Aleksandr Orlenko <zxteam@pm.me>
+    https://github.com/mlua-rs/mlua
+  - nano-gemm 0.1.3
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-c32 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-c64 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-codegen 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-core 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-f32 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - nano-gemm-f64 0.1.0
+    authors: sarah <>
+    https://github.com/sarah-ek/nano-gemm/
+  - new_debug_unreachable 1.0.6
+    authors: Matt Brubeck <mbrubeck@limpet.net>|Jonathan Reem <jonathan.reem@gmail.com>
+    https://github.com/mbrubeck/rust-debug-unreachable
+  - nibble_vec 0.1.0
+    authors: Michael Sproul <micsproul@gmail.com>
+    https://github.com/michaelsproul/rust_nibble_vec
+  - nix 0.29.0
+    authors: The nix-rust Project Developers
+    https://github.com/nix-rust/nix
+  - nom 7.1.3
+    authors: contact@geoffroycouprie.com
+    https://github.com/Geal/nom
+  - npyz 0.8.4
+    authors: Michael Lamparski <diagonaldevice@gmail.com>|Pavel Potocek <pavelpotocek@gmail.com>
+    https://github.com/ExpHP/npyz
+  - objc2 0.6.4
+    authors: Mads Marquart <mads@marquart.dk>
+    https://github.com/madsmtm/objc2
+  - objc2-encode 4.1.0
+    authors: Mads Marquart <mads@marquart.dk>
+    https://github.com/madsmtm/objc2
+  - objc2-foundation 0.3.2
+    https://github.com/madsmtm/objc2
+  - openssl-sys 0.9.115
+    authors: Alex Crichton <alex@alexcrichton.com>|Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-openssl/rust-openssl
+  - ordered-float 2.10.1
+    authors: Jonathan Reem <jonathan.reem@gmail.com>|Matt Brubeck <mbrubeck@limpet.net>
+    https://github.com/reem/rust-ordered-float
+  - pango 0.22.6
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - pango-sys 0.22.0
+    authors: The gtk-rs Project Developers
+    https://github.com/gtk-rs/gtk-rs-core
+  - phf 0.11.3
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-phf/rust-phf
+  - phf_codegen 0.11.3
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-phf/rust-phf
+  - phf_generator 0.11.3
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-phf/rust-phf
+  - phf_macros 0.11.3
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-phf/rust-phf
+  - phf_shared 0.11.3
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-phf/rust-phf
+  - piston-float 1.0.1
+    authors: bvssvni <bvssvni@gmail.com>
+    https://github.com/pistondevelopers/float.git
+  - plotly 0.14.1
+    authors: Ioannis Giagkiozis <i.giagkiozis@gmail.com>|Andrei Gherghescu <andrei-ng@protonmail.com>
+    https://github.com/plotly/plotly.rs
+  - plotly_derive 0.14.1
+    authors: Ioannis Giagkiozis <i.giagkiozis@gmail.com>
+    https://github.com/plotly/plotly.rs
+  - precomputed-hash 0.1.1
+    authors: Emilio Cobos Álvarez <emilio@crisal.io>
+    https://github.com/emilio/precomputed-hash
+  - pulldown-cmark 0.13.3
+    authors: Raph Levien <raph.levien@gmail.com>|Marcus Klaas de Vries <mail@marcusklaas.nl>
+    https://github.com/raphlinus/pulldown-cmark
+  - pulldown-cmark-escape 0.11.0
+    authors: Raph Levien <raph.levien@gmail.com>|Marcus Klaas de Vries <mail@marcusklaas.nl>
+    https://github.com/raphlinus/pulldown-cmark
+  - pulp 0.21.5
+    authors: sarah <>
+    https://github.com/sarah-ek/pulp/
+  - quick-xml 0.39.3
+    https://github.com/tafia/quick-xml
+  - quick-xml 0.41.0
+    https://github.com/tafia/quick-xml
+  - radix_trie 0.2.1
+    authors: Michael Sproul <micsproul@gmail.com>
+    https://github.com/michaelsproul/rust_radix_trie
+  - rapidfuzz 0.5.0
+    authors: maxbachmann <oss@maxbachmann.de>
+    https://github.com/maxbachmann/rapidfuzz-rs
+  - raw-cpuid 11.6.0
+    authors: Gerd Zellweger <mail@gerdzellweger.com>
+    https://github.com/gz/rust-cpuid
+  - reborrow 0.5.5
+    authors: sarah <>
+    https://github.com/sarah-ek/reborrow/
+  - redox_syscall 0.5.18
+    authors: Jeremy Soller <jackpot51@gmail.com>
+    https://gitlab.redox-os.org/redox-os/syscall
+  - redox_syscall 0.7.5
+    authors: Jeremy Soller <jackpot51@gmail.com>
+    https://gitlab.redox-os.org/redox-os/syscall
+  - redox_users 0.5.2
+    authors: Jose Narvaez <goyox86@gmail.com>|Wesley Hershberger <mggmugginsmc@gmail.com>
+    https://gitlab.redox-os.org/redox-os/users
+  - regex-cache 0.2.1
+    authors: meh. <meh@1aim.com>
+    https://github.com/1aim/rust-regex-cache
+  - rtf-parser 0.4.2
+    https://github.com/d0rianb/rtf-parser
+  - rustpython-ast 0.4.0
+    authors: RustPython Team
+    https://github.com/RustPython/Parser
+  - rustpython-parser 0.4.0
+    authors: RustPython Team
+    https://github.com/RustPython/Parser
+  - rustpython-parser-core 0.4.0
+    authors: RustPython Team
+    https://github.com/RustPython/Parser
+  - rustpython-parser-vendored 0.4.0
+    authors: RustPython Team|and the original authors of the vendored modules
+    https://github.com/RustPython/Parser
+  - rustyline 15.0.0
+    authors: Katsu Kawakami <kkawa1570@gmail.com>
+    https://github.com/kkawakam/rustyline
+  - schannel 0.1.29
+    authors: Steven Fackler <sfackler@gmail.com>|Steffen Butzer <steffen.butzer@outlook.com>
+    https://github.com/steffengy/schannel-rs
+  - schemars 0.9.0
+    authors: Graham Esau <gesau@hotmail.co.uk>
+    https://github.com/GREsau/schemars
+  - schemars 1.2.1
+    authors: Graham Esau <gesau@hotmail.co.uk>
+    https://github.com/GREsau/schemars
+  - serde-value 0.7.0
+    authors: arcnmx
+    https://github.com/arcnmx/serde-value
+  - serde-wasm-bindgen 0.6.5
+    authors: Ingvar Stepanyan <me@rreverser.com>
+    https://github.com/RReverser/serde-wasm-bindgen
+  - simd-adler32 0.3.9
+    authors: Marvin Countryman <me@maar.vin>
+    https://github.com/mcountryman/simd-adler32
+  - slab 0.4.12
+    authors: Carl Lerche <me@carllerche.com>
+    https://github.com/tokio-rs/slab
+  - soup3 0.9.0
+    authors: The Gtk-rs Project Developers
+    https://gitlab.gnome.org/World/Rust/soup3-rs
+  - soup3-sys 0.9.0
+    authors: The Gtk-rs Project Developers
+    https://gitlab.gnome.org/World/Rust/soup3-rs
+  - spin 0.9.8
+    authors: Mathijs van de Nes <git@mathijs.vd-nes.nl>|John Ericson <git@JohnEricson.me>|Joshua Barretto <joshua.s.barretto@gmail.com>
+    https://github.com/mvdnes/spin-rs.git
+  - strsim 0.11.1
+    authors: Danny Guo <danny@dannyguo.com>|maxbachmann <oss@maxbachmann.de>
+    https://github.com/rapidfuzz/strsim-rs
+  - strum 0.27.2
+    authors: Peter Glotfelty <peter.glotfelty@microsoft.com>
+    https://github.com/Peternator7/strum
+  - strum_macros 0.27.2
+    authors: Peter Glotfelty <peter.glotfelty@microsoft.com>
+    https://github.com/Peternator7/strum
+  - synstructure 0.13.2
+    authors: Nika Layzell <nika@thelayzells.com>
+    https://github.com/mystor/synstructure
+  - sysctl 0.6.0
+    authors: Johannes Lundberg <johalun0@gmail.com>|Ivan Temchenko <ivan.temchenko@yandex.ua>|Fabian Freyer <fabian.freyer@physik.tu-berlin.de>
+    https://github.com/johalun/sysctl-rs
+  - tiff 0.11.3
+    authors: The image-rs Developers
+    https://github.com/image-rs/image-tiff
+  - tokio 1.52.2
+    authors: Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/tokio
+  - tokio-native-tls 0.3.1
+    authors: Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/tls
+  - tokio-util 0.7.18
+    authors: Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/tokio
+  - tower 0.5.3
+    authors: Tower Maintainers <team@tower-rs.com>
+    https://github.com/tower-rs/tower
+  - tower-http 0.6.8
+    authors: Tower Maintainers <team@tower-rs.com>
+    https://github.com/tower-rs/tower-http
+  - tower-layer 0.3.3
+    authors: Tower Maintainers <team@tower-rs.com>
+    https://github.com/tower-rs/tower
+  - tower-service 0.3.3
+    authors: Tower Maintainers <team@tower-rs.com>
+    https://github.com/tower-rs/tower
+  - tracing 0.1.44
+    authors: Eliza Weisman <eliza@buoyant.io>|Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/tracing
+  - tracing-core 0.1.36
+    authors: Tokio Contributors <team@tokio.rs>
+    https://github.com/tokio-rs/tracing
+  - try-lock 0.2.5
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/seanmonstar/try-lock
+  - vecmath 1.0.0
+    authors: bvssvni <bvssvni@gmail.com>
+    https://github.com/pistondevelopers/vecmath.git
+  - version-compare 0.2.1
+    authors: Tim Visee <3a4fb3964f@sinenomine.email>
+    https://gitlab.com/timvisee/version-compare
+  - void 1.0.2
+    authors: Jonathan Reem <jonathan.reem@gmail.com>
+    https://github.com/reem/rust-void.git
+  - want 0.3.1
+    authors: Sean McArthur <sean@seanmonstar.com>
+    https://github.com/seanmonstar/want
+  - webkit6 0.6.1
+    authors: Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>
+    https://gitlab.gnome.org/World/Rust/webkit6-rs
+  - webkit6-sys 0.6.0
+    authors: Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>
+    https://gitlab.gnome.org/World/Rust/webkit6-rs
+  - webview2-com 0.38.2
+    https://github.com/wravery/webview2-rs
+  - webview2-com-macros 0.8.1
+    https://github.com/wravery/webview2-rs
+  - webview2-com-sys 0.38.2
+    https://github.com/wravery/webview2-rs
+  - winnow 0.5.40
+    https://github.com/winnow-rs/winnow
+  - winnow 1.0.2
+    https://github.com/winnow-rs/winnow
+  - zip 2.4.2
+    authors: Mathijs van de Nes <git@mathijs.vd-nes.nl>|Marli Frost <marli@frost.red>|Ryan Levick <ryan.levick@gmail.com>|Chris Hennick <hennickc@amazon.com>
+    https://github.com/zip-rs/zip2.git
+  - zip 7.2.0
+    authors: Mathijs van de Nes <git@mathijs.vd-nes.nl>|Marli Frost <marli@frost.red>|Ryan Levick <ryan.levick@gmail.com>|Chris Hennick <hennickc@amazon.com>
+    https://github.com/zip-rs/zip2.git
+  - zmij 1.0.21
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/zmij
+
+### Unicode-3.0
+
+  - icu_collections 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_locale_core 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_normalizer 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_normalizer_data 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_properties 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_properties_data 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - icu_provider 2.2.0
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - litemap 0.8.2
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - potential_utf 0.1.5
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - tinystr 0.8.3
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - writeable 0.6.3
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - yoke 0.8.2
+    authors: Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-org/icu4x
+  - yoke-derive 0.8.2
+    authors: Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-org/icu4x
+  - zerofrom 0.1.7
+    authors: Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-org/icu4x
+  - zerofrom-derive 0.1.7
+    authors: Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-org/icu4x
+  - zerotrie 0.2.4
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - zerovec 0.11.6
+    authors: The ICU4X Project Developers
+    https://github.com/unicode-org/icu4x
+  - zerovec-derive 0.11.3
+    authors: Manish Goregaokar <manishsmail@gmail.com>
+    https://github.com/unicode-org/icu4x
+
+### Apache-2.0 OR MIT OR Zlib
+
+  - bytemuck 1.25.0
+    authors: Lokathor <zefria@gmail.com>
+    https://github.com/Lokathor/bytemuck
+  - bytemuck_derive 1.10.2
+    authors: Lokathor <zefria@gmail.com>
+    https://github.com/Lokathor/bytemuck
+  - dispatch2 0.3.1
+    authors: Mads Marquart <mads@marquart.dk>|Mary <mary@mary.zone>
+    https://github.com/madsmtm/objc2
+  - miniz_oxide 0.8.9
+    authors: Frommi <daniil.liferenko@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>|Rich Geldreich richgel99@gmail.com
+    https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
+  - objc2-app-kit 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-core-foundation 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-core-graphics 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-event-kit 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-io-surface 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-javascript-core 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-security 0.3.2
+    https://github.com/madsmtm/objc2
+  - objc2-web-kit 0.3.2
+    https://github.com/madsmtm/objc2
+  - safe_arch 0.7.4
+    authors: Lokathor <zefria@gmail.com>
+    https://github.com/Lokathor/safe_arch
+  - wide 0.7.33
+    authors: Lokathor <zefria@gmail.com>
+    https://github.com/Lokathor/wide
+  - zune-core 0.5.1
+    https://github.com/etemesi254/zune-image
+  - zune-jpeg 0.5.15
+    authors: caleb <etemesicaleb@gmail.com>
+    https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg
+
+### Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT
+
+  - linux-raw-sys 0.12.1
+    authors: Dan Gohman <dev@sunfishcode.online>
+    https://github.com/sunfishcode/linux-raw-sys
+  - rustix 1.1.4
+    authors: Dan Gohman <dev@sunfishcode.online>|Jakub Konka <kubkon@jakubkonka.com>
+    https://github.com/bytecodealliance/rustix
+  - wasi 0.11.1+wasi-snapshot-preview1
+    authors: The Cranelift Project Developers
+    https://github.com/bytecodealliance/wasi
+  - wasip2 1.0.3+wasi-0.2.9
+    https://github.com/bytecodealliance/wasi-rs
+  - wasip3 0.4.0+wasi-0.3.0-rc-2026-01-06
+    https://github.com/bytecodealliance/wasi-rs
+  - wasm-encoder 0.244.0
+    authors: Nick Fitzgerald <fitzgen@gmail.com>
+    https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder
+  - wasm-metadata 0.244.0
+    https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-metadata
+  - wasmparser 0.244.0
+    authors: Yury Delendik <ydelendik@mozilla.com>
+    https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser
+  - wit-bindgen 0.51.0
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wit-bindgen
+  - wit-bindgen 0.57.1
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wit-bindgen
+  - wit-bindgen-core 0.51.0
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wit-bindgen
+  - wit-bindgen-rust 0.51.0
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wit-bindgen
+  - wit-bindgen-rust-macro 0.51.0
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wit-bindgen
+  - wit-component 0.244.0
+    authors: Peter Huene <peter@huene.dev>
+    https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wit-component
+  - wit-parser 0.244.0
+    authors: Alex Crichton <alex@alexcrichton.com>
+    https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wit-parser
+
+### MIT OR Unlicense
+
+  - aho-corasick 1.1.4
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/aho-corasick
+  - byteorder 1.5.0
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/byteorder
+  - byteorder-lite 0.1.0
+    https://github.com/image-rs/byteorder-lite
+  - csv 1.4.0
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/rust-csv
+  - csv-core 0.1.13
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/rust-csv
+  - globset 0.4.18
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ripgrep/tree/master/crates/globset
+  - grep-matcher 0.1.8
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ripgrep/tree/master/crates/matcher
+  - grep-regex 0.1.14
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ripgrep/tree/master/crates/regex
+  - grep-searcher 0.1.16
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ripgrep/tree/master/crates/searcher
+  - ignore 0.4.25
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore
+  - memchr 2.8.0
+    authors: Andrew Gallant <jamslam@gmail.com>|bluss
+    https://github.com/BurntSushi/memchr
+  - same-file 1.0.6
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/same-file
+  - walkdir 2.5.0
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/walkdir
+  - winapi-util 0.1.11
+    authors: Andrew Gallant <jamslam@gmail.com>
+    https://github.com/BurntSushi/winapi-util
+
+### Apache-2.0
+
+  - ab_glyph 0.2.32
+    authors: Alex Butler <alexheretic@gmail.com>
+    https://github.com/alexheretic/ab-glyph
+  - ab_glyph_rasterizer 0.1.10
+    authors: Alex Butler <alexheretic@gmail.com>
+    https://github.com/alexheretic/ab-glyph
+  - approx 0.5.1
+    authors: Brendan Zabarauskas <bjzaba@yahoo.com.au>
+    https://github.com/brendanzab/approx
+  - is-macro 0.3.7
+    authors: 강동윤 <kdy1997.dev@gmail.com>
+    https://github.com/dudykr/ddbase.git
+  - lzma-rust 0.1.7
+    https://github.com/dyz1990/sevenz-rust/tree/main/lzma-rust
+  - openssl 0.10.79
+    authors: Steven Fackler <sfackler@gmail.com>
+    https://github.com/rust-openssl/rust-openssl
+  - owned_ttf_parser 0.25.1
+    authors: Alex Butler <alexheretic@gmail.com>
+    https://github.com/alexheretic/owned-ttf-parser
+  - phonenumber 0.3.10+9.0.33
+    authors: Gabriel Féron <g@leirbag.net>|Ruben De Smet <ruben.de.smet@rubdos.be>|meh. <meh@1aim.com>
+    https://github.com/whisperfish/rust-phonenumber
+  - sevenz-rust 0.6.1
+    https://github.com/dyz1990/sevenz-rust
+  - simba 0.8.1
+    authors: sebcrozet <developer@crozet.re>
+    https://github.com/dimforge/simba
+  - sync_wrapper 1.0.2
+    authors: Actyx AG <developer@actyx.io>
+    https://github.com/Actyx/sync_wrapper
+  - zopfli 0.8.3
+    https://github.com/zopfli-rs/zopfli
+
+### ISC
+
+  - ego-tree 0.10.0
+    authors: June McEnroe <june@causal.agency>|Carlo Federico Vescovo <vescovocarlofederico@gmail.com>
+    https://github.com/rust-scraper/ego-tree
+  - libloading 0.8.9
+    authors: Simonas Kazlauskas <libloading@kazlauskas.me>
+    https://github.com/nagisa/rust_libloading/
+  - libloading 0.9.0
+    authors: Simonas Kazlauskas <libloading@kazlauskas.me>
+    https://github.com/nagisa/rust_libloading/
+  - rustls-webpki 0.103.13
+    https://github.com/rustls/webpki
+  - scraper 0.22.0
+    authors: June McEnroe <june@causal.agency>
+    https://github.com/causal-agent/scraper
+  - untrusted 0.7.1
+    authors: Brian Smith <brian@briansmith.org>
+    https://github.com/briansmith/untrusted
+  - untrusted 0.9.0
+    authors: Brian Smith <brian@briansmith.org>
+    https://github.com/briansmith/untrusted
+
+### LGPL-3.0
+
+  - malachite 0.4.22
+    authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    https://github.com/mhogrefe/malachite
+  - malachite-base 0.4.22
+    authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    https://github.com/mhogrefe/malachite
+  - malachite-bigint 0.2.3
+    authors: Steve Shi <shikangzhi@gmail.com>
+    https://github.com/RustPython/malachite-bigint
+  - malachite-nz 0.4.22
+    authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    https://github.com/mhogrefe/malachite
+  - malachite-q 0.4.22
+    authors: Mikhail Hogrefe <mikhailhogrefe@gmail.com>
+    https://github.com/mhogrefe/malachite
+
+### MPL-2.0
+
+  - cssparser 0.34.0
+    authors: Simon Sapin <simon.sapin@exyr.org>
+    https://github.com/servo/rust-cssparser
+  - cssparser-macros 0.6.1
+    authors: Simon Sapin <simon.sapin@exyr.org>
+    https://github.com/servo/rust-cssparser
+  - dtoa-short 0.3.5
+    authors: Xidorn Quan <me@upsuper.org>
+    https://github.com/upsuper/dtoa-short
+  - option-ext 0.2.0
+    authors: Simon Ochsenreither <simon@ochsenreither.de>
+    https://github.com/soc/option-ext.git
+  - selectors 0.26.0
+    authors: The Servo Project Developers
+    https://github.com/servo/stylo
+
+### Zlib
+
+  - foldhash 0.1.5
+    authors: Orson Peters <orsonpeters@gmail.com>
+    https://github.com/orlp/foldhash
+  - foldhash 0.2.0
+    authors: Orson Peters <orsonpeters@gmail.com>
+    https://github.com/orlp/foldhash
+  - zlib-rs 0.6.3
+    https://github.com/trifectatechfoundation/zlib-rs
+
+### Apache-2.0 OR BSD-2-Clause OR MIT
+
+  - zerocopy 0.8.48
+    authors: Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>
+    https://github.com/google/zerocopy
+  - zerocopy-derive 0.8.48
+    authors: Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>
+    https://github.com/google/zerocopy
+
+### Apache-2.0 OR BSD-3-Clause
+
+  - moxcms 0.8.1
+    authors: Radzivon Bartoshyk
+    https://github.com/awxkee/moxcms.git
+  - pxfm 0.1.29
+    authors: Radzivon Bartoshyk
+    https://github.com/awxkee/pxfm
+
+### Apache-2.0 OR ISC OR MIT
+
+  - hyper-rustls 0.27.9
+    https://github.com/rustls/hyper-rustls
+  - rustls 0.23.40
+    https://github.com/rustls/rustls
+
+### Apache-2.0 OR LGPL-2.1-or-later OR MIT
+
+  - r-efi 5.3.0
+    https://github.com/r-efi/r-efi
+  - r-efi 6.0.0
+    https://github.com/r-efi/r-efi
+
+### BSD-3-Clause
+
+  - nalgebra 0.32.6
+    authors: Sébastien Crozet <developer@crozet.re>
+    https://github.com/dimforge/nalgebra
+  - subtle 2.6.1
+    authors: Isis Lovecruft <isis@patternsinthevoid.net>|Henry de Valence <hdevalence@hdevalence.ca>
+    https://github.com/dalek-cryptography/subtle
+
+### BSL-1.0
+
+  - clipboard-win 5.4.1
+    authors: Douman <douman@gmx.se>
+    https://github.com/DoumanAsh/clipboard-win
+  - error-code 3.3.2
+    authors: Douman <douman@gmx.se>
+    https://github.com/DoumanAsh/error-code
+
+### (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) AND (Apache-2.0 OR ISC) AND Apache-2.0 AND BSD-3-Clause AND ISC AND MIT
+
+  - aws-lc-sys 0.40.0
+    authors: AWS-LC
+    https://github.com/aws/aws-lc-rs
+
+### (Apache-2.0 OR ISC) AND ISC
+
+  - aws-lc-rs 1.16.3
+    authors: AWS-LibCrypto
+    https://github.com/aws/aws-lc-rs
+
+### (Apache-2.0 OR MIT) AND BSD-3-Clause
+
+  - encoding_rs 0.8.35
+    authors: Henri Sivonen <hsivonen@hsivonen.fi>
+    https://github.com/hsivonen/encoding_rs
+
+### (Apache-2.0 OR MIT) AND Unicode-3.0
+
+  - unicode-ident 1.0.24
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/unicode-ident
+
+### (Apache-2.0 OR MIT) AND Unicode-DFS-2016
+
+  - unicode_names2 1.3.0
+    authors: Huon Wilson <dbau.pp@gmail.com>|Kang Seonghoon <public+rust@mearie.org>|Valentin Lorentz <progval+git@progval.net>|Jeong YunWon <jeong@youknowone.org>
+    https://github.com/progval/unicode_names2
+
+### 0BSD OR Apache-2.0 OR MIT
+
+  - adler2 2.0.1
+    authors: Jonas Schievink <jonasschievink@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>
+    https://github.com/oyvindln/adler2
+
+### Apache-2.0 AND ISC
+
+  - ring 0.17.14
+    https://github.com/briansmith/ring
+
+### Apache-2.0 OR BSL-1.0
+
+  - ryu 1.0.23
+    authors: David Tolnay <dtolnay@gmail.com>
+    https://github.com/dtolnay/ryu
+
+### Apache-2.0 OR CC0-1.0 OR MIT-0
+
+  - dunce 1.0.5
+    authors: Kornel <kornel@geekhood.net>
+    https://gitlab.com/kornelski/dunce
+
+### Apache-2.0 WITH LLVM-exception
+
+  - target-lexicon 0.13.3
+    authors: Dan Gohman <sunfish@mozilla.com>
+    https://github.com/bytecodealliance/target-lexicon
+
+### CC0-1.0
+
+  - tiny-keccak 2.0.2
+    authors: debris <marek.kotewicz@gmail.com>
+
+--------------------------------------------------------------------------------
+7. Common open-source license references
+--------------------------------------------------------------------------------
+
+Full license texts are lengthy; authoritative copies:
+
+  - MIT:        https://opensource.org/licenses/MIT
+  - Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0
+  - BSD-3-Clause: https://opensource.org/licenses/BSD-3-Clause
+  - ISC:        https://opensource.org/licenses/ISC
+  - MPL-2.0:    https://www.mozilla.org/en-US/MPL/2.0/
+  - LGPL-3.0:   https://www.gnu.org/licenses/lgpl-3.0.html
+  - Unicode-3.0: https://www.unicode.org/license.txt
+  - Zlib:       https://opensource.org/licenses/Zlib
+  - BSL-1.0:    https://opensource.org/licenses/BSL-1.0
+  - CC0-1.0:    https://creativecommons.org/publicdomain/zero/1.0/
+  - 0BSD:       https://opensource.org/licenses/0BSD
+
+Where a crate is dual-licensed Apache-2.0 OR MIT, either license may be
+used. Many Rust ecosystem distributors elect MIT for simplicity; Apache-2.0
+remains available.
+
+Apache-2.0 requires preservation of any NOTICE file present in the upstream
+component. Crates that ship NOTICE files should have those notices retained
+in binary redistributions (see each crate source for NOTICE content).
+
+--------------------------------------------------------------------------------
+8. Regenerating this file
+--------------------------------------------------------------------------------
+
+From the CPSL repository root:
+
+  cargo install cargo-license
+  cargo license --json > /tmp/cpsl-licenses.json
+  # then update this document from the JSON inventory
+
+Also re-check:
+
+  - vendor/*/LICENSE*
+  - optional PDFium binary licenses
+  - cargo tree -i malachite
+  - cargo tree -i cssparser
+
